@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">{{ title }}</h4>
+
+{% if form.errors or formset.errors %}
+<div class="alert alert-danger">
+    <strong>กรุณาแก้ไขข้อมูลด้านล่าง:</strong>
+    {% for field in form %}
+        {% if field.errors %}<div>{{ field.label }}: {{ field.errors.0 }}</div>{% endif %}
+    {% endfor %}
+    {% for item_form in formset %}
+        {% for field in item_form %}
+            {% if field.errors %}<div>รายการที่ {{ forloop.parentloop.counter }} - {{ field.label }}: {{ field.errors.0 }}</div>{% endif %}
+        {% endfor %}
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="card mb-3">
+        <div class="card-header">ข้อมูลออร์เดอร์</div>
+        <div class="card-body">
+            {% if order %}
+            <div class="row g-2 mb-2">
+                <div class="col-auto">
+                    <span class="badge bg-dark fs-6">{{ order.order_number }}</span>
+                </div>
+                <div class="col-auto">
+                    <span class="text-muted">สร้างเมื่อ {{ order.created_date|date:"d/m/Y" }}</span>
+                </div>
+            </div>
+            {% endif %}
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label">แหล่งที่มา <span class="text-danger">*</span></label>
+                    {{ form.source }}
+                    {% if form.source.errors %}<div class="text-danger small">{{ form.source.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">สถานะ</label>
+                    {{ form.status }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">วิธีรับสินค้า</label>
+                    {{ form.delivery_method }}
+                </div>
+            </div>
+            <div class="row g-2 mt-1">
+                <div class="col-md-4">
+                    <label class="form-label">ชื่อลูกค้า <span class="text-danger">*</span></label>
+                    {{ form.customer_name }}
+                    {% if form.customer_name.errors %}<div class="text-danger small">{{ form.customer_name.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Facebook/เบอร์โทร</label>
+                    {{ form.customer_link }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">ชื่องาน/ชื่อเสื้อ <span class="text-danger">*</span></label>
+                    {{ form.shirt_name }}
+                    {% if form.shirt_name.errors %}<div class="text-danger small">{{ form.shirt_name.errors.0 }}</div>{% endif %}
+                </div>
+            </div>
+
+            <!-- fabric_spec: แสดงเฉพาะเพจเสื้อคนงาน -->
+            <div class="row g-2 mt-1" id="fabric-spec-row" style="display:none;">
+                <div class="col-12">
+                    <label class="form-label">Spec ผ้า</label>
+                    {{ form.fabric_spec }}
+                </div>
+            </div>
+
+            <div class="row g-2 mt-1">
+                <div class="col-12">
+                    <label class="form-label">คำสั่งพิเศษ <small class="text-danger">(จะแสดงเป็นสีแดง)</small></label>
+                    {{ form.special_note }}
+                </div>
+            </div>
+
+            <div class="row g-2 mt-1 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">ยอดรวม</label>
+                    {{ form.total_price }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">มัดจำ</label>
+                    {{ form.deposit }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">คงเหลือ</label>
+                    <div class="form-control form-control-sm bg-light fw-bold" id="remaining-display">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OrderItem Formset -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>รายการเสื้อ <span class="badge bg-primary" id="grand-total-qty">รวม 0 ตัว</span></span>
+            <button type="button" class="btn btn-success btn-sm" id="add-item">+ เพิ่มรายการ</button>
+        </div>
+        <div class="card-body" id="formset-container">
+            {{ formset.management_form }}
+            {% for item_form in formset %}
+            <div class="item-form border rounded p-2 mb-2" data-index="{{ forloop.counter0 }}">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <strong class="item-label">รายการที่ {{ forloop.counter }}</strong>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-info item-qty-badge">0 ตัว</span>
+                        {% if item_form.DELETE %}
+                        <label class="btn btn-outline-danger btn-sm mb-0">
+                            {{ item_form.DELETE }} ลบ
+                        </label>
+                        {% endif %}
+                    </div>
+                </div>
+                {{ item_form.id }}
+                {{ item_form.sizes_json }}
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">รูปดีไซน์</label>
+                        {% if item_form.instance.design_image %}
+                            <div class="mb-1"><img src="{{ item_form.instance.design_image.url }}" style="max-height:60px;" class="rounded"></div>
+                        {% endif %}
+                        {{ item_form.design_image }}
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">ประเภทเสื้อ</label>
+                        {{ item_form.shirt_type }}
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">สีเสื้อ <span class="text-danger">*</span></label>
+                        {{ item_form.color }}
+                        {% if item_form.color.errors %}<div class="text-danger small">{{ item_form.color.errors.0 }}</div>{% endif %}
+                    </div>
+                </div>
+
+                <!-- Sizes (dynamic via JS) -->
+                <div class="sizes-container mt-2"></div>
+                <button type="button" class="btn btn-outline-secondary btn-sm mt-1 add-size-btn">+ เพิ่มไซส์อื่น</button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <a href="{% if order %}{% url 'order_detail' order.pk %}{% else %}{% url 'order_list' %}{% endif %}" class="btn btn-outline-secondary">ยกเลิก</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ==================== Fabric Spec toggle ====================
+const sourceField = document.getElementById('id_source');
+const fabricRow = document.getElementById('fabric-spec-row');
+const fabricField = document.getElementById('id_fabric_spec');
+
+function toggleFabric() {
+    const isKonNgan = sourceField.value === 'เพจเสื้อคนงาน';
+    fabricRow.style.display = isKonNgan ? '' : 'none';
+    if (isKonNgan && !fabricField.value) {
+        fabricField.value = 'ผ้า 120 แกรม';
+    }
+    if (isKonNgan) {
+        fabricField.style.border = '2px solid red';
+    } else {
+        fabricField.style.border = '';
+    }
+}
+sourceField.addEventListener('change', toggleFabric);
+toggleFabric();
+
+// ==================== Remaining calculation ====================
+const totalPriceField = document.getElementById('id_total_price');
+const depositField = document.getElementById('id_deposit');
+const remainingDisplay = document.getElementById('remaining-display');
+
+function calcRemaining() {
+    const total = parseFloat(totalPriceField.value) || 0;
+    const deposit = parseFloat(depositField.value) || 0;
+    const remaining = total - deposit;
+    remainingDisplay.textContent = remaining.toLocaleString('th-TH');
+    remainingDisplay.style.color = remaining > 0 ? '#dc3545' : '#198754';
+}
+totalPriceField.addEventListener('input', calcRemaining);
+depositField.addEventListener('input', calcRemaining);
+calcRemaining();
+
+// ==================== Sizes System ====================
+function renderSizes(itemEl) {
+    const hiddenField = itemEl.querySelector('[name$="-sizes_json"]');
+    let sizes;
+    try {
+        sizes = JSON.parse(hiddenField.value);
+    } catch {
+        sizes = [
+            {label: 'S', qty: 0}, {label: 'M', qty: 0}, {label: 'L', qty: 0},
+            {label: 'XL', qty: 0}, {label: '2XL', qty: 0}, {label: '3XL', qty: 0},
+            {label: '4XL', qty: 0}
+        ];
+    }
+
+    const container = itemEl.querySelector('.sizes-container');
+    container.innerHTML = '';
+
+    const row = document.createElement('div');
+    row.className = 'd-flex flex-wrap gap-1 align-items-end';
+
+    sizes.forEach((size, i) => {
+        const col = document.createElement('div');
+        col.className = 'text-center';
+        col.style.minWidth = '55px';
+
+        const isCustom = !['S','M','L','XL','2XL','3XL','4XL'].includes(size.label);
+        const labelHtml = isCustom
+            ? `<input type="text" value="${size.label}" class="form-control form-control-sm text-center mb-1 size-label-input" style="width:55px;font-size:11px;" data-idx="${i}">`
+            : `<div class="small fw-bold">${size.label}</div>`;
+
+        col.innerHTML = `
+            ${labelHtml}
+            <input type="number" min="0" value="${size.qty || 0}" class="form-control form-control-sm text-center size-qty-input" style="width:55px;" data-idx="${i}">
+            ${isCustom ? `<button type="button" class="btn btn-link btn-sm text-danger p-0 remove-size-btn" data-idx="${i}" style="font-size:10px;">ลบ</button>` : ''}
+        `;
+        row.appendChild(col);
+    });
+
+    container.appendChild(row);
+
+    // Bind events
+    container.querySelectorAll('.size-qty-input').forEach(input => {
+        input.addEventListener('input', () => syncSizes(itemEl));
+    });
+    container.querySelectorAll('.size-label-input').forEach(input => {
+        input.addEventListener('input', () => syncSizes(itemEl));
+    });
+    container.querySelectorAll('.remove-size-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.idx);
+            sizes.splice(idx, 1);
+            hiddenField.value = JSON.stringify(sizes);
+            renderSizes(itemEl);
+            updateGrandTotal();
+        });
+    });
+
+    updateItemQty(itemEl, sizes);
+}
+
+function syncSizes(itemEl) {
+    const hiddenField = itemEl.querySelector('[name$="-sizes_json"]');
+    const qtyInputs = itemEl.querySelectorAll('.size-qty-input');
+    const labelInputs = itemEl.querySelectorAll('.size-label-input');
+    let sizes;
+    try {
+        sizes = JSON.parse(hiddenField.value);
+    } catch {
+        sizes = [];
+    }
+
+    qtyInputs.forEach(input => {
+        const idx = parseInt(input.dataset.idx);
+        if (sizes[idx]) sizes[idx].qty = parseInt(input.value) || 0;
+    });
+    labelInputs.forEach(input => {
+        const idx = parseInt(input.dataset.idx);
+        if (sizes[idx]) sizes[idx].label = input.value;
+    });
+
+    hiddenField.value = JSON.stringify(sizes);
+    updateItemQty(itemEl, sizes);
+    updateGrandTotal();
+}
+
+function updateItemQty(itemEl, sizes) {
+    const total = sizes.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
+    const badge = itemEl.querySelector('.item-qty-badge');
+    if (badge) badge.textContent = `${total} ตัว`;
+}
+
+function updateGrandTotal() {
+    let grand = 0;
+    document.querySelectorAll('.item-form').forEach(itemEl => {
+        const hidden = itemEl.querySelector('[name$="-sizes_json"]');
+        if (!hidden) return;
+        try {
+            const sizes = JSON.parse(hidden.value);
+            grand += sizes.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
+        } catch {}
+    });
+    document.getElementById('grand-total-qty').textContent = `รวม ${grand} ตัว`;
+}
+
+// Add custom size
+document.addEventListener('click', function(e) {
+    if (!e.target.classList.contains('add-size-btn')) return;
+    const itemEl = e.target.closest('.item-form');
+    const hiddenField = itemEl.querySelector('[name$="-sizes_json"]');
+    let sizes;
+    try { sizes = JSON.parse(hiddenField.value); } catch { sizes = []; }
+    sizes.push({label: '', qty: 0});
+    hiddenField.value = JSON.stringify(sizes);
+    renderSizes(itemEl);
+});
+
+// Init all existing items
+document.querySelectorAll('.item-form').forEach(renderSizes);
+updateGrandTotal();
+
+// ==================== Add new item (dynamic formset) ====================
+const container = document.getElementById('formset-container');
+const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+const addBtn = document.getElementById('add-item');
+
+const defaultSizes = JSON.stringify([
+    {label:'S',qty:0},{label:'M',qty:0},{label:'L',qty:0},
+    {label:'XL',qty:0},{label:'2XL',qty:0},{label:'3XL',qty:0},{label:'4XL',qty:0}
+]);
+
+addBtn.addEventListener('click', function() {
+    const formCount = parseInt(totalForms.value);
+    const firstForm = container.querySelector('.item-form');
+    const newForm = firstForm.cloneNode(true);
+
+    // Update form index in name/id attributes
+    newForm.querySelectorAll('[name]').forEach(el => {
+        el.name = el.name.replace(/items-\d+-/, `items-${formCount}-`);
+        if (el.id) el.id = el.id.replace(/items-\d+-/, `items-${formCount}-`);
+    });
+
+    // Clear values
+    newForm.querySelectorAll('input:not([type=hidden])').forEach(input => {
+        if (input.type === 'number') input.value = '0';
+        else if (input.type === 'checkbox') input.checked = false;
+        else if (input.type === 'file') { /* leave file empty */ }
+        else input.value = '';
+    });
+    newForm.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+
+    // Reset hidden id and sizes
+    const idField = newForm.querySelector(`[name="items-${formCount}-id"]`);
+    if (idField) idField.value = '';
+    const sizesField = newForm.querySelector(`[name="items-${formCount}-sizes_json"]`);
+    if (sizesField) sizesField.value = defaultSizes;
+
+    // Remove any existing image preview
+    const imgPreview = newForm.querySelector('img');
+    if (imgPreview) imgPreview.parentElement.remove();
+
+    // Update label
+    const strong = newForm.querySelector('.item-label');
+    if (strong) strong.textContent = `รายการที่ ${formCount + 1}`;
+
+    // Remove error messages
+    newForm.querySelectorAll('.text-danger.small').forEach(el => el.remove());
+
+    newForm.dataset.index = formCount;
+    container.appendChild(newForm);
+    totalForms.value = formCount + 1;
+
+    renderSizes(newForm);
+    updateGrandTotal();
+});
+</script>
+{% endblock %}

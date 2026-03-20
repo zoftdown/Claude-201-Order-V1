@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ใบงาน {{ order.order_number }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ===== Reset & Base ===== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
+            color: #222;
+            background: #b0b0b0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* ===== Page Container (responsive, not fixed mm) ===== */
+        .page {
+            max-width: 800px;
+            width: 100%;
+            margin: 12px auto;
+            padding: 24px 28px 60px 28px;
+            background: #fff;
+            box-shadow: 0 2px 16px rgba(0,0,0,.25);
+            position: relative;
+            page-break-after: always;
+        }
+        .page:last-child { page-break-after: auto; }
+
+        /* ===== Header ===== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #222;
+            gap: 12px;
+        }
+        .header-left {
+            flex: 1;
+            min-width: 0;
+        }
+        .header-left .source-badge {
+            display: inline-block;
+            background: #222;
+            color: #fff;
+            padding: 3px 12px;
+            border-radius: 4px;
+            font-size: 11pt;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .header-left h1 {
+            font-size: 24pt;
+            font-weight: 900;
+            line-height: 1.2;
+            margin-bottom: 2px;
+            word-break: break-word;
+        }
+        .customer-link {
+            display: inline-block;
+            font-size: 10pt;
+            color: #1976D2;
+            text-decoration: none;
+            word-break: break-all;
+            margin-bottom: 4px;
+        }
+        .customer-link:hover {
+            text-decoration: underline;
+        }
+        .header-left .print-date {
+            font-size: 14pt;
+            font-weight: 800;
+        }
+        .header-right {
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .header-right .order-num {
+            font-size: 13pt;
+            font-weight: 700;
+            background: #222;
+            color: #fff;
+            padding: 3px 12px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+        .price-line {
+            font-size: 14pt;
+            font-weight: 800;
+            color: #d32f2f;
+            line-height: 1.6;
+        }
+
+        /* ===== Shirt Info ===== */
+        .shirt-info {
+            text-align: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        .shirt-name {
+            font-size: 22pt;
+            font-weight: 900;
+            line-height: 1.3;
+        }
+        .fabric-spec {
+            font-size: 16pt;
+            font-weight: 800;
+            color: #d32f2f;
+        }
+        .special-note-box {
+            display: inline-block;
+            font-size: 12pt;
+            font-weight: 700;
+            color: #d32f2f;
+            border: 2px solid #d32f2f;
+            padding: 3px 14px;
+            border-radius: 5px;
+            margin-top: 6px;
+        }
+
+        /* ===== Item Card ===== */
+        .item-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            padding: 16px 0;
+            border-bottom: 1px dashed #ccc;
+        }
+        .item-card:last-child {
+            border-bottom: none;
+        }
+        .item-image {
+            flex-shrink: 0;
+            width: 220px;
+            height: 220px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8f8f8;
+        }
+        .item-image img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .item-image .no-img {
+            color: #bbb;
+            font-size: 11pt;
+        }
+        .item-detail {
+            flex: 1;
+            padding-top: 4px;
+        }
+        .item-type {
+            font-size: 17pt;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+
+        /* ===== Size List ===== */
+        .size-list {
+            list-style: none;
+        }
+        .size-list li {
+            font-size: 15pt;
+            font-weight: 700;
+            line-height: 1.8;
+            display: flex;
+            gap: 6px;
+        }
+        .size-list .s-label {
+            min-width: 48px;
+            text-align: right;
+        }
+        .size-list .s-eq {
+            color: #888;
+        }
+        .size-list .s-qty {
+            font-size: 17pt;
+            font-weight: 900;
+        }
+        .item-subtotal {
+            font-size: 11pt;
+            font-weight: 700;
+            color: #888;
+            margin-top: 6px;
+        }
+
+        /* ===== Page Footer ===== */
+        .page-footer {
+            position: absolute;
+            bottom: 16px;
+            left: 28px;
+            right: 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 2px solid #222;
+            padding-top: 10px;
+        }
+        .total-qty {
+            font-size: 18pt;
+            font-weight: 900;
+        }
+        .delivery-badge {
+            font-size: 13pt;
+            font-weight: 800;
+            border: 2px solid #222;
+            padding: 3px 16px;
+            border-radius: 5px;
+        }
+
+        /* ===== Print Controls ===== */
+        .print-controls {
+            text-align: center;
+            padding: 12px 0;
+        }
+        .print-controls button {
+            font-family: 'Sarabun', sans-serif;
+            font-size: 13pt;
+            font-weight: 700;
+            padding: 8px 28px;
+            margin: 0 6px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .btn-print { background: #1976D2; color: #fff; }
+        .btn-print:hover { background: #1565C0; }
+        .btn-back { background: #666; color: #fff; }
+        .btn-back:hover { background: #555; }
+
+        /* ==========================================================
+           SINGLE ITEM — ขยายรูปใหญ่ขึ้นเมื่อมีแค่ 1 item (desktop)
+           ========================================================== */
+        .single-item .item-card {
+            gap: 28px;
+            padding: 24px 0;
+        }
+        .single-item .item-image {
+            width: 320px;
+            height: 320px;
+        }
+        .single-item .item-type {
+            font-size: 22pt;
+            margin-bottom: 14px;
+        }
+        .single-item .size-list li {
+            font-size: 18pt;
+            line-height: 2;
+        }
+        .single-item .size-list .s-qty {
+            font-size: 20pt;
+        }
+        .single-item .size-list .s-label {
+            min-width: 56px;
+        }
+        .single-item .item-subtotal {
+            font-size: 13pt;
+            margin-top: 10px;
+        }
+
+        /* ==========================================================
+           MOBILE — ปรับ font, spacing, layout ให้พอดีจอมือถือ
+           ========================================================== */
+        @media screen and (max-width: 600px) {
+            body { background: #fff; }
+
+            .page {
+                margin: 0;
+                padding: 14px 14px 50px 14px;
+                box-shadow: none;
+                border-bottom: 4px solid #ddd;
+            }
+
+            /* Header */
+            .header {
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 10px;
+                padding-bottom: 10px;
+            }
+            .header-left .source-badge {
+                font-size: 9pt;
+                padding: 2px 8px;
+            }
+            .header-left h1 {
+                font-size: 16pt;
+            }
+            .customer-link {
+                font-size: 8.5pt;
+            }
+            .header-left .print-date {
+                font-size: 11pt;
+            }
+            .header-right {
+                text-align: left;
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 6px;
+            }
+            .header-right .order-num {
+                font-size: 10pt;
+                padding: 2px 8px;
+                margin-bottom: 0;
+            }
+            .price-line {
+                font-size: 11pt;
+                line-height: 1.4;
+            }
+
+            /* Shirt Info */
+            .shirt-info {
+                margin-bottom: 10px;
+                padding-bottom: 8px;
+            }
+            .shirt-name {
+                font-size: 15pt;
+            }
+            .fabric-spec {
+                font-size: 12pt;
+            }
+            .special-note-box {
+                font-size: 10pt;
+                padding: 2px 10px;
+            }
+
+            /* Item Card */
+            .item-card {
+                gap: 12px;
+                padding: 10px 0;
+            }
+            .item-image {
+                width: 110px;
+                height: 110px;
+                border-radius: 4px;
+            }
+            .item-type {
+                font-size: 13pt;
+                margin-bottom: 6px;
+            }
+            .size-list li {
+                font-size: 12pt;
+                line-height: 1.6;
+                gap: 4px;
+            }
+            .size-list .s-label {
+                min-width: 32px;
+            }
+            .size-list .s-qty {
+                font-size: 13pt;
+            }
+            .item-subtotal {
+                font-size: 9pt;
+            }
+
+            /* Single item on mobile — ขยายรูปขึ้นนิดหน่อย */
+            .single-item .item-image {
+                width: 140px;
+                height: 140px;
+            }
+            .single-item .item-type {
+                font-size: 14pt;
+            }
+            .single-item .size-list li {
+                font-size: 13pt;
+            }
+            .single-item .size-list .s-qty {
+                font-size: 14pt;
+            }
+
+            /* Footer */
+            .page-footer {
+                bottom: 10px;
+                left: 14px;
+                right: 14px;
+                padding-top: 8px;
+            }
+            .total-qty {
+                font-size: 13pt;
+            }
+            .delivery-badge {
+                font-size: 10pt;
+                padding: 2px 10px;
+            }
+
+            /* Print Controls */
+            .print-controls {
+                padding: 8px 0;
+                position: sticky;
+                top: 0;
+                background: #fff;
+                z-index: 10;
+                border-bottom: 1px solid #ddd;
+            }
+            .print-controls button {
+                font-size: 11pt;
+                padding: 6px 18px;
+            }
+        }
+
+        /* ==========================================================
+           TABLET (601–900px)
+           ========================================================== */
+        @media screen and (min-width: 601px) and (max-width: 900px) {
+            .page {
+                padding: 18px 20px 56px 20px;
+            }
+            .header-left h1 {
+                font-size: 20pt;
+            }
+            .item-image {
+                width: 180px;
+                height: 180px;
+            }
+            .single-item .item-image {
+                width: 240px;
+                height: 240px;
+            }
+        }
+
+        /* ==========================================================
+           PRINT — A4 output
+           ========================================================== */
+        @media print {
+            body { background: #fff; }
+            .page {
+                max-width: 100%;
+                margin: 0;
+                box-shadow: none;
+                padding: 8mm 12mm 18mm 12mm;
+                border-bottom: none;
+            }
+            .print-controls { display: none !important; }
+            .customer-link { color: #1976D2 !important; }
+
+            /* Single item print — bigger image */
+            .single-item .item-image {
+                width: 90mm;
+                height: 90mm;
+            }
+        }
+        @page {
+            size: A4;
+            margin: 4mm;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== Print Controls (ซ่อนตอนพิมพ์) ===== -->
+<div class="print-controls">
+    <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
+    <button class="btn-back" onclick="history.back()">กลับ</button>
+</div>
+
+{% for page_items in pages %}
+<div class="page{% if is_single_item %} single-item{% endif %}">
+
+    {% if forloop.first %}
+    <!-- ===== Header (หน้าแรกเท่านั้น) ===== -->
+    <div class="header">
+        <div class="header-left">
+            <span class="source-badge">{{ order.source }}</span>
+            <h1>{{ order.customer_name }}</h1>
+            {% if order.customer_link %}
+                <a href="{{ order.customer_link }}" class="customer-link" target="_blank" rel="noopener">ลิงก์ลูกค้า</a>
+            {% endif %}
+            <div class="print-date">
+                วันที่พิมพ์
+                {% if order.print_date %}
+                    {{ order.print_date|date:"d/n/y" }}
+                {% else %}
+                    —
+                {% endif %}
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="order-num">{{ order.order_number }}</div>
+            <div class="price-line">ยอด {{ order.total_price|floatformat:0 }} บาท</div>
+            <div class="price-line">มัดจำ {{ order.deposit|floatformat:0 }} บาท</div>
+            <div class="price-line">คงเหลือ {{ order.remaining|floatformat:0 }} บาท</div>
+        </div>
+    </div>
+
+    <!-- ===== Shirt Name + Spec ===== -->
+    <div class="shirt-info">
+        <div class="shirt-name">
+            {{ order.shirt_name }}
+            {% if order.source == 'เพจเสื้อคนงาน' and order.fabric_spec %}
+                <span class="fabric-spec">{{ order.fabric_spec }}</span>
+            {% endif %}
+        </div>
+        {% if order.special_note %}
+            <div class="special-note-box">{{ order.special_note }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- ===== Items ===== -->
+    {% for item in page_items %}
+    <div class="item-card">
+        <div class="item-image">
+            {% if item.design_image %}
+                <img src="{{ item.design_image.url }}" alt="ดีไซน์">
+            {% else %}
+                <span class="no-img">ไม่มีรูป</span>
+            {% endif %}
+        </div>
+        <div class="item-detail">
+            <div class="item-type">
+                คอกลม{{ item.shirt_type }}
+            </div>
+            <ul class="size-list">
+                {% for size in item.sizes_display %}
+                <li>
+                    <span class="s-label">{{ size.label }}</span>
+                    <span class="s-eq">=</span>
+                    <span class="s-qty">{{ size.qty }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            <div class="item-subtotal">รวม {{ item.total_qty }} ตัว</div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if forloop.last %}
+    <!-- ===== Footer (หน้าสุดท้าย) ===== -->
+    <div class="page-footer">
+        <span class="total-qty">รวมทั้งหมด {{ order.total_qty }} ตัว</span>
+        <span class="delivery-badge">{{ order.delivery_method }}</span>
+    </div>
+    {% endif %}
+
+</div>
+{% endfor %}
+
+</body>
+</html>

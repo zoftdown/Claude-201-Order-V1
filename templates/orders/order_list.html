@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}รายการออร์เดอร์{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-6">
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="ค้นหา ชื่อลูกค้า / ชื่อเสื้อ / เลข order">
+            {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
+            <button class="btn btn-primary btn-sm">ค้นหา</button>
+        </form>
+    </div>
+    <div class="col-md-6">
+        <div class="d-flex gap-1 flex-wrap justify-content-end">
+            <a href="{% url 'order_list' %}" class="btn btn-sm {% if not current_status %}btn-dark{% else %}btn-outline-secondary{% endif %}">ทั้งหมด</a>
+            {% for value, label in status_choices %}
+                <a href="?status={{ value }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm {% if current_status == value %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% if orders %}
+<div class="table-responsive">
+    <table class="table table-hover table-sm">
+        <thead class="table-dark">
+            <tr>
+                <th>เลข Order</th>
+                <th>วันที่</th>
+                <th>ลูกค้า</th>
+                <th>ชื่อเสื้อ</th>
+                <th>แหล่ง</th>
+                <th>จำนวน</th>
+                <th>ยอดรวม</th>
+                <th>คงเหลือ</th>
+                <th>สถานะ</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
+                <td>{{ order.created_date|date:"d/m/Y" }}</td>
+                <td>{{ order.customer_name }}</td>
+                <td>{{ order.shirt_name }}</td>
+                <td><small>{{ order.source }}</small></td>
+                <td>{{ order.total_qty }}</td>
+                <td>{{ order.total_price|floatformat:0 }}</td>
+                <td class="{% if order.remaining > 0 %}text-danger fw-bold{% endif %}">{{ order.remaining|floatformat:0 }}</td>
+                <td>
+                    {% if order.status == 'เสร็จแล้ว' %}<span class="badge bg-success">
+                    {% elif order.status == 'กำลังผลิต' %}<span class="badge bg-warning text-dark">
+                    {% elif order.status == 'ส่งแล้ว' %}<span class="badge bg-info">
+                    {% else %}<span class="badge bg-secondary">
+                    {% endif %}{{ order.status }}</span>
+                </td>
+                <td><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-muted text-center mt-5">ไม่พบออร์เดอร์</p>
+{% endif %}
+{% endblock %}
