@@ -6,3 +6,5 @@ media/
 .env
 *.log
 .claude/
+staticfiles/
+venv/

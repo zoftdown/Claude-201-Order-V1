@@ -66,6 +66,14 @@
                 </div>
             </div>
 
+            <!-- shipping_address: แสดงเฉพาะเมื่อ delivery_method = ส่ง -->
+            <div class="row g-2 mt-1" id="shipping-address-row" style="display:none;">
+                <div class="col-12">
+                    <label class="form-label">ที่อยู่จัดส่ง 📦</label>
+                    {{ form.shipping_address }}
+                </div>
+            </div>
+
             <!-- fabric_spec: แสดงเฉพาะเพจเสื้อคนงาน -->
             <div class="row g-2 mt-1" id="fabric-spec-row" style="display:none;">
                 <div class="col-12">
@@ -128,10 +136,18 @@
                             <div class="mb-1"><img src="{{ item_form.instance.design_image.url }}" style="max-height:60px;" class="rounded"></div>
                         {% endif %}
                         {{ item_form.design_image }}
+                        <div class="form-check mt-1 copy-image-check" style="display:none;">
+                            <input class="form-check-input copy-image-cb" type="checkbox" name="copy_image_{{ forloop.counter0 }}" data-index="{{ forloop.counter0 }}">
+                            <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
+                        </div>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">ประเภทเสื้อ</label>
-                        {{ item_form.shirt_type }}
+                        <label class="form-label">ประเภทคอ</label>
+                        {{ item_form.collar_type }}
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">ประเภทแขน</label>
+                        {{ item_form.sleeve_type }}
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">สีเสื้อ <span class="text-danger">*</span></label>
@@ -157,6 +173,16 @@
 
 {% block scripts %}
 <script>
+// ==================== Shipping Address toggle ====================
+const deliveryField = document.getElementById('id_delivery_method');
+const shippingRow = document.getElementById('shipping-address-row');
+
+function toggleShipping() {
+    shippingRow.style.display = deliveryField.value === 'ส่ง' ? '' : 'none';
+}
+deliveryField.addEventListener('change', toggleShipping);
+toggleShipping();
+
 // ==================== Fabric Spec toggle ====================
 const sourceField = document.getElementById('id_source');
 const fabricRow = document.getElementById('fabric-spec-row');
@@ -210,17 +236,24 @@ function renderSizes(itemEl) {
     const container = itemEl.querySelector('.sizes-container');
     container.innerHTML = '';
 
-    const row = document.createElement('div');
-    row.className = 'd-flex flex-wrap gap-1 align-items-end';
+    const defaultLabels = ['S','M','L','XL','2XL','3XL','4XL'];
+
+    // Standard sizes row
+    const stdRow = document.createElement('div');
+    stdRow.className = 'd-flex flex-wrap gap-1 align-items-end';
+
+    // Custom sizes row
+    const customRow = document.createElement('div');
+    customRow.className = 'd-flex flex-wrap gap-1 align-items-end mt-2';
 
     sizes.forEach((size, i) => {
         const col = document.createElement('div');
         col.className = 'text-center';
         col.style.minWidth = '55px';
 
-        const isCustom = !['S','M','L','XL','2XL','3XL','4XL'].includes(size.label);
+        const isCustom = !defaultLabels.includes(size.label);
         const labelHtml = isCustom
-            ? `<input type="text" value="${size.label}" class="form-control form-control-sm text-center mb-1 size-label-input" style="width:55px;font-size:11px;" data-idx="${i}">`
+            ? `<input type="text" value="${size.label}" class="form-control form-control-sm text-center mb-1 size-label-input" style="width:55px;font-size:11px;" data-idx="${i}" placeholder="ชื่อไซส์">`
             : `<div class="small fw-bold">${size.label}</div>`;
 
         col.innerHTML = `
@@ -228,10 +261,18 @@ function renderSizes(itemEl) {
             <input type="number" min="0" value="${size.qty || 0}" class="form-control form-control-sm text-center size-qty-input" style="width:55px;" data-idx="${i}">
             ${isCustom ? `<button type="button" class="btn btn-link btn-sm text-danger p-0 remove-size-btn" data-idx="${i}" style="font-size:10px;">ลบ</button>` : ''}
         `;
-        row.appendChild(col);
+
+        if (isCustom) {
+            customRow.appendChild(col);
+        } else {
+            stdRow.appendChild(col);
+        }
     });
 
-    container.appendChild(row);
+    container.appendChild(stdRow);
+    if (customRow.children.length > 0) {
+        container.appendChild(customRow);
+    }
 
     // Bind events
     container.querySelectorAll('.size-qty-input').forEach(input => {
@@ -364,8 +405,25 @@ addBtn.addEventListener('click', function() {
     container.appendChild(newForm);
     totalForms.value = formCount + 1;
 
+    // Update copy-image checkbox name
+    const copyCb = newForm.querySelector('.copy-image-cb');
+    if (copyCb) copyCb.name = `copy_image_${formCount}`;
+
     renderSizes(newForm);
     updateGrandTotal();
+    updateCopyImageVisibility();
 });
+
+// ==================== Copy image from item 1 ====================
+function updateCopyImageVisibility() {
+    const allForms = document.querySelectorAll('.item-form');
+    allForms.forEach((form, idx) => {
+        const checkDiv = form.querySelector('.copy-image-check');
+        if (checkDiv) {
+            checkDiv.style.display = idx > 0 ? '' : 'none';
+        }
+    });
+}
+updateCopyImageVisibility();
 </script>
 {% endblock %}

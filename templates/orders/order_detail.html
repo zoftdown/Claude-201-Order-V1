@@ -27,7 +27,7 @@
         </div>
         <div class="row mt-2">
             <div class="col-md-3"><strong>ชื่อเสื้อ:</strong> {{ order.shirt_name }}</div>
-            <div class="col-md-3"><strong>ลูกค้า:</strong> {{ order.customer_link|default:"-" }}</div>
+            <div class="col-md-3"><strong>ลูกค้า:</strong> {% if order.customer_link %}<a href="{{ order.customer_link }}" target="_blank" rel="noopener" style="color:#0d6efd;">ลิงก์ลูกค้า</a>{% else %}-{% endif %}</div>
             <div class="col-md-6">
                 <strong>ยอดรวม:</strong> {{ order.total_price|floatformat:0 }} |
                 <strong>มัดจำ:</strong> {{ order.deposit|floatformat:0 }} |
@@ -42,6 +42,11 @@
         {% if order.special_note %}
         <div class="row mt-2">
             <div class="col-12"><strong>คำสั่งพิเศษ:</strong> <span class="special-note">{{ order.special_note }}</span></div>
+        </div>
+        {% endif %}
+        {% if order.delivery_method == 'ส่ง' and order.shipping_address %}
+        <div class="row mt-2">
+            <div class="col-12"><strong>📦 ที่อยู่จัดส่ง:</strong> <span style="white-space:pre-line;">{{ order.shipping_address }}</span></div>
         </div>
         {% endif %}
     </div>
@@ -61,7 +66,7 @@
                 {% endif %}
             </div>
             <div class="col">
-                <strong>{{ item.shirt_type }}</strong> — สี {{ item.color }}
+                <strong>{{ item.collar_type }}{{ item.sleeve_type }}</strong> — สี {{ item.color }}
                 <div class="d-flex flex-wrap gap-2 mt-1">
                     {% for size in item.sizes_display %}
                         <span class="badge bg-light text-dark border">{{ size.label }}: {{ size.qty }}</span>

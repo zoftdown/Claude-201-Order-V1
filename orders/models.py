@@ -2,6 +2,12 @@ from django.db import models
 from django.utils import timezone
 
 
+def design_upload_path(instance, filename):
+    """Upload to: designs/YYYY/MM/filename"""
+    now = timezone.now()
+    return f'designs/{now.year}/{now.month:02d}/{filename}'
+
+
 class Order(models.Model):
     SOURCE_CHOICES = [
         ('เพจเสื้อเนินสูง', 'เพจเสื้อเนินสูง'),
@@ -12,6 +18,8 @@ class Order(models.Model):
         ('LINE OA', 'LINE OA'),
         ('เพจร้าน Yada', 'เพจร้าน Yada'),
         ('เพจเสื้อทุเรียน', 'เพจเสื้อทุเรียน'),
+        ('Shopee', 'Shopee'),
+        ('Tiktok', 'Tiktok'),
     ]
 
     STATUS_CHOICES = [
@@ -38,6 +46,7 @@ class Order(models.Model):
     total_price = models.DecimalField('ยอดรวม', max_digits=10, decimal_places=2, default=0)
     deposit = models.DecimalField('มัดจำ', max_digits=10, decimal_places=2, default=0)
     delivery_method = models.CharField('วิธีรับสินค้า', max_length=20, choices=DELIVERY_CHOICES, default='รับเอง')
+    shipping_address = models.TextField('ที่อยู่จัดส่ง', blank=True)
     status = models.CharField('สถานะ', max_length=20, choices=STATUS_CHOICES, default='รอดำเนินการ')
 
     class Meta:
@@ -82,18 +91,27 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    SHIRT_TYPE_CHOICES = [
+    SLEEVE_CHOICES = [
         ('แขนสั้น', 'แขนสั้น'),
         ('แขนยาว', 'แขนยาว'),
+        ('แขนกุด', 'แขนกุด'),
+    ]
+
+    COLLAR_CHOICES = [
+        ('คอกลม', 'คอกลม'),
+        ('คอวี', 'คอวี'),
         ('โปโล', 'โปโล'),
+        ('คอปกวี', 'คอปกวี'),
+        ('คอกีฬา', 'คอกีฬา'),
         ('อื่นๆ', 'อื่นๆ'),
     ]
 
     DEFAULT_SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    design_image = models.ImageField('รูปดีไซน์', upload_to='designs/', blank=True)
-    shirt_type = models.CharField('ประเภทเสื้อ', max_length=20, choices=SHIRT_TYPE_CHOICES, default='แขนสั้น')
+    design_image = models.ImageField('รูปดีไซน์', upload_to=design_upload_path, blank=True)
+    sleeve_type = models.CharField('ประเภทแขน', max_length=20, choices=SLEEVE_CHOICES, default='แขนสั้น')
+    collar_type = models.CharField('ประเภทคอ', max_length=20, choices=COLLAR_CHOICES, default='คอกลม')
     color = models.CharField('สีเสื้อ', max_length=50)
     sizes = models.JSONField('ไซส์และจำนวน', default=list, blank=True,
                              help_text='[{"label": "S", "qty": 5}, {"label": "M", "qty": 10}, ...]')
@@ -103,7 +121,7 @@ class OrderItem(models.Model):
         verbose_name_plural = 'รายการเสื้อ'
 
     def __str__(self):
-        return f'{self.shirt_type} {self.color}'
+        return f'{self.collar_type}{self.sleeve_type} {self.color}'
 
     @property
     def total_qty(self):

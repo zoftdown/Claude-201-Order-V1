@@ -30,6 +30,21 @@ def order_list(request):
     })
 
 
+def _copy_images_from_first(request, formset):
+    """Copy design_image from first saved item to items that checked 'copy image'."""
+    saved = [f.instance for f in formset.forms if f.instance.pk and not f.cleaned_data.get('DELETE')]
+    if len(saved) < 2:
+        return
+    first_img = saved[0].design_image
+    if not first_img:
+        return
+    for i, item in enumerate(saved[1:], 1):
+        cb_key = f'copy_image_{i}'
+        if request.POST.get(cb_key) == 'on' and not item.design_image:
+            item.design_image = first_img
+            item.save()
+
+
 def order_create(request):
     if request.method == 'POST':
         form = OrderForm(request.POST)
@@ -40,6 +55,7 @@ def order_create(request):
             order.save()
             formset.instance = order
             formset.save()
+            _copy_images_from_first(request, formset)
             return redirect('order_detail', pk=order.pk)
     else:
         form = OrderForm()
@@ -60,6 +76,7 @@ def order_edit(request, pk):
         if form.is_valid() and formset.is_valid():
             form.save()
             formset.save()
+            _copy_images_from_first(request, formset)
             return redirect('order_detail', pk=order.pk)
     else:
         form = OrderForm(instance=order)

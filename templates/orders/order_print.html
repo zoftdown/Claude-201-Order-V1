@@ -62,7 +62,8 @@
         }
         .customer-link {
             display: inline-block;
-            font-size: 10pt;
+            font-size: 14pt;
+            font-weight: bold;
             color: #1976D2;
             text-decoration: none;
             word-break: break-all;
@@ -115,11 +116,11 @@
         }
         .special-note-box {
             display: inline-block;
-            font-size: 12pt;
-            font-weight: 700;
+            font-size: 16pt;
+            font-weight: 800;
             color: #d32f2f;
             border: 2px solid #d32f2f;
-            padding: 3px 14px;
+            padding: 4px 18px;
             border-radius: 5px;
             margin-top: 6px;
         }
@@ -297,7 +298,7 @@
                 font-size: 16pt;
             }
             .customer-link {
-                font-size: 8.5pt;
+                font-size: 12pt;
             }
             .header-left .print-date {
                 font-size: 11pt;
@@ -331,8 +332,8 @@
                 font-size: 12pt;
             }
             .special-note-box {
-                font-size: 10pt;
-                padding: 2px 10px;
+                font-size: 13pt;
+                padding: 3px 12px;
             }
 
             /* Item Card */
@@ -461,7 +462,7 @@
 <!-- ===== Print Controls (ซ่อนตอนพิมพ์) ===== -->
 <div class="print-controls">
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
-    <button class="btn-back" onclick="history.back()">กลับ</button>
+    <button class="btn-back" onclick="window.location.href='/{{ order.pk }}/'">กลับ</button>
 </div>
 
 {% for page_items in pages %}
@@ -519,7 +520,7 @@
         </div>
         <div class="item-detail">
             <div class="item-type">
-                คอกลม{{ item.shirt_type }}
+                {{ item.collar_type }}{{ item.sleeve_type }}
             </div>
             <ul class="size-list">
                 {% for size in item.sizes_display %}

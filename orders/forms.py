@@ -26,11 +26,12 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
         fields = [
             'source', 'customer_name',
             'customer_link', 'shirt_name', 'fabric_spec', 'special_note',
-            'total_price', 'deposit', 'delivery_method', 'status',
+            'total_price', 'deposit', 'delivery_method', 'shipping_address', 'status',
         ]
         widgets = {
             'fabric_spec': forms.Textarea(attrs={'rows': 2, 'placeholder': 'ผ้า 120 แกรม'}),
             'special_note': forms.Textarea(attrs={'rows': 2}),
+            'shipping_address': forms.Textarea(attrs={'rows': 3, 'placeholder': 'ชื่อ-ที่อยู่-เบอร์โทร สำหรับจัดส่งพัสดุ'}),
         }
 
 
@@ -39,7 +40,7 @@ class OrderItemForm(BootstrapMixin, forms.ModelForm):
 
     class Meta:
         model = OrderItem
-        fields = ['design_image', 'shirt_type', 'color']
+        fields = ['design_image', 'sleeve_type', 'collar_type', 'color']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
