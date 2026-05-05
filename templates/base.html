@@ -15,7 +15,16 @@
     <nav class="navbar navbar-dark mb-3">
         <div class="container-fluid">
             <a class="navbar-brand" href="{% url 'order_list' %}">ระบบออร์เดอร์ร้านพิมพ์เสื้อ</a>
-            <a href="{% url 'order_create' %}" class="btn btn-success btn-sm">+ สร้างออร์เดอร์</a>
+            <div class="d-flex align-items-center gap-2">
+                <a href="{% url 'order_create' %}" class="btn btn-success btn-sm">+ สร้างออร์เดอร์</a>
+                {% if user.is_authenticated %}
+                <span class="text-light small">👤 {{ user.username }}</span>
+                <form method="post" action="{% url 'logout' %}" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-light btn-sm">ออกจากระบบ</button>
+                </form>
+                {% endif %}
+            </div>
         </div>
     </nav>
 

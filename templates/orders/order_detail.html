@@ -1,12 +1,19 @@
 {% extends "base.html" %}
+{% load auth_extras %}
 {% block title %}{{ order.order_number }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0">{{ order.order_number }} — {{ order.customer_name }}</h4>
-    <div>
+    <div class="d-flex gap-1">
         <a href="{% url 'order_print' order.pk %}" class="btn btn-success btn-sm" target="_blank">พิมพ์ใบงาน</a>
         <a href="{% url 'order_edit' order.pk %}" class="btn btn-primary btn-sm">แก้ไข</a>
+        {% if user|is_admin %}
+        <form method="post" action="{% url 'order_delete' order.pk %}" class="m-0" onsubmit="return confirm('ยืนยันการลบออร์เดอร์ {{ order.order_number }}?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">ลบ</button>
+        </form>
+        {% endif %}
         <a href="{% url 'order_list' %}" class="btn btn-outline-secondary btn-sm">กลับ</a>
     </div>
 </div>

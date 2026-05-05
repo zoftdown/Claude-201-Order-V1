@@ -1,10 +1,18 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from .models import Order
 from .forms import OrderForm, OrderItemFormSet
 
 
+def _is_admin(user):
+    return user.is_superuser or user.groups.filter(name='admin').exists()
+
+
+@login_required
 def order_list(request):
     orders = Order.objects.prefetch_related('items').all()
 
@@ -45,6 +53,7 @@ def _copy_images_from_first(request, formset):
             item.save()
 
 
+@login_required
 def order_create(request):
     if request.method == 'POST':
         form = OrderForm(request.POST)
@@ -68,6 +77,7 @@ def order_create(request):
     })
 
 
+@login_required
 def order_edit(request, pk):
     order = get_object_or_404(Order, pk=pk)
     if request.method == 'POST':
@@ -90,11 +100,13 @@ def order_edit(request, pk):
     })
 
 
+@login_required
 def order_detail(request, pk):
     order = get_object_or_404(Order, pk=pk)
     return render(request, 'orders/order_detail.html', {'order': order})
 
 
+@login_required
 def order_print(request, pk):
     order = get_object_or_404(Order, pk=pk)
     items = list(order.items.all())
@@ -113,3 +125,13 @@ def order_print(request, pk):
         'pages': pages,
         'is_single_item': len(items) == 1,
     })
+
+
+@login_required
+@require_POST
+def order_delete(request, pk):
+    if not _is_admin(request.user):
+        raise PermissionDenied
+    order = get_object_or_404(Order, pk=pk)
+    order.delete()
+    return redirect('order_list')

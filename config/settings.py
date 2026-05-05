@@ -21,6 +21,11 @@ CSRF_TRUSTED_ORIGINS = os.environ.get(
 # --- Sub-path deployment (dr89.cloud/order/) ---
 FORCE_SCRIPT_NAME = os.environ.get('FORCE_SCRIPT_NAME', '')  # '/order' in production
 
+# --- Authentication redirects ---
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'order_list'
+LOGOUT_REDIRECT_URL = 'login'
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
