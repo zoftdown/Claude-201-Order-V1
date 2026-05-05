@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ dept.name }} — Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f4f5f7;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", sans-serif;
+        }
+        .wrap { max-width: 600px; margin: 0 auto; padding: 1rem; }
+        .dept-header {
+            background: {{ dept.color }};
+            color: #fff;
+            padding: 1.25rem 1rem;
+            border-radius: 14px;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .dept-title { font-size: 1.4rem; font-weight: 700; margin: 0; }
+        .dept-icon { font-size: 1.6rem; margin-right: 0.4rem; }
+        .change-btn {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .change-btn:hover { background: rgba(255, 255, 255, 0.35); color: #fff; }
+        .placeholder-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 2.5rem 1rem;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .cookie-info {
+            background: #d4edda;
+            color: #155724;
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .cookie-info code {
+            background: rgba(0, 0, 0, 0.08);
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="dept-header">
+            <h1 class="dept-title">
+                <span class="dept-icon" aria-hidden="true">{{ dept.icon }}</span>{{ dept.name }}
+            </h1>
+            <a href="{% url 'clear_department' %}" class="change-btn">เปลี่ยนแผนก</a>
+        </div>
+
+        <div class="placeholder-card">
+            <p class="text-muted mb-2">Dashboard สำหรับแผนก <strong>{{ dept.name }}</strong></p>
+            <p class="small text-muted mb-0">(จะ implement ใน Step 4)</p>
+        </div>
+
+        <div class="cookie-info">
+            ✓ Cookie <code>production_dept={{ dept.slug }}</code> ถูก set แล้ว (อายุ 365 วัน)
+            {% if requested_slug != dept.slug %}
+            <br><small>(URL ขอ <code>{{ requested_slug }}</code> — แต่ cookie คุณคือ <code>{{ dept.slug }}</code>)</small>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

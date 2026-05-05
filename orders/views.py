@@ -1,11 +1,20 @@
-from django.shortcuts import render, get_object_or_404, redirect
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
-from .models import Order
+
+from .decorators import require_department
+from .departments import DEPARTMENTS, VALID_SLUGS
 from .forms import OrderForm, OrderItemFormSet
+from .models import Order
+
+DEPT_COOKIE_NAME = 'production_dept'
+DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
 
 
 def _is_admin(user):
@@ -135,3 +144,65 @@ def order_delete(request, pk):
     order = get_object_or_404(Order, pk=pk)
     order.delete()
     return redirect('order_list')
+
+
+# ---------------------------------------------------------------------------
+# Production-channel views (cookie-based, no Django login)
+# See CLAUDE-V1.6.md §1
+# ---------------------------------------------------------------------------
+
+def _safe_next(request, candidate):
+    """Return candidate if it's a same-host relative path, else None."""
+    if not candidate:
+        return None
+    if not url_has_allowed_host_and_scheme(
+        candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return None
+    return candidate
+
+
+def select_department(request):
+    if request.method == 'POST':
+        slug = request.POST.get('department')
+        if slug not in VALID_SLUGS:
+            return redirect('select_department')
+
+        next_url = (
+            _safe_next(request, request.POST.get('next'))
+            or reverse('dept_dashboard', kwargs={'slug': slug})
+        )
+        response = redirect(next_url)
+        response.set_cookie(
+            DEPT_COOKIE_NAME,
+            slug,
+            max_age=DEPT_COOKIE_MAX_AGE,
+            httponly=True,
+            samesite='Lax',
+            secure=not settings.DEBUG,
+        )
+        return response
+
+    return render(request, 'orders/select_department.html', {
+        'departments': DEPARTMENTS,
+        'next': _safe_next(request, request.GET.get('next')) or '',
+        'current_slug': request.COOKIES.get(DEPT_COOKIE_NAME),
+    })
+
+
+def clear_department(request):
+    response = redirect('select_department')
+    response.delete_cookie(DEPT_COOKIE_NAME)
+    return response
+
+
+@require_department
+def dept_dashboard(request, slug):
+    # Step 4 will replace this with the real dashboard.
+    # For now, prove the cookie + decorator round-trip works end-to-end.
+    return render(request, 'orders/dept_placeholder.html', {
+        'dept': request.production_dept,
+        'requested_slug': slug,
+    })
