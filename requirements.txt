@@ -3,3 +3,4 @@ Pillow>=10.0
 gunicorn>=21.2
 whitenoise>=6.5
 psycopg2-binary>=2.9
+qrcode[pil]>=7.4
