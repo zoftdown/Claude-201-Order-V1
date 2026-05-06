@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ order.order_number }} — {{ dept.name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f4f5f7;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", sans-serif;
+            padding-bottom: 2rem;
+        }
+        .wrap { max-width: 600px; margin: 0 auto; padding: 1rem; }
+
+        .dept-header {
+            background: {{ dept.color }};
+            color: #fff;
+            padding: 1rem;
+            border-radius: 14px;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .dept-title { font-size: 1.2rem; font-weight: 700; margin: 0; }
+        .dept-icon { font-size: 1.5rem; margin-right: 0.4rem; }
+        .change-btn {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 0.35rem 0.7rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+        .change-btn:hover { background: rgba(255, 255, 255, 0.35); color: #fff; }
+
+        .order-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+        .order-thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: #ecf0f1;
+            flex-shrink: 0;
+        }
+        .order-thumb-placeholder {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            background: #ecf0f1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: #bdc3c7;
+            flex-shrink: 0;
+        }
+        .order-info { flex: 1; min-width: 0; }
+        .order-num { font-size: 1.1rem; font-weight: 700; color: #2c3e50; margin: 0 0 0.15rem; }
+        .order-meta { font-size: 0.85rem; color: #7f8c8d; margin: 0.05rem 0; }
+        .order-meta strong { color: #34495e; }
+        .repair-badge {
+            display: inline-block;
+            background: #e74c3c;
+            color: #fff;
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+        }
+
+        .section-title {
+            font-size: 0.95rem;
+            color: #7f8c8d;
+            margin: 1rem 0 0.5rem;
+            font-weight: 600;
+        }
+
+        .action-form { margin-bottom: 0.6rem; }
+        .action-btn {
+            width: 100%;
+            min-height: 60px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+            transition: transform 0.06s ease;
+        }
+        .action-btn:active { transform: scale(0.98); }
+        .action-btn.success { background: #27ae60; }
+        .action-btn.danger  { background: #e74c3c; }
+        .action-btn.info    { background: #3498db; }
+        .action-btn.warning { background: #f39c12; }
+
+        .completed-card {
+            background: #ecf0f1;
+            color: #7f8c8d;
+            border-radius: 12px;
+            padding: 0.8rem 1rem;
+            margin-bottom: 0.6rem;
+            text-align: center;
+            font-size: 0.95rem;
+        }
+        .completed-card strong { color: #34495e; }
+        .completed-card .ts { font-size: 0.8rem; color: #95a5a6; display: block; margin-top: 0.2rem; }
+
+        .empty-state {
+            background: #fff;
+            border-radius: 12px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            color: #95a5a6;
+            font-size: 0.95rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .tailor-form {
+            background: #fff;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.6rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .tailor-list { margin-bottom: 0.8rem; }
+        .tailor-row {
+            display: flex;
+            align-items: center;
+            padding: 0.55rem 0.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .tailor-row:hover { background: #f8f9fa; }
+        .tailor-row input[type="checkbox"] {
+            width: 22px;
+            height: 22px;
+            margin-right: 0.7rem;
+            cursor: pointer;
+        }
+        .tailor-row label { font-size: 1rem; cursor: pointer; flex: 1; margin: 0; }
+
+        .timeline-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .timeline-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.45rem 0;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 0.9rem;
+        }
+        .timeline-row:last-child { border-bottom: none; }
+        .timeline-label { color: #34495e; font-weight: 600; }
+        .timeline-label .check { color: #27ae60; margin-right: 0.3rem; }
+        .timeline-ts { color: #95a5a6; font-size: 0.8rem; }
+
+        .toast-stack {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            width: calc(100% - 2rem);
+            max-width: 420px;
+        }
+        .toast-item {
+            padding: 0.8rem 1rem;
+            border-radius: 10px;
+            margin-bottom: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+            font-weight: 600;
+            text-align: center;
+            opacity: 1;
+            transition: opacity 0.4s ease;
+        }
+        .toast-item.success { background: #27ae60; color: #fff; }
+        .toast-item.error   { background: #e74c3c; color: #fff; }
+        .toast-item.fade    { opacity: 0; }
+
+        .order-link {
+            display: inline-block;
+            margin-top: 0.3rem;
+            font-size: 0.8rem;
+            color: #3498db;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    {% if messages %}
+    <div class="toast-stack" id="toastStack">
+        {% for m in messages %}
+        <div class="toast-item {% if m.tags == 'error' %}error{% else %}success{% endif %}">
+            {{ m }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="wrap">
+        <div class="dept-header">
+            <h1 class="dept-title">
+                <span class="dept-icon" aria-hidden="true">{{ dept.icon }}</span>{{ dept.name }}
+            </h1>
+            <a href="{% url 'clear_department' %}" class="change-btn">เปลี่ยนแผนก</a>
+        </div>
+
+        <div class="order-card">
+            {% if first_item.design_image %}
+            <img src="{{ first_item.design_image.url }}" alt="design" class="order-thumb">
+            {% else %}
+            <div class="order-thumb-placeholder" aria-hidden="true">👕</div>
+            {% endif %}
+            <div class="order-info">
+                <p class="order-num">{{ order.order_number }}</p>
+                <p class="order-meta"><strong>ลูกค้า:</strong> {{ order.customer_name }}</p>
+                <p class="order-meta"><strong>งาน:</strong> {{ order.shirt_name }}</p>
+                <p class="order-meta"><strong>รวม:</strong> {{ order.total_qty }} ตัว</p>
+                {% if order.needs_repair %}
+                <span class="repair-badge">⚠ ต้องซ่อม</span>
+                {% endif %}
+            </div>
+        </div>
+
+        {# --- Active actions --- #}
+        {% if actions or tailors %}
+        <h2 class="section-title">สิ่งที่กดได้</h2>
+
+        {% if tailors %}
+        <form method="post" class="tailor-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="sew_send">
+            <p class="mb-2 fw-bold text-secondary">เลือกคนเย็บที่จะส่งงานนี้ให้:</p>
+            <div class="tailor-list">
+                {% for t in tailors %}
+                <div class="tailor-row" onclick="document.getElementById('tailor-{{ t.id }}').click()">
+                    <input type="checkbox" name="tailors" value="{{ t.id }}" id="tailor-{{ t.id }}">
+                    <label for="tailor-{{ t.id }}">{{ t.name }}{% if t.phone %} <small class="text-muted">{{ t.phone }}</small>{% endif %}</label>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="action-btn success">ส่งให้คนเย็บ</button>
+        </form>
+        {% endif %}
+
+        {% for a in actions %}
+        <form method="post" class="action-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="{{ a.key }}">
+            <button type="submit" class="action-btn {{ a.color }}">{{ a.label }}</button>
+        </form>
+        {% endfor %}
+        {% endif %}
+
+        {# --- Already-completed in this dept (shows above timeline) --- #}
+        {% for label, ts in completed %}
+        <div class="completed-card">
+            ✓ <strong>{{ label }}</strong>
+            <span class="ts">{{ ts|date:"j M Y H:i" }}</span>
+        </div>
+        {% endfor %}
+
+        {% if not actions and not tailors and not completed %}
+        <div class="empty-state">
+            งานนี้ยังไม่ถึง <strong>{{ dept.name }}</strong> หรือไม่มีปุ่มที่กดได้สำหรับแผนกของคุณ
+        </div>
+        {% endif %}
+
+        {# --- Timeline of completed stages (across all depts) --- #}
+        {% if timeline %}
+        <h2 class="section-title">ความคืบหน้า</h2>
+        <div class="timeline-card">
+            {% for stage in timeline %}
+            <div class="timeline-row">
+                <span class="timeline-label"><span class="check">✓</span>{{ stage.label }}</span>
+                <span class="timeline-ts">{{ stage.timestamp|date:"j M H:i" }}</span>
+            </div>
+            {% endfor %}
+            {% if order_tailors %}
+            <div class="timeline-row">
+                <span class="timeline-label" style="padding-left: 1.2rem;">คนเย็บ:</span>
+                <span class="timeline-ts">{% for t in order_tailors %}{{ t.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        // Auto-fade toast after 3s, then remove from DOM
+        setTimeout(function () {
+            var stack = document.getElementById('toastStack');
+            if (!stack) return;
+            stack.querySelectorAll('.toast-item').forEach(function (el) {
+                el.classList.add('fade');
+            });
+            setTimeout(function () { stack.remove(); }, 500);
+        }, 3000);
+    </script>
+</body>
+</html>

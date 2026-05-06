@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
@@ -11,7 +12,7 @@ from django.views.decorators.http import require_POST
 from .decorators import require_department
 from .departments import DEPARTMENTS, VALID_SLUGS
 from .forms import OrderForm, OrderItemFormSet
-from .models import Order
+from .models import Order, StageLog, Tailor
 
 DEPT_COOKIE_NAME = 'production_dept'
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
@@ -205,4 +206,216 @@ def dept_dashboard(request, slug):
     return render(request, 'orders/dept_placeholder.html', {
         'dept': request.production_dept,
         'requested_slug': slug,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Update view (Step 3) — fired by QR scan from the production floor
+# ---------------------------------------------------------------------------
+
+# Stages shown in the timeline (in workflow order)
+STAGE_TIMELINE = [
+    ('print', 'พิมพ์',     'print_done_at'),
+    ('roll',  'โรล',        'roll_done_at'),
+    ('cut',   'ตัด',        'cut_done_at'),
+    ('sort',  'คัด',        'sort_done_at'),
+    ('sew',   'ส่งเย็บ',     'sent_to_tailors_at'),
+    ('pack',  'รีด+แพ็ค',  'packed_at'),
+]
+
+
+def _build_actions(order, dept_slug):
+    """Return list of {key, label, color} buttons to render for this dept."""
+    a = []
+    if dept_slug == 'print':
+        if order.print_done_at is None:
+            a.append({'key': 'print_done', 'label': 'พิมพ์เสร็จ', 'color': 'success'})
+        if order.needs_repair:
+            a.append({'key': 'print_repair', 'label': 'ซ่อมเสร็จ', 'color': 'success'})
+    elif dept_slug == 'roll':
+        if order.roll_done_at is None:
+            a.append({'key': 'roll_done', 'label': 'โรลเสร็จ', 'color': 'success'})
+    elif dept_slug == 'cut':
+        if order.cut_done_at is None:
+            a.append({'key': 'cut_done', 'label': 'ตัดเสร็จ', 'color': 'success'})
+    elif dept_slug == 'sort':
+        if order.sort_done_at is None:
+            a.append({'key': 'sort_done', 'label': 'ครบ', 'color': 'success'})
+            a.append({'key': 'sort_repair', 'label': 'ส่งซ่อม', 'color': 'danger'})
+    elif dept_slug == 'pack':
+        if order.packed_at is None:
+            a.append({'key': 'pack_done', 'label': 'รีดแพ็คแล้ว', 'color': 'success'})
+        elif order.shipped_at is None and order.awaiting_pickup_at is None:
+            a.append({'key': 'pack_shipped', 'label': 'ส่งแล้ว', 'color': 'info'})
+            a.append({'key': 'pack_pickup', 'label': 'รอมารับ', 'color': 'warning'})
+    return a
+
+
+def _completed_for_dept(order, dept_slug):
+    """Return list of (label, timestamp) showing what this dept already finished."""
+    completed = []
+    if dept_slug == 'print':
+        if order.print_done_at:
+            completed.append(('พิมพ์เสร็จ', order.print_done_at))
+        if order.repair_done_at:
+            completed.append(('ซ่อมเสร็จล่าสุด', order.repair_done_at))
+    elif dept_slug == 'roll' and order.roll_done_at:
+        completed.append(('โรลเสร็จ', order.roll_done_at))
+    elif dept_slug == 'cut' and order.cut_done_at:
+        completed.append(('ตัดเสร็จ', order.cut_done_at))
+    elif dept_slug == 'sort' and order.sort_done_at:
+        completed.append(('คัดครบ', order.sort_done_at))
+    elif dept_slug == 'sew' and order.sent_to_tailors_at:
+        completed.append(('ส่งเย็บแล้ว', order.sent_to_tailors_at))
+    elif dept_slug == 'pack':
+        if order.packed_at:
+            completed.append(('รีดแพ็คแล้ว', order.packed_at))
+        if order.shipped_at:
+            completed.append(('ส่งแล้ว', order.shipped_at))
+        if order.awaiting_pickup_at:
+            completed.append(('รอมารับ', order.awaiting_pickup_at))
+    return completed
+
+
+def _apply_action(order, dept_slug, action, request):
+    """Mutate order based on action. Returns (success, message)."""
+    now = timezone.now()
+
+    # (department, action) → handler logic
+    if dept_slug == 'print' and action == 'print_done':
+        if order.print_done_at:
+            return False, 'รายการนี้ถูกบันทึก "พิมพ์เสร็จ" ไปแล้ว'
+        order.print_done_at = now
+        order.save(update_fields=['print_done_at'])
+        StageLog.objects.create(order=order, department='print', action='print_done')
+        return True, '✓ บันทึก "พิมพ์เสร็จ" แล้ว'
+
+    if dept_slug == 'print' and action == 'print_repair':
+        if not order.needs_repair:
+            return False, 'ไม่มีงานซ่อมที่ค้างอยู่'
+        order.needs_repair = False
+        order.repair_done_at = now
+        order.save(update_fields=['needs_repair', 'repair_done_at'])
+        StageLog.objects.create(order=order, department='print', action='print_repair')
+        return True, '✓ บันทึก "ซ่อมเสร็จ" แล้ว'
+
+    if dept_slug == 'roll' and action == 'roll_done':
+        if order.roll_done_at:
+            return False, 'รายการนี้ถูกบันทึกไปแล้ว'
+        order.roll_done_at = now
+        order.save(update_fields=['roll_done_at'])
+        StageLog.objects.create(order=order, department='roll', action='roll_done')
+        return True, '✓ บันทึก "โรลเสร็จ" แล้ว'
+
+    if dept_slug == 'cut' and action == 'cut_done':
+        if order.cut_done_at:
+            return False, 'รายการนี้ถูกบันทึกไปแล้ว'
+        order.cut_done_at = now
+        order.save(update_fields=['cut_done_at'])
+        StageLog.objects.create(order=order, department='cut', action='cut_done')
+        return True, '✓ บันทึก "ตัดเสร็จ" แล้ว'
+
+    if dept_slug == 'sort' and action == 'sort_done':
+        if order.sort_done_at:
+            return False, 'รายการนี้ถูกบันทึกไปแล้ว'
+        order.sort_done_at = now
+        order.save(update_fields=['sort_done_at'])
+        StageLog.objects.create(order=order, department='sort', action='sort_done')
+        return True, '✓ บันทึก "ครบ" แล้ว'
+
+    if dept_slug == 'sort' and action == 'sort_repair':
+        if order.needs_repair:
+            return False, 'งานนี้ส่งซ่อมไปแล้ว รอแผนกพิมพ์'
+        order.needs_repair = True
+        order.save(update_fields=['needs_repair'])
+        StageLog.objects.create(order=order, department='sort', action='sort_repair')
+        return True, '✓ ส่งซ่อมแล้ว — รอแผนกพิมพ์'
+
+    if dept_slug == 'sew' and action == 'sew_send':
+        if order.sent_to_tailors_at:
+            return False, 'งานนี้ถูกส่งให้คนเย็บไปแล้ว'
+        tailor_ids = request.POST.getlist('tailors')
+        if not tailor_ids:
+            return False, 'กรุณาเลือกคนเย็บอย่างน้อย 1 คน'
+        tailors = list(Tailor.objects.filter(id__in=tailor_ids, is_active=True))
+        if not tailors:
+            return False, 'คนเย็บที่เลือกไม่ถูกต้อง'
+        order.sent_to_tailors_at = now
+        order.save(update_fields=['sent_to_tailors_at'])
+        order.tailors.set(tailors)
+        names = ', '.join(t.name for t in tailors)
+        StageLog.objects.create(
+            order=order, department='sew', action='sew_send',
+            note=f'ส่งให้: {names}',
+        )
+        return True, f'✓ ส่งให้คนเย็บแล้ว ({names})'
+
+    if dept_slug == 'pack' and action == 'pack_done':
+        if order.packed_at:
+            return False, 'รายการนี้ถูกบันทึกไปแล้ว'
+        order.packed_at = now
+        order.save(update_fields=['packed_at'])
+        StageLog.objects.create(order=order, department='pack', action='pack_done')
+        return True, '✓ บันทึก "รีดแพ็คแล้ว" แล้ว'
+
+    if dept_slug == 'pack' and action == 'pack_shipped':
+        if not order.packed_at:
+            return False, 'ต้องรีดแพ็คก่อน'
+        if order.shipped_at or order.awaiting_pickup_at:
+            return False, 'งานนี้ถูกบันทึกไปแล้ว'
+        order.shipped_at = now
+        order.save(update_fields=['shipped_at'])
+        StageLog.objects.create(order=order, department='pack', action='pack_shipped')
+        return True, '✓ บันทึก "ส่งแล้ว"'
+
+    if dept_slug == 'pack' and action == 'pack_pickup':
+        if not order.packed_at:
+            return False, 'ต้องรีดแพ็คก่อน'
+        if order.shipped_at or order.awaiting_pickup_at:
+            return False, 'งานนี้ถูกบันทึกไปแล้ว'
+        order.awaiting_pickup_at = now
+        order.save(update_fields=['awaiting_pickup_at'])
+        StageLog.objects.create(order=order, department='pack', action='pack_pickup')
+        return True, '✓ บันทึก "รอมารับ"'
+
+    return False, 'การกระทำนี้ไม่ถูกต้องสำหรับแผนกของคุณ'
+
+
+@require_department
+def update_order_stage(request, order_number):
+    order = get_object_or_404(Order, order_number=order_number)
+    dept = request.production_dept
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        ok, msg = _apply_action(order, dept['slug'], action, request)
+        (messages.success if ok else messages.error)(request, msg)
+        return redirect('update_order_stage', order_number=order_number)
+
+    actions = _build_actions(order, dept['slug'])
+    completed = _completed_for_dept(order, dept['slug'])
+
+    timeline = []
+    for slug, label, field in STAGE_TIMELINE:
+        ts = getattr(order, field)
+        if ts:
+            timeline.append({'slug': slug, 'label': label, 'timestamp': ts})
+
+    tailors = (
+        Tailor.objects.filter(is_active=True)
+        if dept['slug'] == 'sew' and order.sent_to_tailors_at is None
+        else None
+    )
+
+    first_item = order.items.first()
+
+    return render(request, 'orders/update_order_stage.html', {
+        'order': order,
+        'dept': dept,
+        'actions': actions,
+        'completed': completed,
+        'timeline': timeline,
+        'tailors': tailors,
+        'first_item': first_item,
+        'order_tailors': list(order.tailors.all()) if order.sent_to_tailors_at else [],
     })
