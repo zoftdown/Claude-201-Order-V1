@@ -97,6 +97,28 @@
             line-height: 1.6;
         }
 
+        /* ===== QR Code (top-right corner of first page) ===== */
+        .qr-block {
+            display: inline-block;
+            width: 30mm;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+        .qr-block svg {
+            width: 30mm;
+            height: 30mm;
+            display: block;
+            margin: 0 auto;
+        }
+        .qr-label {
+            font-size: 8pt;
+            font-weight: 600;
+            color: #555;
+            margin-top: 2px;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
         /* ===== Shirt Info ===== */
         .shirt-info {
             text-align: center;
@@ -315,6 +337,19 @@
                 padding: 2px 8px;
                 margin-bottom: 0;
             }
+            /* Smaller QR on mobile so it doesn't dominate the header */
+            .qr-block {
+                width: 22mm;
+                margin-bottom: 0;
+                margin-right: 6px;
+            }
+            .qr-block svg {
+                width: 22mm;
+                height: 22mm;
+            }
+            .qr-label {
+                font-size: 7pt;
+            }
             .price-line {
                 font-size: 11pt;
                 line-height: 1.4;
@@ -450,6 +485,10 @@
                 width: 90mm;
                 height: 90mm;
             }
+
+            /* Force QR + label to print in pure black/white for max contrast */
+            .qr-block svg path { fill: #000 !important; }
+            .qr-label { color: #000 !important; }
         }
         @page {
             size: A4;
@@ -487,6 +526,12 @@
             </div>
         </div>
         <div class="header-right">
+            {% if qr_svg %}
+            <div class="qr-block" aria-label="QR สแกนเพื่ออัปเดทสถานะ">
+                {{ qr_svg|safe }}
+                <div class="qr-label">สแกนเพื่ออัปเดทสถานะ</div>
+            </div>
+            {% endif %}
             <div class="order-num">{{ order.order_number }}</div>
             <div class="price-line">ยอด {{ order.total_price|floatformat:0 }} บาท</div>
             <div class="price-line">มัดจำ {{ order.deposit|floatformat:0 }} บาท</div>

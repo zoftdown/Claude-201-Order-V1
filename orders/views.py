@@ -15,6 +15,7 @@ from .decorators import require_department
 from .departments import DEPARTMENTS, VALID_SLUGS
 from .forms import OrderForm, OrderItemFormSet
 from .models import Order, StageLog, Tailor
+from .qr_utils import generate_qr_svg
 
 DEPT_COOKIE_NAME = 'production_dept'
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
@@ -132,10 +133,20 @@ def order_print(request, pk):
             pages.append(remaining[:3])  # Subsequent pages: max 3 items
             remaining = remaining[3:]
 
+    # QR code → URL of the production-floor /update/ page for this order.
+    # build_absolute_uri respects the request's scheme + host + FORCE_SCRIPT_NAME,
+    # so the same code emits localhost URLs in dev and dr89.cloud URLs in prod.
+    update_url = request.build_absolute_uri(
+        reverse('update_order_stage', kwargs={'order_number': order.order_number})
+    )
+    qr_svg = generate_qr_svg(update_url)
+
     return render(request, 'orders/order_print.html', {
         'order': order,
         'pages': pages,
         'is_single_item': len(items) == 1,
+        'qr_svg': qr_svg,
+        'update_url': update_url,
     })
 
 
