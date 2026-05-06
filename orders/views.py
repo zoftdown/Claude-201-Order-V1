@@ -1,8 +1,10 @@
+from datetime import datetime, time
+
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -199,13 +201,135 @@ def clear_department(request):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Dashboard query config (Step 4)
+#
+# Each dept sees orders that have finished the previous stage but not yet
+# their own. Print is the entry point, so it uses created_date.
+# Repair (needs_repair=True) is shown separately to the print dept.
+# Orders that finished pack (packed_at NOT NULL) drop out of every list.
+# ---------------------------------------------------------------------------
+
+DEPT_PENDING_CONFIG = {
+    'print': {
+        'filter': Q(print_done_at__isnull=True) & Q(needs_repair=False),
+        'enter_field': 'created_date',
+    },
+    'roll': {
+        'filter': Q(print_done_at__isnull=False) & Q(roll_done_at__isnull=True),
+        'enter_field': 'print_done_at',
+    },
+    'cut': {
+        'filter': Q(roll_done_at__isnull=False) & Q(cut_done_at__isnull=True),
+        'enter_field': 'roll_done_at',
+    },
+    'sort': {
+        'filter': Q(cut_done_at__isnull=False) & Q(sort_done_at__isnull=True) & Q(needs_repair=False),
+        'enter_field': 'cut_done_at',
+    },
+    'sew': {
+        'filter': Q(sort_done_at__isnull=False) & Q(sent_to_tailors_at__isnull=True),
+        'enter_field': 'sort_done_at',
+    },
+    'pack': {
+        'filter': Q(sent_to_tailors_at__isnull=False) & Q(packed_at__isnull=True),
+        'enter_field': 'sent_to_tailors_at',
+    },
+}
+
+
+def _format_waiting(when):
+    """Return Thai short text like 'เพิ่งเข้า', '3 ชั่วโมง', '2 วัน'."""
+    if not when:
+        return ''
+    # Promote DateField → aware datetime at start-of-day
+    if not hasattr(when, 'hour'):
+        dt = datetime.combine(when, time.min)
+        when_aware = timezone.make_aware(dt) if timezone.is_naive(dt) else dt
+    else:
+        when_aware = when
+    delta = timezone.now() - when_aware
+    hours = delta.total_seconds() / 3600
+    if hours < 1:
+        return 'เพิ่งเข้า'
+    if hours < 24:
+        return f'{int(hours)} ชั่วโมง'
+    return f'{int(hours / 24)} วัน'
+
+
+def _build_pending_rows(qs, enter_field, *, attr_override=None):
+    """Materialize queryset into list of dicts the template can iterate cheaply.
+
+    Uses the prefetch cache to grab the first item without an extra query.
+    """
+    rows = []
+    for o in qs:
+        items_cache = list(o.items.all())  # uses prefetch cache
+        first_item = items_cache[0] if items_cache else None
+        if attr_override:
+            enter_at = getattr(o, attr_override)
+        else:
+            enter_at = getattr(o, enter_field)
+        rows.append({
+            'order': o,
+            'first_item': first_item,
+            'enter_at': enter_at,
+            'waiting': _format_waiting(enter_at),
+        })
+    return rows
+
+
 @require_department
 def dept_dashboard(request, slug):
-    # Step 4 will replace this with the real dashboard.
-    # For now, prove the cookie + decorator round-trip works end-to-end.
-    return render(request, 'orders/dept_placeholder.html', {
-        'dept': request.production_dept,
-        'requested_slug': slug,
+    dept = request.production_dept
+
+    # --- Counters across the whole shop (one query each — keeps view simple) ---
+    counters = []
+    for d in DEPARTMENTS:
+        cfg = DEPT_PENDING_CONFIG[d['slug']]
+        counters.append({
+            'slug': d['slug'],
+            'name': d['name'],
+            'icon': d['icon'],
+            'color': d['color'],
+            'count': Order.objects.filter(cfg['filter']).count(),
+            'is_current': d['slug'] == dept['slug'],
+        })
+    repair_count = Order.objects.filter(needs_repair=True).count()
+
+    # --- My pending orders (oldest first = most urgent at top) ---
+    cfg = DEPT_PENDING_CONFIG[dept['slug']]
+    pending_qs = (
+        Order.objects.filter(cfg['filter'])
+        .prefetch_related('items')
+        .order_by(cfg['enter_field'], 'id')
+    )
+    pending = _build_pending_rows(pending_qs, cfg['enter_field'])
+
+    # --- Repair queue (print dept only) ---
+    repair_rows = []
+    if dept['slug'] == 'print':
+        latest_repair = StageLog.objects.filter(
+            order=OuterRef('pk'),
+            action='sort_repair',
+        ).order_by('-created_at').values('created_at')[:1]
+
+        repair_qs = (
+            Order.objects.filter(needs_repair=True)
+            .annotate(repair_requested_at=Subquery(latest_repair))
+            .prefetch_related('items')
+            .order_by('repair_requested_at', '-id')
+        )
+        repair_rows = _build_pending_rows(
+            repair_qs, '', attr_override='repair_requested_at'
+        )
+
+    return render(request, 'orders/dept_dashboard.html', {
+        'dept': dept,
+        'counters': counters,
+        'repair_count': repair_count,
+        'pending': pending,
+        'repair_rows': repair_rows,
     })
 
 

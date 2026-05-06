@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30">
+    <title>{{ dept.name }} — Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f4f5f7;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", sans-serif;
+            padding-bottom: 2rem;
+        }
+        .wrap { max-width: 700px; margin: 0 auto; padding: 1rem; }
+
+        /* --- Header --- */
+        .dept-header {
+            background: {{ dept.color }};
+            color: #fff;
+            padding: 1rem;
+            border-radius: 14px;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .dept-title { font-size: 1.3rem; font-weight: 700; margin: 0; }
+        .dept-icon { font-size: 1.6rem; margin-right: 0.4rem; }
+        .change-btn {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+        .change-btn:hover { background: rgba(255, 255, 255, 0.35); color: #fff; }
+
+        /* --- Counter bar (horizontal scroll on mobile) --- */
+        .counter-scroll {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+            scrollbar-width: thin;
+        }
+        .counter-pill {
+            flex: 0 0 auto;
+            background: #fff;
+            border-radius: 10px;
+            padding: 0.55rem 0.85rem;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            text-decoration: none;
+            color: inherit;
+            border: 2px solid transparent;
+            transition: transform 0.06s ease;
+            min-width: 80px;
+        }
+        .counter-pill:active { transform: scale(0.97); }
+        .counter-pill.current { border-color: {{ dept.color }}; }
+        .counter-pill.repair { background: #fef0ef; }
+        .counter-pill.repair.has-work {
+            background: #e74c3c;
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
+        }
+        .counter-icon { font-size: 1.2rem; line-height: 1; }
+        .counter-name { font-size: 0.72rem; color: #7f8c8d; margin-top: 0.15rem; }
+        .counter-pill.repair.has-work .counter-name { color: rgba(255,255,255,0.85); }
+        .counter-num { font-size: 1.35rem; font-weight: 700; line-height: 1.1; margin-top: 0.1rem; color: #2c3e50; }
+        .counter-pill.repair.has-work .counter-num { color: #fff; }
+        .counter-num.zero { color: #bdc3c7; }
+
+        /* --- Section title --- */
+        .section-title {
+            font-size: 1rem;
+            color: #34495e;
+            margin: 1.25rem 0 0.6rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .section-title .badge-num {
+            background: #95a5a6;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.1rem 0.5rem;
+            border-radius: 999px;
+        }
+        .section-title.repair { color: #c0392b; }
+        .section-title.repair .badge-num { background: #e74c3c; }
+
+        /* --- Order card --- */
+        .order-card {
+            display: flex;
+            gap: 0.85rem;
+            align-items: center;
+            background: #fff;
+            border-radius: 12px;
+            padding: 0.7rem;
+            margin-bottom: 0.6rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.06s ease, box-shadow 0.15s ease;
+        }
+        .order-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+            color: inherit;
+        }
+        .order-card.repair-card {
+            border-left: 4px solid #e74c3c;
+        }
+        .order-thumb {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: #ecf0f1;
+            flex-shrink: 0;
+        }
+        .order-thumb-placeholder {
+            width: 64px;
+            height: 64px;
+            border-radius: 8px;
+            background: #ecf0f1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            color: #bdc3c7;
+            flex-shrink: 0;
+        }
+        .order-info { flex: 1; min-width: 0; }
+        .order-num {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .order-customer {
+            font-size: 0.88rem;
+            color: #34495e;
+            margin: 0.1rem 0 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .order-shirt {
+            font-size: 0.78rem;
+            color: #7f8c8d;
+            margin: 0.05rem 0 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .waiting-tag {
+            flex-shrink: 0;
+            background: #ecf0f1;
+            color: #34495e;
+            padding: 0.25rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .waiting-tag.long { background: #fef0ef; color: #c0392b; }
+        .waiting-tag.urgent { background: #e74c3c; color: #fff; }
+
+        /* --- Empty state --- */
+        .empty-state {
+            background: #fff;
+            border-radius: 12px;
+            padding: 2.5rem 1rem;
+            text-align: center;
+            color: #95a5a6;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .empty-state .big { font-size: 2.2rem; margin-bottom: 0.4rem; }
+        .empty-state .msg { font-size: 1rem; color: #7f8c8d; }
+
+        .refresh-note {
+            text-align: center;
+            color: #bdc3c7;
+            font-size: 0.75rem;
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="dept-header">
+            <h1 class="dept-title">
+                <span class="dept-icon" aria-hidden="true">{{ dept.icon }}</span>{{ dept.name }}
+            </h1>
+            <a href="{% url 'clear_department' %}" class="change-btn">เปลี่ยนแผนก</a>
+        </div>
+
+        {# --- Counter bar (compact pills, horizontal scroll on mobile) --- #}
+        <div class="counter-scroll" aria-label="งานค้างทุกแผนก">
+            {% for c in counters %}
+            <a href="{% url 'dept_dashboard' slug=c.slug %}"
+               class="counter-pill {% if c.is_current %}current{% endif %}"
+               title="ดู {{ c.name }}">
+                <div class="counter-icon" aria-hidden="true">{{ c.icon }}</div>
+                <div class="counter-num {% if c.count == 0 %}zero{% endif %}">{{ c.count }}</div>
+                <div class="counter-name">{{ c.name }}</div>
+            </a>
+            {% endfor %}
+            <div class="counter-pill repair {% if repair_count %}has-work{% endif %}" title="งานซ่อม">
+                <div class="counter-icon" aria-hidden="true">🚨</div>
+                <div class="counter-num {% if repair_count == 0 %}zero{% endif %}">{{ repair_count }}</div>
+                <div class="counter-name">ซ่อม</div>
+            </div>
+        </div>
+
+        {# --- Repair section (print dept only) --- #}
+        {% if dept.slug == 'print' and repair_rows %}
+        <h2 class="section-title repair">
+            🚨 งานซ่อม
+            <span class="badge-num">{{ repair_rows|length }}</span>
+        </h2>
+        {% for row in repair_rows %}
+        <a href="{% url 'update_order_stage' order_number=row.order.order_number %}" class="order-card repair-card">
+            {% if row.first_item.design_image %}
+            <img src="{{ row.first_item.design_image.url }}" alt="design" class="order-thumb">
+            {% else %}
+            <div class="order-thumb-placeholder" aria-hidden="true">👕</div>
+            {% endif %}
+            <div class="order-info">
+                <p class="order-num">{{ row.order.order_number }}</p>
+                <p class="order-customer">{{ row.order.customer_name }}</p>
+                <p class="order-shirt">{{ row.order.shirt_name }}</p>
+            </div>
+            {% if row.waiting %}
+            <span class="waiting-tag urgent">{{ row.waiting }}</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+        {% endif %}
+
+        {# --- My pending orders --- #}
+        <h2 class="section-title">
+            งานที่รอ {{ dept.name }}
+            {% if pending %}<span class="badge-num">{{ pending|length }}</span>{% endif %}
+        </h2>
+
+        {% if pending %}
+            {% for row in pending %}
+            <a href="{% url 'update_order_stage' order_number=row.order.order_number %}" class="order-card">
+                {% if row.first_item.design_image %}
+                <img src="{{ row.first_item.design_image.url }}" alt="design" class="order-thumb">
+                {% else %}
+                <div class="order-thumb-placeholder" aria-hidden="true">👕</div>
+                {% endif %}
+                <div class="order-info">
+                    <p class="order-num">{{ row.order.order_number }}</p>
+                    <p class="order-customer">{{ row.order.customer_name }}</p>
+                    <p class="order-shirt">{{ row.order.shirt_name }}</p>
+                </div>
+                {% if row.waiting %}
+                <span class="waiting-tag {% if 'วัน' in row.waiting %}long{% endif %}">{{ row.waiting }}</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <div class="big">🎉</div>
+                <div class="msg">ไม่มีงานค้าง</div>
+            </div>
+        {% endif %}
+
+        <p class="refresh-note">หน้านี้รีเฟรชอัตโนมัติทุก 30 วินาที</p>
+    </div>
+</body>
+</html>
