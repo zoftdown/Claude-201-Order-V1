@@ -501,7 +501,7 @@
 <!-- ===== Print Controls (ซ่อนตอนพิมพ์) ===== -->
 <div class="print-controls">
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
-    <button class="btn-back" onclick="window.location.href='/{{ order.pk }}/'">กลับ</button>
+    <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
 </div>
 
 {% for page_items in pages %}
