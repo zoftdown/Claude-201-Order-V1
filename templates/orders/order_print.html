@@ -147,21 +147,18 @@
             margin-top: 6px;
         }
 
-        /* ===== Item Card ===== */
+        /* ===== Item Card (stacked: รูปบน, variants ล่าง) ===== */
         .item-card {
-            display: flex;
-            align-items: flex-start;
-            gap: 20px;
-            padding: 16px 0;
-            border-bottom: 1px dashed #ccc;
+            padding: 14px 0 18px 0;
+            border-bottom: 2px solid #222;
+            page-break-inside: avoid;
         }
         .item-card:last-child {
             border-bottom: none;
         }
         .item-image {
-            flex-shrink: 0;
-            width: 220px;
-            height: 220px;
+            width: 100%;
+            max-height: 340px;
             border: 1px solid #ddd;
             border-radius: 6px;
             overflow: hidden;
@@ -169,53 +166,94 @@
             align-items: center;
             justify-content: center;
             background: #f8f8f8;
+            margin-bottom: 12px;
         }
         .item-image img {
             max-width: 100%;
-            max-height: 100%;
+            max-height: 340px;
             object-fit: contain;
         }
         .item-image .no-img {
             color: #bbb;
-            font-size: 11pt;
+            font-size: 12pt;
+            padding: 60px 0;
         }
-        .item-detail {
-            flex: 1;
-            padding-top: 4px;
-        }
-        .item-type {
-            font-size: 17pt;
-            font-weight: 800;
-            margin-bottom: 10px;
-        }
-
-        /* ===== Size List ===== */
-        .size-list {
-            list-style: none;
-        }
-        .size-list li {
-            font-size: 15pt;
-            font-weight: 700;
-            line-height: 1.8;
+        .item-header-row {
             display: flex;
-            gap: 6px;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
         }
-        .size-list .s-label {
-            min-width: 48px;
-            text-align: right;
-        }
-        .size-list .s-eq {
-            color: #888;
-        }
-        .size-list .s-qty {
-            font-size: 17pt;
-            font-weight: 900;
+        .item-label {
+            font-size: 13pt;
+            font-weight: 700;
+            color: #555;
         }
         .item-subtotal {
-            font-size: 11pt;
+            font-size: 13pt;
+            font-weight: 800;
+            color: #222;
+        }
+
+        /* ===== Variant Block (แบบเสื้อในรูป) ===== */
+        .variant-block {
+            padding: 8px 0;
+        }
+        .variant-block + .variant-block {
+            border-top: 1px dashed #aaa;
+            margin-top: 4px;
+        }
+        .variant-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 4px;
+            gap: 10px;
+        }
+        .variant-type {
+            font-size: 16pt;
+            font-weight: 800;
+            line-height: 1.3;
+        }
+        .variant-color {
+            color: #1976D2;
+        }
+        .variant-qty {
+            font-size: 12pt;
             font-weight: 700;
             color: #888;
-            margin-top: 6px;
+            white-space: nowrap;
+        }
+        .variant-note {
+            font-size: 12pt;
+            font-weight: 700;
+            color: #d32f2f;
+            margin-bottom: 4px;
+        }
+        .variant-sizes {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 16px;
+            margin-top: 2px;
+        }
+        .variant-sizes li {
+            font-size: 14pt;
+            font-weight: 700;
+            line-height: 1.6;
+            display: inline-flex;
+            gap: 4px;
+        }
+        .variant-sizes .s-label {
+            min-width: 40px;
+            text-align: right;
+        }
+        .variant-sizes .s-eq {
+            color: #888;
+        }
+        .variant-sizes .s-qty {
+            font-size: 16pt;
+            font-weight: 900;
         }
 
         /* ===== Page Footer ===== */
@@ -263,33 +301,22 @@
         .btn-back:hover { background: #555; }
 
         /* ==========================================================
-           SINGLE ITEM — ขยายรูปใหญ่ขึ้นเมื่อมีแค่ 1 item (desktop)
+           SINGLE ITEM — รูปใหญ่ขึ้นเมื่อมีแค่ 1 item
            ========================================================== */
-        .single-item .item-card {
-            gap: 28px;
-            padding: 24px 0;
-        }
         .single-item .item-image {
-            width: 320px;
-            height: 320px;
+            max-height: 460px;
         }
-        .single-item .item-type {
-            font-size: 22pt;
-            margin-bottom: 14px;
+        .single-item .item-image img {
+            max-height: 460px;
         }
-        .single-item .size-list li {
-            font-size: 18pt;
-            line-height: 2;
-        }
-        .single-item .size-list .s-qty {
+        .single-item .variant-type {
             font-size: 20pt;
         }
-        .single-item .size-list .s-label {
-            min-width: 56px;
+        .single-item .variant-sizes li {
+            font-size: 16pt;
         }
-        .single-item .item-subtotal {
-            font-size: 13pt;
-            margin-top: 10px;
+        .single-item .variant-sizes .s-qty {
+            font-size: 18pt;
         }
 
         /* ==========================================================
@@ -371,48 +398,36 @@
                 padding: 3px 12px;
             }
 
-            /* Item Card */
+            /* Item Card (mobile, stacked) */
             .item-card {
-                gap: 12px;
-                padding: 10px 0;
+                padding: 10px 0 12px 0;
             }
             .item-image {
-                width: 110px;
-                height: 110px;
-                border-radius: 4px;
+                max-height: 280px;
             }
-            .item-type {
-                font-size: 13pt;
-                margin-bottom: 6px;
+            .item-image img {
+                max-height: 280px;
             }
-            .size-list li {
+            .variant-type {
+                font-size: 14pt;
+            }
+            .variant-sizes li {
                 font-size: 12pt;
-                line-height: 1.6;
-                gap: 4px;
+                gap: 3px;
             }
-            .size-list .s-label {
+            .variant-sizes .s-label {
                 min-width: 32px;
             }
-            .size-list .s-qty {
+            .variant-sizes .s-qty {
                 font-size: 13pt;
             }
-            .item-subtotal {
-                font-size: 9pt;
+            .variant-qty, .item-subtotal, .variant-note {
+                font-size: 10pt;
             }
 
-            /* Single item on mobile — ขยายรูปขึ้นนิดหน่อย */
-            .single-item .item-image {
-                width: 140px;
-                height: 140px;
-            }
-            .single-item .item-type {
-                font-size: 14pt;
-            }
-            .single-item .size-list li {
-                font-size: 13pt;
-            }
-            .single-item .size-list .s-qty {
-                font-size: 14pt;
+            .single-item .item-image,
+            .single-item .item-image img {
+                max-height: 320px;
             }
 
             /* Footer */
@@ -455,13 +470,13 @@
             .header-left h1 {
                 font-size: 20pt;
             }
-            .item-image {
-                width: 180px;
-                height: 180px;
+            .item-image,
+            .item-image img {
+                max-height: 320px;
             }
-            .single-item .item-image {
-                width: 240px;
-                height: 240px;
+            .single-item .item-image,
+            .single-item .item-image img {
+                max-height: 380px;
             }
         }
 
@@ -481,9 +496,13 @@
             .customer-link { color: #1976D2 !important; }
 
             /* Single item print — bigger image */
-            .single-item .item-image {
-                width: 90mm;
-                height: 90mm;
+            .single-item .item-image,
+            .single-item .item-image img {
+                max-height: 110mm;
+            }
+            .item-image,
+            .item-image img {
+                max-height: 80mm;
             }
 
             /* Force QR + label to print in pure black/white for max contrast */
@@ -553,31 +572,44 @@
     </div>
     {% endif %}
 
-    <!-- ===== Items ===== -->
+    <!-- ===== Items (stacked: รูปบน, แบบเสื้อล่าง) ===== -->
     {% for item in page_items %}
     <div class="item-card">
         <div class="item-image">
             {% if item.design_image %}
                 <img src="{{ item.design_image.url }}" alt="ดีไซน์">
             {% else %}
-                <span class="no-img">ไม่มีรูป</span>
+                <span class="no-img">ยังไม่มี mockup</span>
             {% endif %}
         </div>
-        <div class="item-detail">
-            <div class="item-type">
-                {{ item.collar_type }}{{ item.sleeve_type }}
+        <div class="item-header-row">
+            <span class="item-label">รายการที่ {{ forloop.counter }}{% if not forloop.first or pages|length > 1 %} (หน้า {{ forloop.parentloop.counter }}){% endif %}</span>
+            <span class="item-subtotal">รวม {{ item.total_qty }} ตัว</span>
+        </div>
+        {% for variant in item.variants.all %}
+        <div class="variant-block">
+            <div class="variant-head">
+                <span class="variant-type">
+                    {% if variant.collar %}{{ variant.collar }}{% endif %}{% if variant.sleeve %}{{ variant.sleeve }}{% endif %}{% if variant.color %} <span class="variant-color">— {{ variant.color }}</span>{% endif %}
+                </span>
+                <span class="variant-qty">รวม {{ variant.total_qty }} ตัว</span>
             </div>
-            <ul class="size-list">
-                {% for size in item.sizes_display %}
-                <li>
-                    <span class="s-label">{{ size.label }}</span>
-                    <span class="s-eq">=</span>
-                    <span class="s-qty">{{ size.qty }}</span>
-                </li>
+            {% if variant.note %}<div class="variant-note">📝 {{ variant.note }}</div>{% endif %}
+            <ul class="variant-sizes">
+                {% for size in variant.sizes %}
+                    {% if size.qty %}
+                    <li>
+                        <span class="s-label">{{ size.label }}</span>
+                        <span class="s-eq">=</span>
+                        <span class="s-qty">{{ size.qty }}</span>
+                    </li>
+                    {% endif %}
                 {% endfor %}
             </ul>
-            <div class="item-subtotal">รวม {{ item.total_qty }} ตัว</div>
         </div>
+        {% empty %}
+            <div class="text-muted" style="font-size:11pt;color:#888;">— ยังไม่มีแบบ —</div>
+        {% endfor %}
     </div>
     {% endfor %}
 

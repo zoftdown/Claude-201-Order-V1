@@ -13,7 +13,13 @@ from django.views.decorators.http import require_POST
 
 from .decorators import require_department
 from .departments import DEPARTMENTS, VALID_SLUGS
-from .forms import OrderForm, OrderItemFormSet
+from .forms import (
+    OrderForm,
+    OrderItemFormSet,
+    ShirtVariantFormSet,
+    COLLAR_SUGGESTIONS,
+    SLEEVE_SUGGESTIONS,
+)
 from .models import Order, StageLog, Tailor
 from .qr_utils import generate_qr_svg
 
@@ -66,28 +72,166 @@ def _copy_images_from_first(request, formset):
             item.save()
 
 
+# ---------------------------------------------------------------------------
+# Nested formset helpers (Phase 1.7): Order → OrderItem → ShirtVariant
+#
+# Each outer item form gets a parallel ShirtVariantFormSet whose prefix is
+# `items-{i}-variants`. The view validates all three levels (Order, items,
+# variants), then saves outer-then-inner so the FK chain is intact.
+# ---------------------------------------------------------------------------
+
+
+def _variant_prefix(i):
+    return f'items-{i}-variants'
+
+
+def _build_variant_formsets(item_formset, post=None, files=None):
+    """Return one ShirtVariantFormSet per outer item form, in order."""
+    formsets = []
+    for i, item_form in enumerate(item_formset.forms):
+        kwargs = {
+            'instance': item_form.instance,
+            'prefix': _variant_prefix(i),
+        }
+        if post is not None:
+            formsets.append(ShirtVariantFormSet(post, files, **kwargs))
+        else:
+            formsets.append(ShirtVariantFormSet(**kwargs))
+    return formsets
+
+
+def _empty_variant_formset(post=None, files=None):
+    """Empty inner formset whose prefix uses literal '__prefix__' for the item index.
+
+    Rendered via management_form + empty_form so JS can clone it when the user
+    presses '+ เพิ่มรายการ' (a new item starts with one empty variant).
+    """
+    return ShirtVariantFormSet(prefix='items-__prefix__-variants')
+
+
+def _variant_has_real_content(vform):
+    """A variant counts as 'real' if any text field is filled OR sizes total > 0."""
+    cd = getattr(vform, 'cleaned_data', None) or {}
+    if any((cd.get(k) or '').strip() for k in ('collar', 'sleeve', 'color', 'note')):
+        return True
+    raw = cd.get('sizes_json') or ''
+    if raw:
+        try:
+            import json as _json
+            sizes = _json.loads(raw)
+            if any((s.get('qty') or 0) > 0 for s in sizes if isinstance(s, dict)):
+                return True
+        except (ValueError, TypeError):
+            pass
+    return False
+
+
+def _item_is_empty(item_form, variant_formset):
+    """True if outer item has no image, no pk, and no real variant data — skip in validation."""
+    if item_form.instance and item_form.instance.pk:
+        return False
+    if item_form.cleaned_data.get('design_image'):
+        return False
+    for v in variant_formset.forms:
+        cd = getattr(v, 'cleaned_data', {}) or {}
+        if cd.get('DELETE'):
+            continue
+        if _variant_has_real_content(v):
+            return False
+    return True
+
+
+def _validate_variants_present(item_formset, variant_formsets):
+    """Each surviving (non-deleted, non-empty) item must have ≥1 non-deleted variant
+    with real content.
+
+    Returns a list of (item_index, error_message) for the template to display.
+    """
+    errors = []
+    for i, (item_form, vfs) in enumerate(zip(item_formset.forms, variant_formsets)):
+        if not item_form.is_valid() or not vfs.is_valid():
+            continue
+        if item_form.cleaned_data.get('DELETE'):
+            continue
+        if _item_is_empty(item_form, vfs):
+            continue
+        live = [
+            v for v in vfs.forms
+            if not v.cleaned_data.get('DELETE') and _variant_has_real_content(v)
+        ]
+        if not live:
+            errors.append((i, f'รายการที่ {i + 1} ต้องมีอย่างน้อย 1 แบบ'))
+    return errors
+
+
+def _save_with_variants(form, item_formset, variant_formsets, request, *, set_created_date):
+    """Persist Order + items + variants. Caller has confirmed everything is valid."""
+    order = form.save(commit=False)
+    if set_created_date and not order.created_date:
+        order.created_date = timezone.now().date()
+    order.save()
+    form.save_m2m()
+
+    item_formset.instance = order
+    item_formset.save()
+
+    # Re-bind & save each inner formset, now that its parent OrderItem has a pk.
+    for vfs, item_form in zip(variant_formsets, item_formset.forms):
+        if item_form.cleaned_data.get('DELETE'):
+            continue
+        if not item_form.instance.pk:
+            continue  # blank extra form
+        vfs.instance = item_form.instance
+        vfs.save()
+
+    _copy_images_from_first(request, item_formset)
+    return order
+
+
+def _form_render_context(form, item_formset, variant_formsets, **extra):
+    """Common template context — pairs items with their variant formsets."""
+    items_with_variants = list(zip(item_formset.forms, variant_formsets))
+    ctx = {
+        'form': form,
+        'formset': item_formset,
+        'items_with_variants': items_with_variants,
+        'empty_item_form': item_formset.empty_form,
+        'empty_variant_formset': _empty_variant_formset(),
+        'collar_suggestions': COLLAR_SUGGESTIONS,
+        'sleeve_suggestions': SLEEVE_SUGGESTIONS,
+    }
+    ctx.update(extra)
+    return ctx
+
+
 @login_required
 def order_create(request):
     if request.method == 'POST':
         form = OrderForm(request.POST)
-        formset = OrderItemFormSet(request.POST, request.FILES)
-        if form.is_valid() and formset.is_valid():
-            order = form.save(commit=False)
-            order.created_date = timezone.now().date()
-            order.save()
-            formset.instance = order
-            formset.save()
-            _copy_images_from_first(request, formset)
+        item_formset = OrderItemFormSet(request.POST, request.FILES, prefix='items')
+        variant_formsets = _build_variant_formsets(item_formset, request.POST, request.FILES)
+
+        forms_ok = form.is_valid() and item_formset.is_valid() and all(
+            vfs.is_valid() for vfs in variant_formsets
+        )
+        variant_errors = _validate_variants_present(item_formset, variant_formsets)
+
+        if forms_ok and not variant_errors:
+            order = _save_with_variants(
+                form, item_formset, variant_formsets, request, set_created_date=True,
+            )
             return redirect('order_detail', pk=order.pk)
     else:
         form = OrderForm()
-        formset = OrderItemFormSet()
+        item_formset = OrderItemFormSet(prefix='items')
+        variant_formsets = _build_variant_formsets(item_formset)
+        variant_errors = []
 
-    return render(request, 'orders/order_form.html', {
-        'form': form,
-        'formset': formset,
-        'title': 'สร้างออร์เดอร์ใหม่',
-    })
+    return render(request, 'orders/order_form.html', _form_render_context(
+        form, item_formset, variant_formsets,
+        title='สร้างออร์เดอร์ใหม่',
+        variant_errors=variant_errors,
+    ))
 
 
 @login_required
@@ -95,22 +239,33 @@ def order_edit(request, pk):
     order = get_object_or_404(Order, pk=pk)
     if request.method == 'POST':
         form = OrderForm(request.POST, instance=order)
-        formset = OrderItemFormSet(request.POST, request.FILES, instance=order)
-        if form.is_valid() and formset.is_valid():
-            form.save()
-            formset.save()
-            _copy_images_from_first(request, formset)
+        item_formset = OrderItemFormSet(
+            request.POST, request.FILES, instance=order, prefix='items',
+        )
+        variant_formsets = _build_variant_formsets(item_formset, request.POST, request.FILES)
+
+        forms_ok = form.is_valid() and item_formset.is_valid() and all(
+            vfs.is_valid() for vfs in variant_formsets
+        )
+        variant_errors = _validate_variants_present(item_formset, variant_formsets)
+
+        if forms_ok and not variant_errors:
+            _save_with_variants(
+                form, item_formset, variant_formsets, request, set_created_date=False,
+            )
             return redirect('order_detail', pk=order.pk)
     else:
         form = OrderForm(instance=order)
-        formset = OrderItemFormSet(instance=order)
+        item_formset = OrderItemFormSet(instance=order, prefix='items')
+        variant_formsets = _build_variant_formsets(item_formset)
+        variant_errors = []
 
-    return render(request, 'orders/order_form.html', {
-        'form': form,
-        'formset': formset,
-        'order': order,
-        'title': f'แก้ไขออร์เดอร์ {order.order_number}',
-    })
+    return render(request, 'orders/order_form.html', _form_render_context(
+        form, item_formset, variant_formsets,
+        order=order,
+        title=f'แก้ไขออร์เดอร์ {order.order_number}',
+        variant_errors=variant_errors,
+    ))
 
 
 @login_required

@@ -62,26 +62,43 @@
 <h5>รายการเสื้อ ({{ order.items.count }} รายการ, รวม {{ order.total_qty }} ตัว)</h5>
 
 {% for item in order.items.all %}
-<div class="card card-item mb-2">
+<div class="card card-item mb-3">
+    {% if item.design_image %}
+        <img src="{{ item.design_image.url }}" class="card-img-top" style="max-height:480px;object-fit:contain;background:#f8f9fa;">
+    {% else %}
+        <div class="card-img-top d-flex align-items-center justify-content-center text-muted" style="height:200px;background:#eee;">
+            <small>ไม่มี mockup</small>
+        </div>
+    {% endif %}
     <div class="card-body py-2">
-        <div class="row align-items-center">
-            <div class="col-auto">
-                {% if item.design_image %}
-                    <img src="{{ item.design_image.url }}" style="max-height:100px; max-width:100px;" class="rounded">
-                {% else %}
-                    <div style="width:100px;height:80px;background:#eee;display:flex;align-items:center;justify-content:center" class="rounded text-muted"><small>ไม่มีรูป</small></div>
-                {% endif %}
-            </div>
-            <div class="col">
-                <strong>{{ item.collar_type }}{{ item.sleeve_type }}</strong> — สี {{ item.color }}
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>รายการที่ {{ forloop.counter }}</strong>
+            <span class="badge bg-info">รวม {{ item.total_qty }} ตัว</span>
+        </div>
+        {% for variant in item.variants.all %}
+            {% if not forloop.first %}<hr class="my-2">{% endif %}
+            <div class="variant-block">
+                <div class="d-flex justify-content-between align-items-baseline">
+                    <strong class="text-dark">
+                        แบบที่ {{ forloop.counter }}:
+                        {% if variant.collar %}{{ variant.collar }}{% endif %}
+                        {% if variant.sleeve %} {{ variant.sleeve }}{% endif %}
+                        {% if variant.color %} — สี {{ variant.color }}{% endif %}
+                    </strong>
+                    <small class="text-muted">รวม {{ variant.total_qty }} ตัว</small>
+                </div>
+                {% if variant.note %}<div class="small text-muted">📝 {{ variant.note }}</div>{% endif %}
                 <div class="d-flex flex-wrap gap-2 mt-1">
-                    {% for size in item.sizes_display %}
+                    {% for size in variant.sizes %}
+                        {% if size.qty %}
                         <span class="badge bg-light text-dark border">{{ size.label }}: {{ size.qty }}</span>
+                        {% endif %}
                     {% endfor %}
                 </div>
-                <div class="mt-1 text-muted"><small>รวม {{ item.total_qty }} ตัว</small></div>
             </div>
-        </div>
+        {% empty %}
+            <div class="text-muted small">ยังไม่มีแบบในรายการนี้</div>
+        {% endfor %}
     </div>
 </div>
 {% empty %}

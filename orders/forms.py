@@ -1,7 +1,15 @@
 import json
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Order, OrderItem
+from .models import Order, OrderItem, ShirtVariant
+
+
+# Default sizes shown when a new variant is added.
+DEFAULT_SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
+
+# Suggestion lists rendered as <datalist>. User can pick or type freely.
+COLLAR_SUGGESTIONS = ['คอกลม', 'คอวี', 'โปโล', 'คอปกวี', 'คอกีฬา']
+SLEEVE_SUGGESTIONS = ['แขนสั้น', 'แขนยาว', 'แขนกุด']
 
 
 class BootstrapMixin:
@@ -36,18 +44,35 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
 
 
 class OrderItemForm(BootstrapMixin, forms.ModelForm):
-    sizes_json = forms.CharField(widget=forms.HiddenInput(), required=False)
+    """One design image + ordering. Variant fields live on ShirtVariantForm."""
 
     class Meta:
         model = OrderItem
-        fields = ['design_image', 'sleeve_type', 'collar_type', 'color']
+        fields = ['design_image']
+
+
+class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
+    """One "แบบ" — collar/sleeve/color/sizes/note for a given design image."""
+
+    sizes_json = forms.CharField(widget=forms.HiddenInput(), required=False)
+
+    class Meta:
+        model = ShirtVariant
+        fields = ['collar', 'sleeve', 'color', 'note']
+        widgets = {
+            'collar': forms.TextInput(attrs={'list': 'collar-suggestions', 'placeholder': 'คอกลม'}),
+            'sleeve': forms.TextInput(attrs={'list': 'sleeve-suggestions', 'placeholder': 'แขนสั้น'}),
+            'color': forms.TextInput(attrs={'placeholder': 'สี'}),
+            'note': forms.TextInput(attrs={'placeholder': 'โน้ต (ถ้ามี)'}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Seed sizes_json with current sizes (edit) or default labels (new).
         if self.instance and self.instance.pk and self.instance.sizes:
             self.fields['sizes_json'].initial = json.dumps(self.instance.sizes, ensure_ascii=False)
         else:
-            default = [{'label': s, 'qty': 0} for s in OrderItem.DEFAULT_SIZES]
+            default = [{'label': s, 'qty': 0} for s in DEFAULT_SIZES]
             self.fields['sizes_json'].initial = json.dumps(default, ensure_ascii=False)
 
     def save(self, commit=True):
@@ -67,6 +92,16 @@ OrderItemFormSet = inlineformset_factory(
     Order,
     OrderItem,
     form=OrderItemForm,
+    extra=1,
+    can_delete=True,
+)
+
+
+# Inner formset: variants under an OrderItem.
+ShirtVariantFormSet = inlineformset_factory(
+    OrderItem,
+    ShirtVariant,
+    form=ShirtVariantForm,
     extra=1,
     can_delete=True,
 )

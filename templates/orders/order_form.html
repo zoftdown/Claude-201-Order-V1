@@ -4,7 +4,14 @@
 {% block content %}
 <h4 class="mb-3">{{ title }}</h4>
 
-{% if form.errors or formset.errors %}
+<datalist id="collar-suggestions">
+    {% for opt in collar_suggestions %}<option value="{{ opt }}">{% endfor %}
+</datalist>
+<datalist id="sleeve-suggestions">
+    {% for opt in sleeve_suggestions %}<option value="{{ opt }}">{% endfor %}
+</datalist>
+
+{% if form.errors or formset.errors or variant_errors %}
 <div class="alert alert-danger">
     <strong>กรุณาแก้ไขข้อมูลด้านล่าง:</strong>
     {% for field in form %}
@@ -15,23 +22,23 @@
             {% if field.errors %}<div>รายการที่ {{ forloop.parentloop.counter }} - {{ field.label }}: {{ field.errors.0 }}</div>{% endif %}
         {% endfor %}
     {% endfor %}
+    {% for idx, msg in variant_errors %}
+        <div>{{ msg }}</div>
+    {% endfor %}
 </div>
 {% endif %}
 
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
 
+    <!-- ===== Order header ===== -->
     <div class="card mb-3">
         <div class="card-header">ข้อมูลออร์เดอร์</div>
         <div class="card-body">
             {% if order %}
             <div class="row g-2 mb-2">
-                <div class="col-auto">
-                    <span class="badge bg-dark fs-6">{{ order.order_number }}</span>
-                </div>
-                <div class="col-auto">
-                    <span class="text-muted">สร้างเมื่อ {{ order.created_date|date:"d/m/Y" }}</span>
-                </div>
+                <div class="col-auto"><span class="badge bg-dark fs-6">{{ order.order_number }}</span></div>
+                <div class="col-auto"><span class="text-muted">สร้างเมื่อ {{ order.created_date|date:"d/m/Y" }}</span></div>
             </div>
             {% endif %}
             <div class="row g-2">
@@ -66,7 +73,6 @@
                 </div>
             </div>
 
-            <!-- shipping_address: แสดงเฉพาะเมื่อ delivery_method = ส่ง -->
             <div class="row g-2 mt-1" id="shipping-address-row" style="display:none;">
                 <div class="col-12">
                     <label class="form-label">ที่อยู่จัดส่ง 📦</label>
@@ -74,7 +80,6 @@
                 </div>
             </div>
 
-            <!-- fabric_spec: แสดงเฉพาะเพจเสื้อคนงาน -->
             <div class="row g-2 mt-1" id="fabric-spec-row" style="display:none;">
                 <div class="col-12">
                     <label class="form-label">Spec ผ้า</label>
@@ -84,7 +89,7 @@
 
             <div class="row g-2 mt-1">
                 <div class="col-12">
-                    <label class="form-label">คำสั่งพิเศษ <small class="text-danger">(จะแสดงเป็นสีแดง)</small></label>
+                    <label class="form-label">คำสั่งพิเศษ <small class="text-danger">(จะแสดงเป็นสีแดงในใบงาน)</small></label>
                     {{ form.special_note }}
                 </div>
             </div>
@@ -106,34 +111,34 @@
         </div>
     </div>
 
-    <!-- OrderItem Formset -->
+    <!-- ===== Items + Variants ===== -->
     <div class="card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span>รายการเสื้อ <span class="badge bg-primary" id="grand-total-qty">รวม 0 ตัว</span></span>
-            <button type="button" class="btn btn-success btn-sm" id="add-item">+ เพิ่มรายการ</button>
+            <button type="button" class="btn btn-success btn-sm" id="add-item">+ เพิ่มรายการ (รูปใหม่)</button>
         </div>
-        <div class="card-body" id="formset-container">
+        <div class="card-body" id="items-container">
             {{ formset.management_form }}
-            {% for item_form in formset %}
-            <div class="item-form border rounded p-2 mb-2" data-index="{{ forloop.counter0 }}">
+            {% for item_form, variant_formset in items_with_variants %}
+            <div class="item-form border rounded p-2 mb-3" data-item-index="{{ forloop.counter0 }}">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <strong class="item-label">รายการที่ {{ forloop.counter }}</strong>
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge bg-info item-qty-badge">0 ตัว</span>
                         {% if item_form.DELETE %}
-                        <label class="btn btn-outline-danger btn-sm mb-0">
-                            {{ item_form.DELETE }} ลบ
+                        <label class="btn btn-outline-danger btn-sm mb-0" title="ลบรายการนี้">
+                            {{ item_form.DELETE }} ลบรายการ
                         </label>
                         {% endif %}
                     </div>
                 </div>
                 {{ item_form.id }}
-                {{ item_form.sizes_json }}
-                <div class="row g-2">
-                    <div class="col-md-3">
+
+                <div class="row g-2 mb-2">
+                    <div class="col-md-4">
                         <label class="form-label">รูปดีไซน์</label>
                         {% if item_form.instance.design_image %}
-                            <div class="mb-1"><img src="{{ item_form.instance.design_image.url }}" style="max-height:60px;" class="rounded"></div>
+                            <div class="mb-1"><img src="{{ item_form.instance.design_image.url }}" style="max-height:80px;" class="rounded"></div>
                         {% endif %}
                         {{ item_form.design_image }}
                         <div class="form-check mt-1 copy-image-check" style="display:none;">
@@ -141,24 +146,55 @@
                             <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
                         </div>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">ประเภทคอ</label>
-                        {{ item_form.collar_type }}
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">ประเภทแขน</label>
-                        {{ item_form.sleeve_type }}
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">สีเสื้อ <span class="text-danger">*</span></label>
-                        {{ item_form.color }}
-                        {% if item_form.color.errors %}<div class="text-danger small">{{ item_form.color.errors.0 }}</div>{% endif %}
-                    </div>
                 </div>
 
-                <!-- Sizes (dynamic via JS) -->
-                <div class="sizes-container mt-2"></div>
-                <button type="button" class="btn btn-outline-secondary btn-sm mt-1 add-size-btn">+ เพิ่มไซส์อื่น</button>
+                <!-- Variants for this item -->
+                <div class="variants-section">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted fw-bold">แบบเสื้อในรูปนี้</small>
+                        <button type="button" class="btn btn-outline-primary btn-sm add-variant-btn" data-item-index="{{ forloop.counter0 }}">+ เพิ่มแบบ</button>
+                    </div>
+                    {{ variant_formset.management_form }}
+                    <div class="variants-container" data-item-index="{{ forloop.counter0 }}">
+                        {% for vform in variant_formset %}
+                        <div class="variant-form bg-light rounded p-2 mb-2" data-variant-index="{{ forloop.counter0 }}">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <strong class="variant-label small">แบบที่ {{ forloop.counter }}</strong>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge bg-secondary variant-qty-badge">0 ตัว</span>
+                                    {% if vform.DELETE %}
+                                    <label class="btn btn-outline-danger btn-sm py-0 mb-0" title="ลบแบบนี้">
+                                        {{ vform.DELETE }} ลบแบบ
+                                    </label>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {{ vform.id }}
+                            {{ vform.sizes_json }}
+                            <div class="row g-2">
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0">คอ</label>
+                                    {{ vform.collar }}
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0">แขน</label>
+                                    {{ vform.sleeve }}
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0">สี</label>
+                                    {{ vform.color }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-0">โน้ตแบบนี้</label>
+                                    {{ vform.note }}
+                                </div>
+                            </div>
+                            <div class="sizes-container mt-2"></div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm mt-1 add-size-btn">+ เพิ่มไซส์อื่น</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -169,261 +205,333 @@
         <a href="{% if order %}{% url 'order_detail' order.pk %}{% else %}{% url 'order_list' %}{% endif %}" class="btn btn-outline-secondary">ยกเลิก</a>
     </div>
 </form>
+
+<!-- ===================== HIDDEN TEMPLATES (cloned by JS) ===================== -->
+
+<template id="empty-item-template">
+<div class="item-form border rounded p-2 mb-3" data-item-index="__prefix__">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong class="item-label">รายการ</strong>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-info item-qty-badge">0 ตัว</span>
+            <label class="btn btn-outline-danger btn-sm mb-0" title="ลบรายการนี้">
+                <input type="checkbox" name="items-__prefix__-DELETE" id="id_items-__prefix__-DELETE" class="form-check-input"> ลบรายการ
+            </label>
+        </div>
+    </div>
+    <input type="hidden" name="items-__prefix__-id" id="id_items-__prefix__-id">
+
+    <div class="row g-2 mb-2">
+        <div class="col-md-4">
+            <label class="form-label">รูปดีไซน์</label>
+            <input type="file" name="items-__prefix__-design_image" accept="image/*" class="form-control form-control-sm" id="id_items-__prefix__-design_image">
+            <div class="form-check mt-1 copy-image-check" style="display:none;">
+                <input class="form-check-input copy-image-cb" type="checkbox" name="copy_image___prefix__" data-index="__prefix__">
+                <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="variants-section">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <small class="text-muted fw-bold">แบบเสื้อในรูปนี้</small>
+            <button type="button" class="btn btn-outline-primary btn-sm add-variant-btn" data-item-index="__prefix__">+ เพิ่มแบบ</button>
+        </div>
+        {{ empty_variant_formset.management_form }}
+        <div class="variants-container" data-item-index="__prefix__"></div>
+    </div>
+</div>
+</template>
+
+<template id="empty-variant-template">
+<div class="variant-form bg-light rounded p-2 mb-2" data-variant-index="__vprefix__">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <strong class="variant-label small">แบบ</strong>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary variant-qty-badge">0 ตัว</span>
+            <label class="btn btn-outline-danger btn-sm py-0 mb-0" title="ลบแบบนี้">
+                <input type="checkbox" name="items-__iprefix__-variants-__vprefix__-DELETE" id="id_items-__iprefix__-variants-__vprefix__-DELETE" class="form-check-input"> ลบแบบ
+            </label>
+        </div>
+    </div>
+    <input type="hidden" name="items-__iprefix__-variants-__vprefix__-id" id="id_items-__iprefix__-variants-__vprefix__-id">
+    <input type="hidden" name="items-__iprefix__-variants-__vprefix__-sizes_json" id="id_items-__iprefix__-variants-__vprefix__-sizes_json">
+    <div class="row g-2">
+        <div class="col-md-2">
+            <label class="form-label small mb-0">คอ</label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-collar" id="id_items-__iprefix__-variants-__vprefix__-collar" class="form-control form-control-sm" list="collar-suggestions" placeholder="คอกลม">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small mb-0">แขน</label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-sleeve" id="id_items-__iprefix__-variants-__vprefix__-sleeve" class="form-control form-control-sm" list="sleeve-suggestions" placeholder="แขนสั้น">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small mb-0">สี</label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-color" id="id_items-__iprefix__-variants-__vprefix__-color" class="form-control form-control-sm" placeholder="สี">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label small mb-0">โน้ตแบบนี้</label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-note" id="id_items-__iprefix__-variants-__vprefix__-note" class="form-control form-control-sm" placeholder="โน้ต (ถ้ามี)">
+        </div>
+    </div>
+    <div class="sizes-container mt-2"></div>
+    <button type="button" class="btn btn-outline-secondary btn-sm mt-1 add-size-btn">+ เพิ่มไซส์อื่น</button>
+</div>
+</template>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-// ==================== Shipping Address toggle ====================
+(function () {
+
+const DEFAULT_SIZES = ['S','M','L','XL','2XL','3XL','4XL'];
+const defaultSizesJson = JSON.stringify(DEFAULT_SIZES.map(s => ({label: s, qty: 0})));
+
+// =================== Toggle: shipping_address ===================
 const deliveryField = document.getElementById('id_delivery_method');
 const shippingRow = document.getElementById('shipping-address-row');
-
 function toggleShipping() {
     shippingRow.style.display = deliveryField.value === 'ส่ง' ? '' : 'none';
 }
 deliveryField.addEventListener('change', toggleShipping);
 toggleShipping();
 
-// ==================== Fabric Spec toggle ====================
+// =================== Toggle: fabric_spec (เพจเสื้อคนงาน) ===================
 const sourceField = document.getElementById('id_source');
 const fabricRow = document.getElementById('fabric-spec-row');
 const fabricField = document.getElementById('id_fabric_spec');
-
 function toggleFabric() {
     const isKonNgan = sourceField.value === 'เพจเสื้อคนงาน';
     fabricRow.style.display = isKonNgan ? '' : 'none';
     if (isKonNgan && !fabricField.value) {
         fabricField.value = 'ผ้า 120 แกรม';
     }
-    if (isKonNgan) {
-        fabricField.style.border = '2px solid red';
-    } else {
-        fabricField.style.border = '';
-    }
+    fabricField.style.border = isKonNgan ? '2px solid red' : '';
 }
 sourceField.addEventListener('change', toggleFabric);
 toggleFabric();
 
-// ==================== Remaining calculation ====================
+// =================== Remaining money ===================
 const totalPriceField = document.getElementById('id_total_price');
 const depositField = document.getElementById('id_deposit');
 const remainingDisplay = document.getElementById('remaining-display');
-
 function calcRemaining() {
     const total = parseFloat(totalPriceField.value) || 0;
     const deposit = parseFloat(depositField.value) || 0;
-    const remaining = total - deposit;
-    remainingDisplay.textContent = remaining.toLocaleString('th-TH');
-    remainingDisplay.style.color = remaining > 0 ? '#dc3545' : '#198754';
+    const r = total - deposit;
+    remainingDisplay.textContent = r.toLocaleString('th-TH');
+    remainingDisplay.style.color = r > 0 ? '#dc3545' : '#198754';
 }
 totalPriceField.addEventListener('input', calcRemaining);
 depositField.addEventListener('input', calcRemaining);
 calcRemaining();
 
-// ==================== Sizes System ====================
-function renderSizes(itemEl) {
-    const hiddenField = itemEl.querySelector('[name$="-sizes_json"]');
-    let sizes;
-    try {
-        sizes = JSON.parse(hiddenField.value);
-    } catch {
-        sizes = [
-            {label: 'S', qty: 0}, {label: 'M', qty: 0}, {label: 'L', qty: 0},
-            {label: 'XL', qty: 0}, {label: '2XL', qty: 0}, {label: '3XL', qty: 0},
-            {label: '4XL', qty: 0}
-        ];
+// =================== Sizes (per variant) ===================
+function getSizesField(variantEl) {
+    return variantEl.querySelector('[name$="-sizes_json"]');
+}
+
+function readSizes(variantEl) {
+    const f = getSizesField(variantEl);
+    if (!f) return [];
+    try { return JSON.parse(f.value) || []; }
+    catch { return []; }
+}
+
+function writeSizes(variantEl, sizes) {
+    const f = getSizesField(variantEl);
+    if (f) f.value = JSON.stringify(sizes);
+}
+
+function renderSizes(variantEl) {
+    let sizes = readSizes(variantEl);
+    if (!sizes.length) {
+        sizes = DEFAULT_SIZES.map(s => ({label: s, qty: 0}));
+        writeSizes(variantEl, sizes);
     }
 
-    const container = itemEl.querySelector('.sizes-container');
+    const container = variantEl.querySelector('.sizes-container');
     container.innerHTML = '';
 
-    const defaultLabels = ['S','M','L','XL','2XL','3XL','4XL'];
-
-    // Standard sizes row
     const stdRow = document.createElement('div');
     stdRow.className = 'd-flex flex-wrap gap-1 align-items-end';
-
-    // Custom sizes row
     const customRow = document.createElement('div');
-    customRow.className = 'd-flex flex-wrap gap-1 align-items-end mt-2';
+    customRow.className = 'd-flex flex-wrap gap-1 align-items-end mt-1';
 
     sizes.forEach((size, i) => {
         const col = document.createElement('div');
         col.className = 'text-center';
-        col.style.minWidth = '55px';
+        col.style.minWidth = '52px';
 
-        const isCustom = !defaultLabels.includes(size.label);
+        const isCustom = !DEFAULT_SIZES.includes(size.label);
         const labelHtml = isCustom
-            ? `<input type="text" value="${size.label}" class="form-control form-control-sm text-center mb-1 size-label-input" style="width:55px;font-size:11px;" data-idx="${i}" placeholder="ชื่อไซส์">`
+            ? `<input type="text" value="${size.label}" class="form-control form-control-sm text-center mb-1 size-label-input" style="width:52px;font-size:11px;" data-idx="${i}" placeholder="ไซส์">`
             : `<div class="small fw-bold">${size.label}</div>`;
 
         col.innerHTML = `
             ${labelHtml}
-            <input type="number" min="0" value="${size.qty || 0}" class="form-control form-control-sm text-center size-qty-input" style="width:55px;" data-idx="${i}">
+            <input type="number" min="0" value="${size.qty || 0}" class="form-control form-control-sm text-center size-qty-input" style="width:52px;" data-idx="${i}">
             ${isCustom ? `<button type="button" class="btn btn-link btn-sm text-danger p-0 remove-size-btn" data-idx="${i}" style="font-size:10px;">ลบ</button>` : ''}
         `;
-
-        if (isCustom) {
-            customRow.appendChild(col);
-        } else {
-            stdRow.appendChild(col);
-        }
+        (isCustom ? customRow : stdRow).appendChild(col);
     });
 
     container.appendChild(stdRow);
-    if (customRow.children.length > 0) {
-        container.appendChild(customRow);
-    }
+    if (customRow.children.length) container.appendChild(customRow);
 
-    // Bind events
-    container.querySelectorAll('.size-qty-input').forEach(input => {
-        input.addEventListener('input', () => syncSizes(itemEl));
-    });
-    container.querySelectorAll('.size-label-input').forEach(input => {
-        input.addEventListener('input', () => syncSizes(itemEl));
-    });
-    container.querySelectorAll('.remove-size-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const idx = parseInt(btn.dataset.idx);
-            sizes.splice(idx, 1);
-            hiddenField.value = JSON.stringify(sizes);
-            renderSizes(itemEl);
-            updateGrandTotal();
-        });
-    });
+    container.querySelectorAll('.size-qty-input').forEach(inp => inp.addEventListener('input', () => syncSizes(variantEl)));
+    container.querySelectorAll('.size-label-input').forEach(inp => inp.addEventListener('input', () => syncSizes(variantEl)));
+    container.querySelectorAll('.remove-size-btn').forEach(btn => btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        const s = readSizes(variantEl);
+        s.splice(idx, 1);
+        writeSizes(variantEl, s);
+        renderSizes(variantEl);
+        updateGrandTotal();
+    }));
 
-    updateItemQty(itemEl, sizes);
+    updateVariantBadge(variantEl);
 }
 
-function syncSizes(itemEl) {
-    const hiddenField = itemEl.querySelector('[name$="-sizes_json"]');
-    const qtyInputs = itemEl.querySelectorAll('.size-qty-input');
-    const labelInputs = itemEl.querySelectorAll('.size-label-input');
-    let sizes;
-    try {
-        sizes = JSON.parse(hiddenField.value);
-    } catch {
-        sizes = [];
-    }
-
-    qtyInputs.forEach(input => {
-        const idx = parseInt(input.dataset.idx);
-        if (sizes[idx]) sizes[idx].qty = parseInt(input.value) || 0;
+function syncSizes(variantEl) {
+    const sizes = readSizes(variantEl);
+    variantEl.querySelectorAll('.size-qty-input').forEach(inp => {
+        const i = parseInt(inp.dataset.idx);
+        if (sizes[i]) sizes[i].qty = parseInt(inp.value) || 0;
     });
-    labelInputs.forEach(input => {
-        const idx = parseInt(input.dataset.idx);
-        if (sizes[idx]) sizes[idx].label = input.value;
+    variantEl.querySelectorAll('.size-label-input').forEach(inp => {
+        const i = parseInt(inp.dataset.idx);
+        if (sizes[i]) sizes[i].label = inp.value;
     });
-
-    hiddenField.value = JSON.stringify(sizes);
-    updateItemQty(itemEl, sizes);
+    writeSizes(variantEl, sizes);
+    updateVariantBadge(variantEl);
     updateGrandTotal();
 }
 
-function updateItemQty(itemEl, sizes) {
-    const total = sizes.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
-    const badge = itemEl.querySelector('.item-qty-badge');
-    if (badge) badge.textContent = `${total} ตัว`;
+function variantTotal(variantEl) {
+    return readSizes(variantEl).reduce((a, s) => a + (parseInt(s.qty) || 0), 0);
+}
+
+function updateVariantBadge(variantEl) {
+    const t = variantTotal(variantEl);
+    const b = variantEl.querySelector('.variant-qty-badge');
+    if (b) b.textContent = `${t} ตัว`;
 }
 
 function updateGrandTotal() {
     let grand = 0;
-    document.querySelectorAll('.item-form').forEach(itemEl => {
-        const hidden = itemEl.querySelector('[name$="-sizes_json"]');
-        if (!hidden) return;
-        try {
-            const sizes = JSON.parse(hidden.value);
-            grand += sizes.reduce((sum, s) => sum + (parseInt(s.qty) || 0), 0);
-        } catch {}
+    document.querySelectorAll('.item-form').forEach(item => {
+        let it = 0;
+        item.querySelectorAll('.variant-form').forEach(v => it += variantTotal(v));
+        const b = item.querySelector('.item-qty-badge');
+        if (b) b.textContent = `${it} ตัว`;
+        grand += it;
     });
     document.getElementById('grand-total-qty').textContent = `รวม ${grand} ตัว`;
 }
 
-// Add custom size
-document.addEventListener('click', function(e) {
-    if (!e.target.classList.contains('add-size-btn')) return;
-    const itemEl = e.target.closest('.item-form');
-    const hiddenField = itemEl.querySelector('[name$="-sizes_json"]');
-    let sizes;
-    try { sizes = JSON.parse(hiddenField.value); } catch { sizes = []; }
-    sizes.push({label: '', qty: 0});
-    hiddenField.value = JSON.stringify(sizes);
-    renderSizes(itemEl);
+document.addEventListener('click', function (e) {
+    if (e.target.classList.contains('add-size-btn')) {
+        const variantEl = e.target.closest('.variant-form');
+        const sizes = readSizes(variantEl);
+        sizes.push({label: '', qty: 0});
+        writeSizes(variantEl, sizes);
+        renderSizes(variantEl);
+    }
 });
 
-// Init all existing items
-document.querySelectorAll('.item-form').forEach(renderSizes);
-updateGrandTotal();
+// =================== Add new variant within an existing item ===================
+function variantsContainer(itemIndex) {
+    return document.querySelector(`.variants-container[data-item-index="${itemIndex}"]`);
+}
 
-// ==================== Add new item (dynamic formset) ====================
-const container = document.getElementById('formset-container');
-const totalForms = document.getElementById('id_items-TOTAL_FORMS');
-const addBtn = document.getElementById('add-item');
+function variantTotalFormsField(itemIndex) {
+    return document.getElementById(`id_items-${itemIndex}-variants-TOTAL_FORMS`);
+}
 
-const defaultSizes = JSON.stringify([
-    {label:'S',qty:0},{label:'M',qty:0},{label:'L',qty:0},
-    {label:'XL',qty:0},{label:'2XL',qty:0},{label:'3XL',qty:0},{label:'4XL',qty:0}
-]);
+function addVariant(itemIndex, copyFromPrev) {
+    const tot = variantTotalFormsField(itemIndex);
+    if (!tot) return;
+    const j = parseInt(tot.value);
+    const tpl = document.getElementById('empty-variant-template').innerHTML
+        .replaceAll('__iprefix__', itemIndex)
+        .replaceAll('__vprefix__', j);
 
-addBtn.addEventListener('click', function() {
-    const formCount = parseInt(totalForms.value);
-    const firstForm = container.querySelector('.item-form');
-    const newForm = firstForm.cloneNode(true);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = tpl.trim();
+    const newVariantEl = wrap.firstElementChild;
 
-    // Update form index in name/id attributes
-    newForm.querySelectorAll('[name]').forEach(el => {
-        el.name = el.name.replace(/items-\d+-/, `items-${formCount}-`);
-        if (el.id) el.id = el.id.replace(/items-\d+-/, `items-${formCount}-`);
-    });
+    const container = variantsContainer(itemIndex);
+    container.appendChild(newVariantEl);
+    tot.value = j + 1;
 
-    // Clear values
-    newForm.querySelectorAll('input:not([type=hidden])').forEach(input => {
-        if (input.type === 'number') input.value = '0';
-        else if (input.type === 'checkbox') input.checked = false;
-        else if (input.type === 'file') { /* leave file empty */ }
-        else input.value = '';
-    });
-    newForm.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    const sizesField = newVariantEl.querySelector('[name$="-sizes_json"]');
+    sizesField.value = defaultSizesJson;
 
-    // Reset hidden id and sizes
-    const idField = newForm.querySelector(`[name="items-${formCount}-id"]`);
-    if (idField) idField.value = '';
-    const sizesField = newForm.querySelector(`[name="items-${formCount}-sizes_json"]`);
-    if (sizesField) sizesField.value = defaultSizes;
-
-    // Remove any existing image preview
-    const imgPreview = newForm.querySelector('img');
-    if (imgPreview) imgPreview.parentElement.remove();
-
-    // Update label
-    const strong = newForm.querySelector('.item-label');
-    if (strong) strong.textContent = `รายการที่ ${formCount + 1}`;
-
-    // Remove error messages
-    newForm.querySelectorAll('.text-danger.small').forEach(el => el.remove());
-
-    newForm.dataset.index = formCount;
-    container.appendChild(newForm);
-    totalForms.value = formCount + 1;
-
-    // Update copy-image checkbox name
-    const copyCb = newForm.querySelector('.copy-image-cb');
-    if (copyCb) copyCb.name = `copy_image_${formCount}`;
-
-    renderSizes(newForm);
-    updateGrandTotal();
-    updateCopyImageVisibility();
-});
-
-// ==================== Copy image from item 1 ====================
-function updateCopyImageVisibility() {
-    const allForms = document.querySelectorAll('.item-form');
-    allForms.forEach((form, idx) => {
-        const checkDiv = form.querySelector('.copy-image-check');
-        if (checkDiv) {
-            checkDiv.style.display = idx > 0 ? '' : 'none';
+    if (copyFromPrev) {
+        const prev = newVariantEl.previousElementSibling;
+        if (prev && prev.classList.contains('variant-form')) {
+            ['collar', 'sleeve', 'color'].forEach(name => {
+                const fromInput = prev.querySelector(`[name$="-${name}"]:not([type=hidden])`);
+                const toInput = newVariantEl.querySelector(`[name$="-${name}"]`);
+                if (fromInput && toInput) toInput.value = fromInput.value;
+            });
+            const prevSizes = readSizes(prev);
+            const reset = prevSizes.map(s => ({label: s.label, qty: 0}));
+            sizesField.value = JSON.stringify(reset);
         }
+    }
+
+    const lbl = newVariantEl.querySelector('.variant-label');
+    if (lbl) lbl.textContent = `แบบที่ ${j + 1}`;
+
+    renderSizes(newVariantEl);
+    updateGrandTotal();
+}
+
+document.addEventListener('click', function (e) {
+    if (e.target.classList.contains('add-variant-btn')) {
+        const i = e.target.dataset.itemIndex;
+        addVariant(i, /* copyFromPrev */ true);
+    }
+});
+
+// =================== Add new item ===================
+const itemsContainer = document.getElementById('items-container');
+const itemsTotalForms = document.getElementById('id_items-TOTAL_FORMS');
+
+document.getElementById('add-item').addEventListener('click', function () {
+    const i = parseInt(itemsTotalForms.value);
+    const tpl = document.getElementById('empty-item-template').innerHTML
+        .replaceAll('__prefix__', i);
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = tpl.trim();
+    const newItemEl = wrap.firstElementChild;
+    itemsContainer.appendChild(newItemEl);
+    itemsTotalForms.value = i + 1;
+
+    const lbl = newItemEl.querySelector('.item-label');
+    if (lbl) lbl.textContent = `รายการที่ ${i + 1}`;
+
+    updateCopyImageVisibility();
+    addVariant(String(i), /* copyFromPrev */ false);
+});
+
+// =================== Copy-image checkbox visibility ===================
+function updateCopyImageVisibility() {
+    document.querySelectorAll('.item-form').forEach((form, idx) => {
+        const checkDiv = form.querySelector('.copy-image-check');
+        if (checkDiv) checkDiv.style.display = idx > 0 ? '' : 'none';
     });
 }
+
+// =================== Initial render ===================
+document.querySelectorAll('.variant-form').forEach(renderSizes);
 updateCopyImageVisibility();
+updateGrandTotal();
+
+})();
 </script>
 {% endblock %}
