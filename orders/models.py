@@ -108,50 +108,54 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    SLEEVE_CHOICES = [
-        ('แขนสั้น', 'แขนสั้น'),
-        ('แขนยาว', 'แขนยาว'),
-        ('แขนกุด', 'แขนกุด'),
-    ]
-
-    COLLAR_CHOICES = [
-        ('คอกลม', 'คอกลม'),
-        ('คอวี', 'คอวี'),
-        ('โปโล', 'โปโล'),
-        ('คอปกวี', 'คอปกวี'),
-        ('คอกีฬา', 'คอกีฬา'),
-        ('อื่นๆ', 'อื่นๆ'),
-    ]
-
-    DEFAULT_SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
+    """รายการเสื้อ — 1 รูปดีไซน์ มีได้หลาย "แบบ" (ShirtVariant)."""
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     design_image = models.ImageField('รูปดีไซน์', upload_to=design_upload_path, blank=True)
-    sleeve_type = models.CharField('ประเภทแขน', max_length=20, choices=SLEEVE_CHOICES, default='แขนสั้น')
-    collar_type = models.CharField('ประเภทคอ', max_length=20, choices=COLLAR_CHOICES, default='คอกลม')
-    color = models.CharField('สีเสื้อ', max_length=50)
-    sizes = models.JSONField('ไซส์และจำนวน', default=list, blank=True,
-                             help_text='[{"label": "S", "qty": 5}, {"label": "M", "qty": 10}, ...]')
+    order_index = models.PositiveIntegerField('ลำดับ', default=0)
 
     class Meta:
+        ordering = ['order_index', 'id']
         verbose_name = 'รายการเสื้อ'
         verbose_name_plural = 'รายการเสื้อ'
 
     def __str__(self):
-        return f'{self.collar_type}{self.sleeve_type} {self.color}'
+        return f'Item #{self.pk} (order {self.order_id})'
 
     @property
     def total_qty(self):
-        if not self.sizes:
-            return 0
-        return sum(s.get('qty', 0) for s in self.sizes if s.get('qty'))
+        return sum(v.total_qty for v in self.variants.all())
+
+
+class ShirtVariant(models.Model):
+    """แบบ — 1 OrderItem มีได้หลายแบบ (คอ/แขน/สี/ไซส์ต่างกันบนรูปเดียว)."""
+
+    item = models.ForeignKey(
+        OrderItem, on_delete=models.CASCADE, related_name='variants',
+        verbose_name='รายการเสื้อ',
+    )
+    collar = models.CharField('คอ', max_length=50, blank=True,
+                              help_text='เช่น คอกลม, คอวี, คอเรือ')
+    sleeve = models.CharField('แขน', max_length=50, blank=True,
+                              help_text='เช่น แขนสั้น, แขนยาว, แขนกุด')
+    color = models.CharField('สี', max_length=50, blank=True)
+    sizes = models.JSONField('ไซส์และจำนวน', default=list,
+                             help_text='[{"label":"S","qty":5}, ...]')
+    note = models.CharField('โน้ตเฉพาะแบบนี้', max_length=200, blank=True)
+    order_index = models.PositiveIntegerField('ลำดับ', default=0)
+
+    class Meta:
+        ordering = ['order_index', 'id']
+        verbose_name = 'แบบ'
+        verbose_name_plural = 'แบบ'
+
+    def __str__(self):
+        parts = [self.collar, self.sleeve, self.color]
+        return ' / '.join(p for p in parts if p) or f'Variant #{self.pk}'
 
     @property
-    def sizes_display(self):
-        """Return only sizes with qty > 0."""
-        if not self.sizes:
-            return []
-        return [s for s in self.sizes if s.get('qty', 0) > 0]
+    def total_qty(self):
+        return sum(s.get('qty', 0) for s in self.sizes if isinstance(s, dict))
 
 
 class Tailor(models.Model):

@@ -1,10 +1,17 @@
 from django.contrib import admin
-from .models import Order, OrderItem, Tailor, StageLog
+from .models import Order, OrderItem, ShirtVariant, Tailor, StageLog
 
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
+    fields = ['order_index', 'design_image']
+
+
+class ShirtVariantInline(admin.TabularInline):
+    model = ShirtVariant
+    extra = 1
+    fields = ['order_index', 'collar', 'sleeve', 'color', 'sizes', 'note']
 
 
 @admin.register(Order)
@@ -15,6 +22,13 @@ class OrderAdmin(admin.ModelAdmin):
     readonly_fields = ['order_number']
     inlines = [OrderItemInline]
     filter_horizontal = ['tailors']
+
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ['id', 'order', 'order_index', 'design_image']
+    list_filter = ['order']
+    inlines = [ShirtVariantInline]
 
 
 @admin.register(Tailor)
