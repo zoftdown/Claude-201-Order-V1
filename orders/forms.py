@@ -32,15 +32,23 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'source', 'customer_name',
+            'source', 'created_date', 'customer_name',
             'customer_link', 'shirt_name', 'fabric_spec', 'special_note',
             'total_price', 'deposit', 'delivery_method', 'shipping_address', 'status',
         ]
         widgets = {
+            'created_date': forms.DateInput(
+                attrs={'type': 'date'}, format='%Y-%m-%d',
+            ),
             'fabric_spec': forms.Textarea(attrs={'rows': 2, 'placeholder': 'ผ้า 120 แกรม'}),
             'special_note': forms.Textarea(attrs={'rows': 2}),
             'shipping_address': forms.Textarea(attrs={'rows': 3, 'placeholder': 'ชื่อ-ที่อยู่-เบอร์โทร สำหรับจัดส่งพัสดุ'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # <input type="date"> requires ISO format on input parsing too.
+        self.fields['created_date'].input_formats = ['%Y-%m-%d']
 
 
 class OrderItemForm(BootstrapMixin, forms.ModelForm):

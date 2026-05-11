@@ -38,7 +38,6 @@
             {% if order %}
             <div class="row g-2 mb-2">
                 <div class="col-auto"><span class="badge bg-dark fs-6">{{ order.order_number }}</span></div>
-                <div class="col-auto"><span class="text-muted">สร้างเมื่อ {{ order.created_date|date:"d/m/Y" }}</span></div>
             </div>
             {% endif %}
             <div class="row g-2">
@@ -46,6 +45,11 @@
                     <label class="form-label">แหล่งที่มา <span class="text-danger">*</span></label>
                     {{ form.source }}
                     {% if form.source.errors %}<div class="text-danger small">{{ form.source.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">วันที่สร้าง</label>
+                    {{ form.created_date }}
+                    {% if form.created_date.errors %}<div class="text-danger small">{{ form.created_date.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">สถานะ</label>
