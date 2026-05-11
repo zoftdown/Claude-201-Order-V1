@@ -1,0 +1,30 @@
+{# Single variant block: collar/sleeve heading + color + note + vertical sizes + total #}
+<div class="variant-block">
+    <div class="variant-title">
+        {% if v.collar or v.sleeve %}
+            {{ v.collar }}{% if v.collar and v.sleeve %} {% endif %}{{ v.sleeve }}
+        {% else %}
+            แบบ
+        {% endif %}
+    </div>
+    {% if v.color %}
+        <div class="variant-color-line">สี {{ v.color }}</div>
+    {% endif %}
+    {% if v.note %}
+        <div class="variant-note">📝 {{ v.note }}</div>
+    {% endif %}
+    <hr class="variant-sep">
+    <ul class="variant-sizes-vertical">
+        {% for size in v.sizes %}
+            {% if size.qty %}
+            <li>
+                <span class="s-label">{{ size.label }}</span>
+                <span class="s-qty">{{ size.qty }}</span>
+            </li>
+            {% endif %}
+        {% empty %}
+            <li class="variant-no-sizes">— ยังไม่ระบุไซส์ —</li>
+        {% endfor %}
+    </ul>
+    <div class="variant-total">รวม {{ v.total_qty }} ตัว</div>
+</div>

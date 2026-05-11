@@ -277,16 +277,9 @@ def order_detail(request, pk):
 @login_required
 def order_print(request, pk):
     order = get_object_or_404(Order, pk=pk)
-    items = list(order.items.all())
-
-    # Split items into pages: page 1 has header so max 2 items, next pages max 3
-    pages = []
-    if items:
-        pages.append(items[:2])   # First page: max 2 items (header takes space)
-        remaining = items[2:]
-        while remaining:
-            pages.append(remaining[:3])  # Subsequent pages: max 3 items
-            remaining = remaining[3:]
+    # Phase 1.7: one item per physical page via CSS page-break.
+    # Template chunks variants into first-4 + remainder for items with 5+ variants.
+    items = list(order.items.prefetch_related('variants').all())
 
     # QR code → URL of the production-floor /update/ page for this order.
     # build_absolute_uri respects the request's scheme + host + FORCE_SCRIPT_NAME,
@@ -298,8 +291,7 @@ def order_print(request, pk):
 
     return render(request, 'orders/order_print.html', {
         'order': order,
-        'pages': pages,
-        'is_single_item': len(items) == 1,
+        'items': items,
         'qr_svg': qr_svg,
         'update_url': update_url,
     })
