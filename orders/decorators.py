@@ -38,9 +38,14 @@ def require_department(view_func):
 def viewer_or_login_required(view_func):
     """Read-only views (list / detail / print) accept either path:
 
-    - Logged-in Django user      → request.is_viewer = False
-    - 'viewer' department cookie → request.is_viewer = True
-    - Otherwise                  → redirect to /login/?next=...
+    - Logged-in Django user        → request.is_viewer = False
+    - ANY valid production_dept    → request.is_viewer = True
+      cookie (viewer + 6 prod depts)
+    - Otherwise                    → redirect to /login/?next=...
+
+    Production-dept users land here when they click "ดูใบ" from the
+    dashboard search results. Treating them as is_viewer hides prices
+    and edit/delete buttons — same UX as the read-only viewer dept.
 
     Templates that render under this decorator should hide
     edit/delete/create/price elements when `request.is_viewer` is true.
@@ -51,7 +56,8 @@ def viewer_or_login_required(view_func):
         if request.user.is_authenticated:
             request.is_viewer = False
             return view_func(request, *args, **kwargs)
-        if request.COOKIES.get('production_dept') == VIEWER_SLUG:
+        slug = request.COOKIES.get('production_dept')
+        if slug in VALID_SLUGS:
             request.is_viewer = True
             return view_func(request, *args, **kwargs)
         return redirect_to_login(request.get_full_path())

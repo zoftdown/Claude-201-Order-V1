@@ -444,6 +444,22 @@ def _build_pending_rows(qs, enter_field, *, attr_override=None):
     return rows
 
 
+def _build_search_rows(qs, dept_slug):
+    """Like _build_pending_rows but adds the primary stage-done action
+    for the current dept, so the search list can render an in-line button."""
+    rows = []
+    for o in qs:
+        items_cache = list(o.items.all())
+        first_item = items_cache[0] if items_cache else None
+        actions = _build_actions(o, dept_slug)
+        rows.append({
+            'order': o,
+            'first_item': first_item,
+            'primary_action': actions[0] if actions else None,
+        })
+    return rows
+
+
 @require_department
 def dept_dashboard(request, slug):
     dept = request.production_dept
@@ -467,6 +483,22 @@ def dept_dashboard(request, slug):
             'is_current': d['slug'] == dept['slug'],
         })
     repair_count = Order.objects.filter(needs_repair=True).count()
+
+    # --- Search (any order, not restricted to dept's pending queue) ---
+    q = (request.GET.get('q') or '').strip()
+    search_rows = []
+    if q:
+        search_qs = (
+            Order.objects
+            .filter(
+                Q(customer_name__icontains=q)
+                | Q(order_number__icontains=q)
+                | Q(shirt_name__icontains=q)
+            )
+            .prefetch_related('items')
+            .order_by('-id')[:50]
+        )
+        search_rows = _build_search_rows(search_qs, dept['slug'])
 
     # --- My pending orders (oldest first = most urgent at top) ---
     cfg = DEPT_PENDING_CONFIG[dept['slug']]
@@ -501,6 +533,8 @@ def dept_dashboard(request, slug):
         'repair_count': repair_count,
         'pending': pending,
         'repair_rows': repair_rows,
+        'search_query': q,
+        'search_rows': search_rows,
     })
 
 

@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="30">
+    {# Auto-refresh disabled while searching so the user's query doesn't get wiped. #}
+    {% if not search_query %}<meta http-equiv="refresh" content="30">{% endif %}
     <title>{{ dept.name }} — Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -197,6 +198,92 @@
             font-size: 0.75rem;
             margin-top: 1.5rem;
         }
+
+        /* --- Search bar --- */
+        .search-bar {
+            display: flex;
+            gap: 0.4rem;
+            margin-bottom: 0.85rem;
+        }
+        .search-bar input[type=text] {
+            flex: 1;
+            border: 1px solid #cfd6db;
+            border-radius: 10px;
+            padding: 0.55rem 0.85rem;
+            font-size: 0.95rem;
+            background: #fff;
+            outline: none;
+        }
+        .search-bar input[type=text]:focus { border-color: {{ dept.color }}; }
+        .search-bar .btn-go {
+            background: {{ dept.color }};
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 0.55rem 1rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .search-bar .btn-clear {
+            background: #ecf0f1;
+            color: #34495e;
+            border: 1px solid #cfd6db;
+            border-radius: 10px;
+            padding: 0.55rem 0.85rem;
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* --- Search result row: card with action buttons (not a single click link) --- */
+        .search-row {
+            display: flex;
+            gap: 0.7rem;
+            align-items: center;
+            background: #fff;
+            border-radius: 12px;
+            padding: 0.7rem;
+            margin-bottom: 0.55rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        .search-row .order-info { flex: 1; min-width: 0; }
+        .search-row .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            flex-shrink: 0;
+            align-items: stretch;
+        }
+        .action-form { margin: 0; }
+        .btn-action {
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 0.4rem 0.7rem;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            background: #27ae60;
+            cursor: pointer;
+            white-space: nowrap;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        .btn-action.view {
+            background: #34495e;
+        }
+        .btn-action.done {
+            background: #27ae60;
+        }
+        .btn-action.warning {
+            background: #e67e22;
+        }
+        .btn-action.empty {
+            background: #bdc3c7;
+            color: #fff;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -225,6 +312,58 @@
                 <div class="counter-name">ซ่อม</div>
             </div>
         </div>
+
+        {# --- Search bar (ลูกค้า / เลขใบงาน / ชื่อเสื้อ) --- #}
+        <form method="get" class="search-bar" role="search" aria-label="ค้นหาออร์เดอร์">
+            <input type="text" name="q" value="{{ search_query }}"
+                   placeholder="ค้นหา ลูกค้า / เลขใบงาน / ชื่อเสื้อ"
+                   autocomplete="off">
+            <button type="submit" class="btn-go">ค้นหา</button>
+            {% if search_query %}<a href="{% url 'dept_dashboard' slug=dept.slug %}" class="btn-clear">ล้าง</a>{% endif %}
+        </form>
+
+        {# --- Search results (replaces the default pending/repair view when q is set) --- #}
+        {% if search_query %}
+            <h2 class="section-title">
+                ผลค้นหา "{{ search_query }}"
+                {% if search_rows %}<span class="badge-num">{{ search_rows|length }}</span>{% endif %}
+            </h2>
+            {% if search_rows %}
+                {% for row in search_rows %}
+                <div class="search-row">
+                    {% if row.first_item.design_image %}
+                    <img src="{{ row.first_item.design_image.url }}" alt="design" class="order-thumb">
+                    {% else %}
+                    <div class="order-thumb-placeholder" aria-hidden="true">👕</div>
+                    {% endif %}
+                    <div class="order-info">
+                        <p class="order-num">{{ row.order.order_number }}</p>
+                        <p class="order-customer">{{ row.order.customer_name }}</p>
+                        <p class="order-shirt">{{ row.order.shirt_name }}</p>
+                    </div>
+                    <div class="actions">
+                        {% if row.primary_action %}
+                        <form method="post" class="action-form"
+                              action="{% url 'update_order_stage' order_number=row.order.order_number %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="{{ row.primary_action.key }}">
+                            <button type="submit" class="btn-action done">{{ row.primary_action.label }}</button>
+                        </form>
+                        {% else %}
+                        <span class="btn-action empty">ทำแล้ว</span>
+                        {% endif %}
+                        <a href="{% url 'order_print' pk=row.order.pk %}" target="_blank"
+                           class="btn-action view">ดูใบ</a>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <div class="big">🔍</div>
+                    <div class="msg">ไม่พบออร์เดอร์ที่ตรงคำค้น</div>
+                </div>
+            {% endif %}
+        {% else %}
 
         {# --- Repair section (print dept only) --- #}
         {% if dept.slug == 'print' and repair_rows %}
@@ -282,7 +421,11 @@
             </div>
         {% endif %}
 
-        <p class="refresh-note">หน้านี้รีเฟรชอัตโนมัติทุก 30 วินาที</p>
+        {% endif %}  {# end of search_query else-branch #}
+
+        <p class="refresh-note">
+            {% if search_query %}ค้นหาแล้ว — แตะ "ล้าง" เพื่อกลับไปดูงานค้าง{% else %}หน้านี้รีเฟรชอัตโนมัติทุก 30 วินาที{% endif %}
+        </p>
     </div>
 </body>
 </html>
