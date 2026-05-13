@@ -63,6 +63,103 @@
     </div>
 </div>
 
+{# ============== Stage progress timeline (Phase 1.8) ============== #}
+<style>
+    .stage-timeline {
+        display: flex;
+        gap: 0;
+        align-items: stretch;
+        flex-wrap: wrap;
+    }
+    .stage-item {
+        flex: 1 1 0;
+        min-width: 90px;
+        position: relative;
+        text-align: center;
+        padding: 0.5rem 0.25rem;
+        background: #fff;
+    }
+    .stage-item + .stage-item::before {
+        content: '';
+        position: absolute;
+        top: 1.4rem;
+        left: -50%;
+        width: 100%;
+        height: 3px;
+        background: #dee2e6;
+        z-index: 0;
+    }
+    .stage-item.done + .stage-item.done::before,
+    .stage-item.done + .stage-item.current::before {
+        background: #28a745;
+    }
+    .stage-icon {
+        position: relative;
+        z-index: 1;
+        width: 2rem;
+        height: 2rem;
+        line-height: 2rem;
+        border-radius: 50%;
+        margin: 0 auto 0.25rem;
+        font-weight: 700;
+        font-size: 1rem;
+        display: inline-block;
+        background: #e9ecef;
+        color: #adb5bd;
+    }
+    .stage-item.done .stage-icon {
+        background: #28a745;
+        color: #fff;
+    }
+    .stage-item.current .stage-icon {
+        background: #fff;
+        color: #fd7e14;
+        border: 3px solid #fd7e14;
+        line-height: 1.7rem;
+        box-shadow: 0 0 0 4px rgba(253, 126, 20, 0.15);
+    }
+    .stage-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #6c757d;
+        line-height: 1.2;
+    }
+    .stage-item.done .stage-label { color: #2c3e50; }
+    .stage-item.current .stage-label { color: #fd7e14; font-weight: 700; }
+    .stage-time {
+        font-size: 0.72rem;
+        color: #6c757d;
+        margin-top: 0.15rem;
+        line-height: 1.15;
+    }
+    @media (max-width: 600px) {
+        .stage-item { min-width: 70px; padding: 0.4rem 0.15rem; }
+        .stage-icon { width: 1.7rem; height: 1.7rem; line-height: 1.7rem; font-size: 0.9rem; }
+        .stage-item.current .stage-icon { line-height: 1.4rem; }
+        .stage-label { font-size: 0.72rem; }
+        .stage-time { font-size: 0.65rem; }
+        .stage-item + .stage-item::before { top: 1.2rem; height: 2px; }
+    }
+</style>
+<div class="card mb-3">
+    <div class="card-header py-2"><strong>ความคืบหน้า</strong></div>
+    <div class="card-body py-2 px-2">
+        <div class="stage-timeline">
+            {% for stage in stage_timeline %}
+            <div class="stage-item {{ stage.state }}">
+                <div class="stage-icon" aria-hidden="true">
+                    {% if stage.state == 'done' %}✓{% elif stage.state == 'current' %}⏳{% else %}○{% endif %}
+                </div>
+                <div class="stage-label">{{ stage.label }}</div>
+                {% if stage.timestamp %}
+                <div class="stage-time">{{ stage.timestamp|date:"d/m/y H:i" }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
 <h5>รายการเสื้อ ({{ order.items.count }} รายการ, รวม {{ order.total_qty }} ตัว)</h5>
 
 {% for item in order.items.all %}

@@ -270,10 +270,48 @@ def order_edit(request, pk):
     ))
 
 
+def _build_detail_timeline(order):
+    """Stage progress widget for the detail page.
+
+    Returns one dict per stage with 'state' in {done, current, pending}.
+    The first stage without a timestamp becomes 'current'; later empty
+    stages are 'pending'. The terminal stage depends on delivery_method
+    so we never show both shipped + awaiting_pickup at once.
+    """
+    stages = [
+        ('พิมพ์',     order.print_done_at),
+        ('โรล',       order.roll_done_at),
+        ('ตัด',       order.cut_done_at),
+        ('คัด',       order.sort_done_at),
+        ('ส่งเย็บ',    order.sent_to_tailors_at),
+        ('รีด+แพ็ค', order.packed_at),
+    ]
+    if order.delivery_method == 'ส่ง':
+        stages.append(('ส่งของ', order.shipped_at))
+    else:
+        stages.append(('ลูกค้ารับ', order.awaiting_pickup_at))
+
+    timeline = []
+    current_seen = False
+    for label, ts in stages:
+        if ts:
+            state = 'done'
+        elif not current_seen:
+            state = 'current'
+            current_seen = True
+        else:
+            state = 'pending'
+        timeline.append({'label': label, 'timestamp': ts, 'state': state})
+    return timeline
+
+
 @viewer_or_login_required
 def order_detail(request, pk):
     order = get_object_or_404(Order, pk=pk)
-    return render(request, 'orders/order_detail.html', {'order': order})
+    return render(request, 'orders/order_detail.html', {
+        'order': order,
+        'stage_timeline': _build_detail_timeline(order),
+    })
 
 
 @viewer_or_login_required
