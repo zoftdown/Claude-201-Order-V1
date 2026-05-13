@@ -1,5 +1,8 @@
+import hashlib
+
 from django.db import models
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 
 
 def design_upload_path(instance, filename):
@@ -171,6 +174,43 @@ class Tailor(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class DepartmentPIN(models.Model):
+    """Singleton — the 4-digit PIN that gates department cookie setup.
+
+    Admin can change the PIN from /admin/. The decorator stores a sha256
+    of the current PIN in a cookie alongside the dept slug; when the PIN
+    changes, every existing cookie becomes invalid and every floor device
+    has to enter the new PIN on its next request.
+    """
+    pin = models.CharField('PIN 4 หลัก', max_length=4)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'PIN แผนก'
+        verbose_name_plural = 'PIN แผนก'
+
+    def __str__(self):
+        return f'PIN (updated {self.updated_at:%Y-%m-%d %H:%M})'
+
+    @classmethod
+    def _row(cls):
+        return cls.objects.first()
+
+    @classmethod
+    def current_hash(cls):
+        row = cls._row()
+        if not row or not row.pin:
+            return ''
+        return hashlib.sha256(row.pin.encode('utf-8')).hexdigest()
+
+    @classmethod
+    def verify(cls, candidate):
+        row = cls._row()
+        if not row or not row.pin or not candidate:
+            return False
+        return constant_time_compare(str(candidate), row.pin)
 
 
 class StageLog(models.Model):

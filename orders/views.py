@@ -11,8 +11,11 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from .decorators import require_department, viewer_or_login_required
-from .departments import DEPARTMENTS, VALID_SLUGS, VIEWER_SLUG
+from .decorators import (
+    require_department, viewer_or_login_required,
+    DEPT_COOKIE_NAME, DEPT_PIN_HASH_COOKIE,
+)
+from .departments import DEPARTMENTS, VALID_SLUGS, VIEWER_SLUG, get_department
 from .forms import (
     OrderForm,
     OrderItemFormSet,
@@ -20,10 +23,9 @@ from .forms import (
     COLLAR_SUGGESTIONS,
     SLEEVE_SUGGESTIONS,
 )
-from .models import Order, StageLog, Tailor
+from .models import DepartmentPIN, Order, StageLog, Tailor
 from .qr_utils import generate_qr_svg
 
-DEPT_COOKIE_NAME = 'production_dept'
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
 
 
@@ -325,37 +327,74 @@ def _safe_next(request, candidate):
     return candidate
 
 
+def _set_dept_cookies(response, slug):
+    """Set both dept slug + pin hash cookies with shared options."""
+    common = dict(
+        max_age=DEPT_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite='Lax',
+        secure=not settings.DEBUG,
+    )
+    response.set_cookie(DEPT_COOKIE_NAME, slug, **common)
+    response.set_cookie(DEPT_PIN_HASH_COOKIE, DepartmentPIN.current_hash(), **common)
+
+
+def _landing_for(slug):
+    if slug == VIEWER_SLUG:
+        return reverse('order_list')
+    return reverse('dept_dashboard', kwargs={'slug': slug})
+
+
 def select_department(request):
+    """Two-step flow:
+
+    Step 1  GET                       → render the dept grid.
+    Step 2  POST with dept only       → render the PIN entry page for that dept.
+    Step 3  POST with dept + pin OK   → set cookies, redirect to dept's landing.
+    Step 3' POST with dept + bad pin  → re-render PIN entry with error.
+    """
+    next_url_get = _safe_next(request, request.GET.get('next')) or ''
+    expired = request.GET.get('reason') == 'pin_expired'
+
     if request.method == 'POST':
         slug = request.POST.get('department')
         if slug not in VALID_SLUGS:
             return redirect('select_department')
 
-        # Viewer dept lands on the order list (read-only browsing).
-        # Production depts land on their stage dashboard.
-        if slug == VIEWER_SLUG:
-            default_landing = reverse('order_list')
-        else:
-            default_landing = reverse('dept_dashboard', kwargs={'slug': slug})
+        pin = (request.POST.get('pin') or '').strip()
+        next_url = _safe_next(request, request.POST.get('next')) or ''
 
-        next_url = (
-            _safe_next(request, request.POST.get('next'))
-            or default_landing
-        )
-        response = redirect(next_url)
-        response.set_cookie(
-            DEPT_COOKIE_NAME,
-            slug,
-            max_age=DEPT_COOKIE_MAX_AGE,
-            httponly=True,
-            samesite='Lax',
-            secure=not settings.DEBUG,
-        )
+        # Step 2: dept chosen, no PIN yet → show PIN form.
+        if not pin:
+            return render(request, 'orders/select_department.html', {
+                'departments': DEPARTMENTS,
+                'pending_dept': get_department(slug),
+                'next': next_url,
+                'pin_error': None,
+                'expired': False,
+            })
+
+        # Step 3: verify PIN.
+        if not DepartmentPIN.verify(pin):
+            return render(request, 'orders/select_department.html', {
+                'departments': DEPARTMENTS,
+                'pending_dept': get_department(slug),
+                'next': next_url,
+                'pin_error': 'PIN ไม่ถูกต้อง',
+                'expired': False,
+            })
+
+        landing = next_url or _landing_for(slug)
+        response = redirect(landing)
+        _set_dept_cookies(response, slug)
         return response
 
     return render(request, 'orders/select_department.html', {
         'departments': DEPARTMENTS,
-        'next': _safe_next(request, request.GET.get('next')) or '',
+        'pending_dept': None,
+        'next': next_url_get,
+        'pin_error': None,
+        'expired': expired,
         'current_slug': request.COOKIES.get(DEPT_COOKIE_NAME),
     })
 
@@ -363,6 +402,7 @@ def select_department(request):
 def clear_department(request):
     response = redirect('select_department')
     response.delete_cookie(DEPT_COOKIE_NAME)
+    response.delete_cookie(DEPT_PIN_HASH_COOKIE)
     return response
 
 

@@ -76,6 +76,87 @@
             text-align: center;
             margin-bottom: 1rem;
         }
+        .expired-banner {
+            background: #fdecea;
+            border: 1px solid #e74c3c;
+            color: #a93226;
+            padding: 0.6rem 0.85rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        /* --- PIN entry --- */
+        .pin-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 1.5rem 1.25rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,.1);
+            text-align: center;
+        }
+        .pin-card .dept-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 1rem;
+            border-radius: 12px;
+            color: #fff;
+            font-weight: 700;
+            font-size: 1.05rem;
+            margin-bottom: 1rem;
+        }
+        .pin-input {
+            width: 100%;
+            max-width: 220px;
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: 0.5rem;
+            border: 2px solid #cfd6db;
+            border-radius: 10px;
+            padding: 0.6rem 0.5rem;
+            margin: 0.5rem 0 0.75rem;
+            outline: none;
+        }
+        .pin-input:focus { border-color: #3498db; }
+        .pin-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-top: 0.5rem;
+        }
+        .btn-pin-go {
+            background: #2c3e50;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 0.65rem 1.4rem;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .btn-pin-back {
+            background: #ecf0f1;
+            color: #34495e;
+            border: 1px solid #cfd6db;
+            border-radius: 10px;
+            padding: 0.65rem 1.2rem;
+            font-size: 0.95rem;
+            text-decoration: none;
+        }
+        .pin-error {
+            color: #c0392b;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .pin-hint {
+            color: #7f8c8d;
+            font-size: 0.85rem;
+            margin-top: 0.75rem;
+        }
+
         @media (min-width: 600px) {
             .dept-btn { min-height: 130px; font-size: 1.25rem; }
             .dept-icon { font-size: 2.4rem; }
@@ -84,33 +165,72 @@
 </head>
 <body>
     <div class="wrap">
-        <h1>เลือกแผนก</h1>
-        <p class="subtitle">เลือกครั้งเดียว — ระบบจะจำไว้ 1 ปี</p>
+        {% if pending_dept %}
+            {# ============ STEP 2: PIN entry for the chosen dept ============ #}
+            <h1>ใส่ PIN</h1>
+            <p class="subtitle">PIN 4 หลักสำหรับเข้าสู่แผนก</p>
 
-        {% if current_slug %}
-        <div class="current-banner">
-            แผนกปัจจุบัน: <strong>{{ current_slug }}</strong> — กดเลือกใหม่เพื่อเปลี่ยน
-        </div>
+            <div class="pin-card">
+                <div class="dept-chip" style="background-color: {{ pending_dept.color }};">
+                    <span aria-hidden="true">{{ pending_dept.icon }}</span>
+                    <span>{{ pending_dept.name }}</span>
+                </div>
+
+                {% if pin_error %}<div class="pin-error">⚠ {{ pin_error }}</div>{% endif %}
+
+                <form method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="department" value="{{ pending_dept.slug }}">
+                    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+                    <input type="password" name="pin" class="pin-input"
+                           inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+                           autofocus required
+                           autocomplete="off"
+                           placeholder="••••">
+                    <div class="pin-actions">
+                        <a href="{% url 'select_department' %}{% if next %}?next={{ next|urlencode }}{% endif %}" class="btn-pin-back">ยกเลิก</a>
+                        <button type="submit" class="btn-pin-go">เข้าสู่ระบบ</button>
+                    </div>
+                </form>
+
+                <p class="pin-hint">ขอ PIN จากเจ้าของร้าน</p>
+            </div>
+        {% else %}
+            {# ============ STEP 1: choose dept ============ #}
+            <h1>เลือกแผนก</h1>
+            <p class="subtitle">เลือกครั้งเดียว — ระบบจะจำไว้ 1 ปี</p>
+
+            {% if expired %}
+            <div class="expired-banner">
+                ⚠ PIN หมดอายุ — เจ้าของร้านอาจเปลี่ยน PIN กรุณาเลือกแผนกและใส่ PIN ใหม่
+            </div>
+            {% endif %}
+
+            {% if current_slug and not expired %}
+            <div class="current-banner">
+                แผนกปัจจุบัน: <strong>{{ current_slug }}</strong> — กดเลือกใหม่เพื่อเปลี่ยน
+            </div>
+            {% endif %}
+
+            <div class="dept-grid">
+                {% for dept in departments %}
+                <form method="post" action="" class="dept-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="department" value="{{ dept.slug }}">
+                    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+                    <button type="submit"
+                            class="dept-btn {% if dept.slug == current_slug %}is-current{% endif %}"
+                            style="background-color: {{ dept.color }};"
+                            aria-label="เลือกแผนก {{ dept.name }}">
+                        <span class="dept-icon" aria-hidden="true">{{ dept.icon }}</span>
+                        <span class="dept-name">{{ dept.name }}</span>
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+
+            <p class="footnote">ระบบสำหรับฝ่ายผลิต — ใส่ PIN 4 หลัก</p>
         {% endif %}
-
-        <div class="dept-grid">
-            {% for dept in departments %}
-            <form method="post" action="" class="dept-form">
-                {% csrf_token %}
-                <input type="hidden" name="department" value="{{ dept.slug }}">
-                {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-                <button type="submit"
-                        class="dept-btn {% if dept.slug == current_slug %}is-current{% endif %}"
-                        style="background-color: {{ dept.color }};"
-                        aria-label="เลือกแผนก {{ dept.name }}">
-                    <span class="dept-icon" aria-hidden="true">{{ dept.icon }}</span>
-                    <span class="dept-name">{{ dept.name }}</span>
-                </button>
-            </form>
-            {% endfor %}
-        </div>
-
-        <p class="footnote">ระบบสำหรับฝ่ายผลิต — ไม่ต้อง login</p>
     </div>
 </body>
 </html>
