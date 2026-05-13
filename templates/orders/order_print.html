@@ -190,18 +190,18 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 340px;
+            min-height: 240px;
         }
         .layout-side .item-image-block img {
             max-width: 100%;
-            max-height: 460px;
+            max-height: 360px;
             object-fit: contain;
         }
         .layout-side .variants-stack {
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
 
         /* Image top + variants grid below (3-4 variants, OR first page of 5+) */
@@ -214,12 +214,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            max-height: 280px;
-            margin-bottom: 12px;
+            max-height: 240px;
+            margin-bottom: 10px;
         }
         .layout-top .item-image-block img {
             max-width: 100%;
-            max-height: 280px;
+            max-height: 240px;
             object-fit: contain;
         }
 
@@ -246,35 +246,35 @@
         .variant-block {
             border: 2px solid #222;
             border-radius: 8px;
-            padding: 8px 12px 10px 12px;
+            padding: 6px 10px 7px 10px;
             page-break-inside: avoid;
             background: #fff;
             display: flex;
             flex-direction: column;
         }
         .variant-title {
-            font-size: 15pt;
+            font-size: 14pt;
             font-weight: 900;
-            line-height: 1.2;
-            margin-bottom: 2px;
+            line-height: 1.15;
+            margin-bottom: 1px;
             word-break: break-word;
         }
         .variant-color-line {
-            font-size: 14pt;
+            font-size: 12pt;
             color: #1976D2;
             font-weight: 800;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
         .variant-note {
-            font-size: 11pt;
+            font-size: 10pt;
             color: #d32f2f;
             font-weight: 700;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
         .variant-sep {
             border: none;
-            border-top: 2px solid #222;
-            margin: 6px 0;
+            border-top: 1.5px solid #222;
+            margin: 3px 0;
         }
 
         /* Vertical sizes table: label left, big qty right */
@@ -286,43 +286,47 @@
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            padding: 3px 2px;
+            padding: 0 2px;
             border-bottom: 1px dotted #bbb;
+            line-height: 1.15;
         }
         .variant-sizes-vertical li:last-child { border-bottom: none; }
         .variant-sizes-vertical .s-label {
-            font-size: 14pt;
+            font-size: 12pt;
             font-weight: 800;
             color: #333;
         }
         .variant-sizes-vertical .s-qty {
-            font-size: 26pt;
+            font-size: 20pt;
             font-weight: 900;
             color: #111;
-            line-height: 1;
+            line-height: 1.05;
         }
         .variant-no-sizes {
-            font-size: 11pt;
+            font-size: 10pt;
             color: #888;
             font-style: italic;
-            padding: 8px 0;
+            padding: 4px 0;
         }
         .variant-total {
-            margin-top: 6px;
+            margin-top: 3px;
             text-align: right;
-            font-size: 12pt;
+            font-size: 11pt;
             font-weight: 800;
             color: #444;
             border-top: 1px solid #ccc;
-            padding-top: 4px;
+            padding-top: 2px;
         }
 
         /* Tighten variant block when packed into a grid (3-4 col) */
         .variants-grid.cols-3 .variant-title,
-        .variants-grid.cols-4 .variant-title { font-size: 13pt; }
+        .variants-grid.cols-4 .variant-title { font-size: 12pt; }
         .variants-grid.cols-3 .variant-color-line,
-        .variants-grid.cols-4 .variant-color-line { font-size: 12pt; }
-        .variants-grid.cols-4 .variant-sizes-vertical .s-qty { font-size: 22pt; }
+        .variants-grid.cols-4 .variant-color-line { font-size: 11pt; }
+        .variants-grid.cols-3 .variant-sizes-vertical .s-qty { font-size: 18pt; }
+        .variants-grid.cols-4 .variant-sizes-vertical .s-qty { font-size: 16pt; }
+        .variants-grid.cols-3 .variant-sizes-vertical .s-label,
+        .variants-grid.cols-4 .variant-sizes-vertical .s-label { font-size: 11pt; }
 
         /* ===== Page Footer (totals + delivery) ===== */
         .page-footer {
@@ -396,15 +400,15 @@
             .price-line { font-size: 11pt; }
             .shirt-name { font-size: 14pt; }
             .layout-side .body-grid { flex-direction: column; }
-            .layout-side .item-image-block { flex: none; min-height: 220px; }
-            .layout-side .item-image-block img { max-height: 260px; }
+            .layout-side .item-image-block { flex: none; min-height: 180px; }
+            .layout-side .item-image-block img { max-height: 220px; }
             .layout-top .item-image-block,
-            .layout-top .item-image-block img { max-height: 220px; }
+            .layout-top .item-image-block img { max-height: 180px; }
             .variants-grid.cols-3,
             .variants-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
             .variants-grid.cols-3 .variant-title,
-            .variants-grid.cols-4 .variant-title { font-size: 14pt; }
-            .variants-grid.cols-4 .variant-sizes-vertical .s-qty { font-size: 22pt; }
+            .variants-grid.cols-4 .variant-title { font-size: 13pt; }
+            .variants-grid.cols-4 .variant-sizes-vertical .s-qty { font-size: 18pt; }
             .print-controls {
                 position: sticky;
                 top: 0;
@@ -435,9 +439,9 @@
             .variant-block { page-break-inside: avoid; }
 
             /* Tighter image heights for A4 */
-            .layout-side .item-image-block img { max-height: 130mm; }
+            .layout-side .item-image-block img { max-height: 95mm; }
             .layout-top .item-image-block,
-            .layout-top .item-image-block img { max-height: 100mm; }
+            .layout-top .item-image-block img { max-height: 80mm; }
         }
         @page {
             size: A4 portrait;
