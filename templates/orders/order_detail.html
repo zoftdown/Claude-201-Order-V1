@@ -7,12 +7,14 @@
     <h4 class="mb-0">{{ order.order_number }} — {{ order.customer_name }}</h4>
     <div class="d-flex gap-1">
         <a href="{% url 'order_print' order.pk %}" class="btn btn-success btn-sm" target="_blank">พิมพ์ใบงาน</a>
+        {% if not request.is_viewer %}
         <a href="{% url 'order_edit' order.pk %}" class="btn btn-primary btn-sm">แก้ไข</a>
         {% if user|is_admin %}
         <form method="post" action="{% url 'order_delete' order.pk %}" class="m-0" onsubmit="return confirm('ยืนยันการลบออร์เดอร์ {{ order.order_number }}?');">
             {% csrf_token %}
             <button type="submit" class="btn btn-danger btn-sm">ลบ</button>
         </form>
+        {% endif %}
         {% endif %}
         <a href="{% url 'order_list' %}" class="btn btn-outline-secondary btn-sm">กลับ</a>
     </div>
@@ -35,11 +37,13 @@
         <div class="row mt-2">
             <div class="col-md-3"><strong>ชื่อเสื้อ:</strong> {{ order.shirt_name }}</div>
             <div class="col-md-3"><strong>ลูกค้า:</strong> {% if order.customer_link %}<a href="{{ order.customer_link }}" target="_blank" rel="noopener" style="color:#0d6efd;">ลิงก์ลูกค้า</a>{% else %}-{% endif %}</div>
+            {% if not request.is_viewer %}
             <div class="col-md-6">
                 <strong>ยอดรวม:</strong> {{ order.total_price|floatformat:0 }} |
                 <strong>มัดจำ:</strong> {{ order.deposit|floatformat:0 }} |
                 <strong>คงเหลือ:</strong> <span class="{% if order.remaining > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{{ order.remaining|floatformat:0 }}</span>
             </div>
+            {% endif %}
         </div>
         {% if order.source == 'เพจเสื้อคนงาน' and order.fabric_spec %}
         <div class="row mt-2">

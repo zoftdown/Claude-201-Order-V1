@@ -31,10 +31,12 @@
                 <th>ชื่อเสื้อ</th>
                 <th>แหล่ง</th>
                 <th>จำนวน</th>
+                {% if not request.is_viewer %}
                 <th>ยอดรวม</th>
                 <th>คงเหลือ</th>
+                {% endif %}
                 <th>สถานะ</th>
-                <th></th>
+                {% if not request.is_viewer %}<th></th>{% endif %}
             </tr>
         </thead>
         <tbody>
@@ -46,8 +48,10 @@
                 <td>{{ order.shirt_name }}</td>
                 <td><small>{{ order.source }}</small></td>
                 <td>{{ order.total_qty }}</td>
+                {% if not request.is_viewer %}
                 <td>{{ order.total_price|floatformat:0 }}</td>
                 <td class="{% if order.remaining > 0 %}text-danger fw-bold{% endif %}">{{ order.remaining|floatformat:0 }}</td>
+                {% endif %}
                 <td>
                     {% if order.status == 'เสร็จแล้ว' %}<span class="badge bg-success">
                     {% elif order.status == 'กำลังผลิต' %}<span class="badge bg-warning text-dark">
@@ -55,7 +59,9 @@
                     {% else %}<span class="badge bg-secondary">
                     {% endif %}{{ order.status }}</span>
                 </td>
+                {% if not request.is_viewer %}
                 <td><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+                {% endif %}
             </tr>
             {% endfor %}
         </tbody>

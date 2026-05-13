@@ -11,8 +11,8 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from .decorators import require_department
-from .departments import DEPARTMENTS, VALID_SLUGS
+from .decorators import require_department, viewer_or_login_required
+from .departments import DEPARTMENTS, VALID_SLUGS, VIEWER_SLUG
 from .forms import (
     OrderForm,
     OrderItemFormSet,
@@ -31,7 +31,7 @@ def _is_admin(user):
     return user.is_superuser or user.groups.filter(name='admin').exists()
 
 
-@login_required
+@viewer_or_login_required
 def order_list(request):
     orders = Order.objects.prefetch_related('items').all()
 
@@ -268,13 +268,13 @@ def order_edit(request, pk):
     ))
 
 
-@login_required
+@viewer_or_login_required
 def order_detail(request, pk):
     order = get_object_or_404(Order, pk=pk)
     return render(request, 'orders/order_detail.html', {'order': order})
 
 
-@login_required
+@viewer_or_login_required
 def order_print(request, pk):
     order = get_object_or_404(Order, pk=pk)
     # Phase 1.7: one item per physical page via CSS page-break.
@@ -331,9 +331,16 @@ def select_department(request):
         if slug not in VALID_SLUGS:
             return redirect('select_department')
 
+        # Viewer dept lands on the order list (read-only browsing).
+        # Production depts land on their stage dashboard.
+        if slug == VIEWER_SLUG:
+            default_landing = reverse('order_list')
+        else:
+            default_landing = reverse('dept_dashboard', kwargs={'slug': slug})
+
         next_url = (
             _safe_next(request, request.POST.get('next'))
-            or reverse('dept_dashboard', kwargs={'slug': slug})
+            or default_landing
         )
         response = redirect(next_url)
         response.set_cookie(
@@ -441,10 +448,16 @@ def _build_pending_rows(qs, enter_field, *, attr_override=None):
 def dept_dashboard(request, slug):
     dept = request.production_dept
 
+    # Viewer dept has no production-stage queue — send to the order list.
+    if dept['slug'] == VIEWER_SLUG:
+        return redirect('order_list')
+
     # --- Counters across the whole shop (one query each — keeps view simple) ---
     counters = []
     for d in DEPARTMENTS:
-        cfg = DEPT_PENDING_CONFIG[d['slug']]
+        cfg = DEPT_PENDING_CONFIG.get(d['slug'])
+        if cfg is None:
+            continue  # non-production dept (e.g. viewer) has no queue
         counters.append({
             'slug': d['slug'],
             'name': d['name'],

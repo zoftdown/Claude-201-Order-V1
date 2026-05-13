@@ -483,9 +483,11 @@
             </div>
             {% endif %}
             <div class="order-num">{{ order.order_number }}</div>
+            {% if not request.is_viewer %}
             <div class="price-line">ยอด {{ order.total_price|floatformat:0 }} บาท</div>
             <div class="price-line">มัดจำ {{ order.deposit|floatformat:0 }} บาท</div>
             <div class="price-line">คงเหลือ {{ order.remaining|floatformat:0 }} บาท</div>
+            {% endif %}
         </div>
     </div>
     <div class="shirt-info">

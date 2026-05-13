@@ -16,13 +16,18 @@
         <div class="container-fluid">
             <a class="navbar-brand" href="{% url 'order_list' %}">ระบบออร์เดอร์ร้านพิมพ์เสื้อ</a>
             <div class="d-flex align-items-center gap-2">
+                {% if not request.is_viewer %}
                 <a href="{% url 'order_create' %}" class="btn btn-success btn-sm">+ สร้างออร์เดอร์</a>
+                {% endif %}
                 {% if user.is_authenticated %}
                 <span class="text-light small">👤 {{ user.username }}</span>
                 <form method="post" action="{% url 'logout' %}" class="m-0">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-outline-light btn-sm">ออกจากระบบ</button>
                 </form>
+                {% elif request.is_viewer %}
+                <span class="text-light small">👁️ ดู/ค้นหา</span>
+                <a href="{% url 'select_department' %}" class="btn btn-outline-light btn-sm">เปลี่ยนแผนก</a>
                 {% endif %}
             </div>
         </div>
