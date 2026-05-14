@@ -20,47 +20,42 @@
     </div>
 </div>
 
+<style>
+    /* Zebra striping by date group (JS assigns .date-group-alt below). */
+    .order-list-table tbody tr.date-group-alt > td {
+        background-color: #f1f3f5;
+    }
+    /* Keep hover visible on top of the date-group background. */
+    .order-list-table.table-hover tbody tr:hover > td {
+        background-color: #dee2e6 !important;
+    }
+</style>
+
 {% if orders %}
 <div class="table-responsive">
-    <table class="table table-hover table-sm">
+    <table class="table table-hover table-sm order-list-table align-middle">
         <thead class="table-dark">
             <tr>
                 <th>เลข Order</th>
                 <th>วันที่</th>
-                <th>ลูกค้า</th>
-                <th>ชื่อเสื้อ</th>
-                <th>แหล่ง</th>
-                <th>จำนวน</th>
-                {% if not request.is_viewer %}
-                <th>ยอดรวม</th>
-                <th>คงเหลือ</th>
-                {% endif %}
-                <th>สถานะ</th>
+                <th class="d-none d-md-table-cell">แหล่ง</th>
+                <th class="d-none d-md-table-cell">ชื่อเสื้อ</th>
+                <th>ชื่อลูกค้า</th>
+                <th class="text-end">จำนวน</th>
                 {% if not request.is_viewer %}<th></th>{% endif %}
             </tr>
         </thead>
         <tbody>
             {% for order in orders %}
-            <tr>
+            <tr data-date="{{ order.created_date|date:'Y-m-d' }}">
                 <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
                 <td>{{ order.created_date|date:"d/m/Y" }}</td>
+                <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
+                <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
                 <td>{{ order.customer_name }}</td>
-                <td>{{ order.shirt_name }}</td>
-                <td><small>{{ order.source }}</small></td>
-                <td>{{ order.total_qty }}</td>
+                <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
                 {% if not request.is_viewer %}
-                <td>{{ order.total_price|floatformat:0 }}</td>
-                <td class="{% if order.remaining > 0 %}text-danger fw-bold{% endif %}">{{ order.remaining|floatformat:0 }}</td>
-                {% endif %}
-                <td>
-                    {% if order.status == 'เสร็จแล้ว' %}<span class="badge bg-success">
-                    {% elif order.status == 'กำลังผลิต' %}<span class="badge bg-warning text-dark">
-                    {% elif order.status == 'ส่งแล้ว' %}<span class="badge bg-info">
-                    {% else %}<span class="badge bg-secondary">
-                    {% endif %}{{ order.status }}</span>
-                </td>
-                {% if not request.is_viewer %}
-                <td><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+                <td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
                 {% endif %}
             </tr>
             {% endfor %}
@@ -70,4 +65,28 @@
 {% else %}
 <p class="text-muted text-center mt-5">ไม่พบออร์เดอร์</p>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // Mark every row that belongs to an even-indexed date group with
+    // .date-group-alt so the CSS above can paint it a different shade.
+    // Rows already arrive sorted by id (newest first) which keeps same-date
+    // orders adjacent.
+    const rows = document.querySelectorAll('.order-list-table tbody tr');
+    let prevDate = null;
+    let groupIdx = -1;
+    rows.forEach(row => {
+        const d = row.dataset.date;
+        if (d !== prevDate) {
+            prevDate = d;
+            groupIdx++;
+        }
+        if (groupIdx % 2 === 1) {
+            row.classList.add('date-group-alt');
+        }
+    });
+})();
+</script>
 {% endblock %}
