@@ -230,6 +230,13 @@
         background: #fff;
     }
 
+    /* Full-width summary line at the bottom of each item card */
+    .item-block-footer {
+        padding: 8px 12px;
+        border-top: 1.5px solid #000;
+        text-align: right;
+    }
+
     @media (max-width: 767px) {
         .item-body-row { flex-direction: column; }
         .item-image-col { flex: none; width: 100%; min-height: 160px; }
@@ -294,10 +301,10 @@
                     <div class="text-muted small">ยังไม่มีแบบในรายการนี้</div>
                 {% endfor %}
             </div>
-            <div class="text-end mt-3">
-                <span class="qty-total-box qty-total-lg">รวม {{ item.total_qty }} ตัว</span>
-            </div>
         </div>
+    </div>
+    <div class="item-block-footer">
+        <span class="qty-total-box qty-total-lg">รวม {{ item.total_qty }} ตัว</span>
     </div>
 </div>
 {% empty %}
