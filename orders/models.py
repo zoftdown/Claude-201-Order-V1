@@ -1,4 +1,6 @@
 import hashlib
+import os
+import uuid
 
 from django.db import models
 from django.utils import timezone
@@ -6,9 +8,24 @@ from django.utils.crypto import constant_time_compare
 
 
 def design_upload_path(instance, filename):
-    """Upload to: designs/YYYY/MM/filename"""
+    """Generate a short, deterministic-ish upload path so users can upload
+    images with arbitrarily long original filenames without tripping the
+    100-char FileField validation.
+
+    Result: designs/YYYY/MM/<order_number>_<8-char-uuid><ext>
+    e.g.    designs/2026/05/6905-274_a3f8b2c1.png
+
+    Falls back to 'tmp' for the order_number segment if the OrderItem
+    isn't attached to a saved Order yet (shouldn't happen via the normal
+    formset flow, but defensive). Existing files keep their old paths —
+    only newly uploaded files are renamed.
+    """
+    ext = (os.path.splitext(filename)[1] or '.jpg').lower()
+    order = getattr(instance, 'order', None)
+    order_num = getattr(order, 'order_number', None) or 'tmp'
+    unique = uuid.uuid4().hex[:8]
     now = timezone.now()
-    return f'designs/{now.year}/{now.month:02d}/{filename}'
+    return f'designs/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
 
 
 class Order(models.Model):
