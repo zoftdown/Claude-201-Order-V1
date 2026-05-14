@@ -277,30 +277,35 @@
             margin: 3px 0;
         }
 
-        /* Vertical sizes table: label left, big qty right */
+        /* Inline sizes: "M=1" per line, centered in the variant card */
         .variant-sizes-vertical {
             list-style: none;
             flex: 1;
+            text-align: center;
         }
         .variant-sizes-vertical li {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            padding: 0 2px;
-            border-bottom: 1px dotted #bbb;
             line-height: 1.15;
+            padding: 1px 0;
+            white-space: nowrap;
         }
-        .variant-sizes-vertical li:last-child { border-bottom: none; }
         .variant-sizes-vertical .s-label {
             font-size: 12pt;
             font-weight: 800;
             color: #333;
+            vertical-align: baseline;
+        }
+        .variant-sizes-vertical .s-eq {
+            font-size: 14pt;
+            font-weight: 800;
+            color: #333;
+            vertical-align: baseline;
         }
         .variant-sizes-vertical .s-qty {
             font-size: 20pt;
             font-weight: 900;
             color: #111;
             line-height: 1.05;
+            vertical-align: baseline;
         }
         .variant-no-sizes {
             font-size: 10pt;
@@ -348,13 +353,6 @@
         .item-total {
             font-size: 14pt;
             font-weight: 900;
-        }
-        .delivery-badge {
-            font-size: 11pt;
-            font-weight: 800;
-            border: 2px solid #222;
-            padding: 2px 12px;
-            border-radius: 5px;
         }
 
         /* ===== Print Controls ===== */
@@ -548,7 +546,6 @@
     <div class="page-footer">
         <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
         <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
-        <span class="delivery-badge">{{ order.delivery_method }}</span>
     </div>
 </div>
 
@@ -570,7 +567,6 @@
     <div class="page-footer">
         <span class="item-counter">รายการที่ {{ forloop.counter }} (ต่อ)</span>
         <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
-        <span class="delivery-badge">{{ order.delivery_method }}</span>
     </div>
 </div>
 {% endif %}

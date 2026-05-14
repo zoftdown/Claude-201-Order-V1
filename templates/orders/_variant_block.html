@@ -17,10 +17,7 @@
     <ul class="variant-sizes-vertical">
         {% for size in v.sizes %}
             {% if size.qty %}
-            <li>
-                <span class="s-label">{{ size.label }}</span>
-                <span class="s-qty">{{ size.qty }}</span>
-            </li>
+            <li><span class="s-label">{{ size.label }}</span><span class="s-eq">=</span><span class="s-qty">{{ size.qty }}</span></li>
             {% endif %}
         {% empty %}
             <li class="variant-no-sizes">— ยังไม่ระบุไซส์ —</li>
