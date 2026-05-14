@@ -16,8 +16,8 @@
             print-color-adjust: exact;
         }
 
-        /* ===== Per-item A4 page (preview-on-desk look on screen) ===== */
-        .item-page {
+        /* ===== Doc-level A4 sheet (one wrapper around the whole order) ===== */
+        .page-a4 {
             width: 210mm;
             max-width: 100%;
             min-height: 297mm;
@@ -27,11 +27,27 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             box-sizing: border-box;
             position: relative;
-            display: flex;
-            flex-direction: column;
-            page-break-after: always;
         }
-        .item-page:last-child { page-break-after: auto; }
+
+        /* Per-item container: stays intact when paginating, packs onto the
+           same sheet as siblings if they all fit. */
+        .item-block {
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-bottom: 10mm;
+        }
+        .item-block:last-child { margin-bottom: 0; }
+
+        .item-block-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            border-top: 2px solid #222;
+            padding-top: 6px;
+            margin-bottom: 8px;
+            font-size: 11pt;
+        }
 
         /* ===== Full Header (first physical page only) ===== */
         .header {
@@ -154,48 +170,14 @@
             margin-top: 6px;
         }
 
-        /* ===== Compact Header (item-page 2+) ===== */
-        .compact-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0 8px 0;
-            margin-bottom: 12px;
-            border-bottom: 2px solid #222;
-            gap: 10px;
-        }
-        .compact-header .left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .compact-header .order-num {
-            font-size: 12pt;
-            font-weight: 700;
-            background: #222;
-            color: #fff;
-            padding: 2px 10px;
-            border-radius: 4px;
-        }
-        .compact-header .cust {
-            font-size: 14pt;
-            font-weight: 800;
-        }
-        .compact-header .right {
-            font-size: 11pt;
-            font-weight: 700;
-            color: #555;
-        }
-
-        /* ===== Item Page Layout (image left ~50%, variants flex-wrap right ~50%) ===== */
+        /* ===== Item Body Layout (image left 60%, variants flex-wrap right 40%) ===== */
         .item-body {
             display: flex;
             gap: 14px;
             align-items: flex-start;
         }
         .item-image-block {
-            flex: 0 0 48%;
+            flex: 0 0 60%;
             border: 1px solid #ddd;
             border-radius: 6px;
             background: #fafafa;
@@ -203,12 +185,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            max-height: 360px;
         }
         .item-image-block img {
-            max-width: 100%;
-            max-height: 360px;
+            width: 100%;
+            height: auto;
             object-fit: contain;
+            display: block;
         }
 
         /* Variants wrap: each box auto-width, wraps to next row when full */
@@ -313,16 +295,7 @@
             line-height: 1.15;
         }
 
-        /* ===== Page Footer (totals) — pushed to A4 bottom via flex auto-margin ===== */
-        .page-footer {
-            margin-top: auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-top: 2px solid #222;
-            padding-top: 8px;
-            font-size: 11pt;
-        }
+        /* ===== Per-item header chips (counter + boxed subtotal) ===== */
         .item-counter {
             font-weight: 700;
             color: #555;
@@ -363,13 +336,12 @@
            ========================================================== */
         @media screen and (max-width: 600px) {
             body { background: #fff; }
-            .item-page {
+            .page-a4 {
                 width: 100%;
                 min-height: auto;
                 margin: 0;
                 padding: 12px;
                 box-shadow: none;
-                border-bottom: 4px solid #ddd;
             }
             .header {
                 flex-direction: column;
@@ -384,8 +356,7 @@
             .price-line { font-size: 11pt; }
             .shirt-name { font-size: 14pt; }
             .item-body { flex-direction: column; }
-            .item-image-block { flex: none; width: 100%; max-height: 220px; }
-            .item-image-block img { max-height: 220px; }
+            .item-image-block { flex: none; width: 100%; }
             .print-controls {
                 position: sticky;
                 top: 0;
@@ -400,25 +371,21 @@
            ========================================================== */
         @media print {
             body { background: #fff; }
-            .item-page {
+            .page-a4 {
                 width: 210mm;
                 max-width: none;
-                min-height: 297mm;
+                min-height: auto;
                 margin: 0;
                 padding: 15mm;
                 box-shadow: none;
-                border-bottom: none;
             }
             .print-controls { display: none !important; }
             .qr-block svg path { fill: #000 !important; }
             .qr-label { color: #000 !important; }
 
-            /* Force each variant block to not split */
-            .variant-block { page-break-inside: avoid; }
-
-            /* Image shares the row with variants — can be taller */
-            .item-image-block,
-            .item-image-block img { max-height: 130mm; }
+            /* Keep variants and items intact when paginating */
+            .variant-block { page-break-inside: avoid; break-inside: avoid; }
+            .item-block { page-break-inside: avoid; break-inside: avoid; }
         }
         @page {
             size: A4 portrait;
@@ -433,11 +400,9 @@
     <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
 </div>
 
-{% for item in items %}
-{# ---------- Item page (header + image on top + variants flex-wrap below) ---------- #}
-<div class="item-page">
-    {% if forloop.first %}
-    <!-- Full header (first item only) -->
+{# ---------- One A4 sheet for the whole order; items pack onto pages ---------- #}
+<div class="page-a4">
+    <!-- Order header (once at the top of the doc) -->
     <div class="header">
         <div class="header-left">
             <h1 class="order-num">{{ order.order_number }}</h1>
@@ -478,45 +443,34 @@
             <div class="special-note-box">{{ order.special_note }}</div>
         {% endif %}
     </div>
-    {% else %}
-    <!-- Compact header (item-page 2+) -->
-    <div class="compact-header">
-        <div class="left">
-            <span class="order-num">{{ order.order_number }}</span>
-            <span class="cust">{{ order.customer_name }}</span>
-        </div>
-        <div class="right">รายการที่ {{ forloop.counter }} / {{ items|length }}</div>
-    </div>
-    {% endif %}
 
-    <div class="item-body">
-        <div class="item-image-block">
-            {% if item.design_image %}
-                <img src="{{ item.design_image.url }}" alt="ดีไซน์">
-            {% else %}
-                <span class="no-img-placeholder">ยังไม่มี mockup</span>
-            {% endif %}
+    {% for item in items %}
+    <div class="item-block">
+        <div class="item-block-header">
+            <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
+            <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
         </div>
-        <div class="variants-wrap">
-            {% for v in item.variants.all %}
-                {% include "orders/_variant_block.html" with v=v %}
-            {% empty %}
-                <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
-            {% endfor %}
+        <div class="item-body">
+            <div class="item-image-block">
+                {% if item.design_image %}
+                    <img src="{{ item.design_image.url }}" alt="ดีไซน์">
+                {% else %}
+                    <span class="no-img-placeholder">ยังไม่มี mockup</span>
+                {% endif %}
+            </div>
+            <div class="variants-wrap">
+                {% for v in item.variants.all %}
+                    {% include "orders/_variant_block.html" with v=v %}
+                {% empty %}
+                    <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
+                {% endfor %}
+            </div>
         </div>
     </div>
-
-    <div class="page-footer">
-        <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
-        <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
-    </div>
-</div>
-
-{% empty %}
-<div class="item-page">
+    {% empty %}
     <p style="text-align:center;padding:40px;color:#888;">ไม่มีรายการในออร์เดอร์นี้</p>
+    {% endfor %}
 </div>
-{% endfor %}
 
 </body>
 </html>
