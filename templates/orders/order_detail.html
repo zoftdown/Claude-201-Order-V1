@@ -181,19 +181,23 @@
         padding: 6px 18px;
     }
 
-    /* Item card 2-column: image left (~40%), variants right (stacks on mobile via col-md) */
+    /* Item card 2-column: image left 60%, variants right 40% (mirrors print view) */
+    .item-body-row {
+        display: flex;
+        align-items: flex-start;
+    }
     .item-image-col {
+        flex: 0 0 60%;
         background: #f8f9fa;
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: hidden;
         min-height: 200px;
-        padding: 6px;
     }
     .item-image-col .item-image {
-        max-width: 100%;
-        max-height: 480px;
+        width: 100%;
+        height: auto;
         object-fit: contain;
         display: block;
     }
@@ -202,6 +206,11 @@
         font-size: 14px;
         padding: 40px 0;
         text-align: center;
+    }
+    .item-content-col {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 8px 12px;
     }
 
     /* Variant boxes — flex-wrap auto-width, mirrors print view */
@@ -222,8 +231,9 @@
     }
 
     @media (max-width: 767px) {
-        .item-image-col { min-height: 160px; }
-        .item-image-col .item-image { max-height: 280px; }
+        .item-body-row { flex-direction: column; }
+        .item-image-col { flex: none; width: 100%; min-height: 160px; }
+        .item-content-col { padding: 8px 10px; }
     }
 </style>
 <div class="card mb-3">
@@ -249,43 +259,41 @@
 
 {% for item in order.items.all %}
 <div class="card card-item mb-3">
-    <div class="row g-0 align-items-stretch">
-        <div class="col-md-5 item-image-col">
+    <div class="item-body-row">
+        <div class="item-image-col">
             {% if item.design_image %}
                 <img src="{{ item.design_image.url }}" class="item-image" alt="ดีไซน์">
             {% else %}
                 <div class="no-mockup">ไม่มี mockup</div>
             {% endif %}
         </div>
-        <div class="col-md-7">
-            <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <strong>รายการที่ {{ forloop.counter }}</strong>
-                    <span class="qty-total-box qty-total-lg">รวม {{ item.total_qty }} ตัว</span>
-                </div>
-                <div class="detail-variants-wrap">
-                    {% for variant in item.variants.all %}
-                        <div class="detail-variant-box">
-                            <strong class="text-dark">
-                                แบบที่ {{ forloop.counter }}:
-                                {% if variant.collar %}{{ variant.collar }}{% endif %}
-                                {% if variant.sleeve %} {{ variant.sleeve }}{% endif %}
-                                {% if variant.color %} — สี {{ variant.color }}{% endif %}
-                            </strong>
-                            {% if variant.note %}<div class="small text-muted mt-1">📝 {{ variant.note }}</div>{% endif %}
-                            <ul class="detail-sizes">
-                                {% for size in variant.sizes %}
-                                    {% if size.qty %}
-                                    <li><span class="ds-label">{{ size.label }}</span><span class="ds-eq">=</span><span class="ds-qty">{{ size.qty }}</span></li>
-                                    {% endif %}
-                                {% endfor %}
-                            </ul>
-                            <div class="text-end mt-2"><span class="qty-total-box">รวม {{ variant.total_qty }} ตัว</span></div>
-                        </div>
-                    {% empty %}
-                        <div class="text-muted small">ยังไม่มีแบบในรายการนี้</div>
-                    {% endfor %}
-                </div>
+        <div class="item-content-col">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>รายการที่ {{ forloop.counter }}</strong>
+                <span class="qty-total-box qty-total-lg">รวม {{ item.total_qty }} ตัว</span>
+            </div>
+            <div class="detail-variants-wrap">
+                {% for variant in item.variants.all %}
+                    <div class="detail-variant-box">
+                        <strong class="text-dark">
+                            แบบที่ {{ forloop.counter }}:
+                            {% if variant.collar %}{{ variant.collar }}{% endif %}
+                            {% if variant.sleeve %} {{ variant.sleeve }}{% endif %}
+                            {% if variant.color %} — สี {{ variant.color }}{% endif %}
+                        </strong>
+                        {% if variant.note %}<div class="small text-muted mt-1">📝 {{ variant.note }}</div>{% endif %}
+                        <ul class="detail-sizes">
+                            {% for size in variant.sizes %}
+                                {% if size.qty %}
+                                <li><span class="ds-label">{{ size.label }}</span><span class="ds-eq">=</span><span class="ds-qty">{{ size.qty }}</span></li>
+                                {% endif %}
+                            {% endfor %}
+                        </ul>
+                        <div class="text-end mt-2"><span class="qty-total-box">รวม {{ variant.total_qty }} ตัว</span></div>
+                    </div>
+                {% empty %}
+                    <div class="text-muted small">ยังไม่มีแบบในรายการนี้</div>
+                {% endfor %}
             </div>
         </div>
     </div>

@@ -146,6 +146,12 @@
                             <div class="mb-1"><img src="{{ item_form.instance.design_image.url }}" style="max-height:80px;" class="rounded"></div>
                         {% endif %}
                         {{ item_form.design_image }}
+                        <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+                                data-target="{{ item_form.design_image.id_for_label }}"
+                                title="วางรูปจากคลิปบอร์ด (Print Screen / Snipping Tool / ShareX)">
+                            📋 วางจากคลิปบอร์ด
+                        </button>
+                        <div class="paste-preview mt-1" data-for="{{ item_form.design_image.id_for_label }}"></div>
                         <div class="form-check mt-1 copy-image-check" style="display:none;">
                             <input class="form-check-input copy-image-cb" type="checkbox" name="copy_image_{{ forloop.counter0 }}" data-index="{{ forloop.counter0 }}">
                             <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
@@ -233,6 +239,12 @@
         <div class="col-md-4">
             <label class="form-label">รูปดีไซน์</label>
             <input type="file" name="items-__prefix__-design_image" accept="image/*" class="form-control form-control-sm" id="id_items-__prefix__-design_image">
+            <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+                    data-target="id_items-__prefix__-design_image"
+                    title="วางรูปจากคลิปบอร์ด">
+                📋 วางจากคลิปบอร์ด
+            </button>
+            <div class="paste-preview mt-1" data-for="id_items-__prefix__-design_image"></div>
             <div class="form-check mt-1 copy-image-check" style="display:none;">
                 <input class="form-check-input copy-image-cb" type="checkbox" name="copy_image___prefix__" data-index="__prefix__">
                 <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
@@ -534,6 +546,63 @@ function updateCopyImageVisibility() {
         if (checkDiv) checkDiv.style.display = idx > 0 ? '' : 'none';
     });
 }
+
+// =================== Paste image from clipboard ===================
+// User clicks "วางจากคลิปบอร์ด" → reads navigator.clipboard for the first
+// image item → wraps it as File → assigns to the target file input via
+// DataTransfer so the form submits it as a normal upload. Filename is
+// generated since clipboard data has none.
+const ALLOWED_IMG_EXT = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp']);
+
+async function pasteImageInto(inputEl, previewEl) {
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+        alert('เบราว์เซอร์ไม่รองรับการอ่านคลิปบอร์ด — ใช้ Chrome หรือ Edge เวอร์ชันใหม่');
+        return;
+    }
+    try {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+            const imageType = item.types.find(t => t.startsWith('image/'));
+            if (!imageType) continue;
+
+            const blob = await item.getType(imageType);
+            const raw = (imageType.split('/')[1] || 'png').toLowerCase();
+            const ext = ALLOWED_IMG_EXT.has(raw) ? raw : 'png';
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const fileName = `pasted_${ts}.${ext}`;
+            const file = new File([blob], fileName, {type: imageType});
+
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            inputEl.files = dt.files;
+            inputEl.dispatchEvent(new Event('change', {bubbles: true}));
+
+            if (previewEl) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewEl.innerHTML =
+                        `<img src="${e.target.result}" style="max-height:80px;" class="rounded border">` +
+                        `<div class="small text-success">วางรูปแล้ว: ${fileName}</div>`;
+                };
+                reader.readAsDataURL(file);
+            }
+            return;
+        }
+        alert('ไม่พบรูปในคลิปบอร์ด — คัดลอกรูปก่อน (Print Screen / Snipping Tool / ShareX)');
+    } catch (err) {
+        alert('อ่านคลิปบอร์ดไม่ได้: ' + (err && err.message ? err.message : err));
+    }
+}
+
+document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.paste-image-btn');
+    if (!btn) return;
+    const targetId = btn.dataset.target;
+    const input = document.getElementById(targetId);
+    if (!input) return;
+    const preview = document.querySelector(`.paste-preview[data-for="${CSS.escape(targetId)}"]`);
+    pasteImageInto(input, preview);
+});
 
 // =================== Initial render ===================
 document.querySelectorAll('.variant-form').forEach(renderSizes);
