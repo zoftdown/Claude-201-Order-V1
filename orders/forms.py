@@ -70,7 +70,7 @@ class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
         widgets = {
             'collar': forms.TextInput(attrs={'list': 'collar-suggestions', 'placeholder': 'ระบุประเภทคอ *'}),
             'sleeve': forms.TextInput(attrs={'list': 'sleeve-suggestions', 'placeholder': 'ระบุประเภทแขน *'}),
-            'color': forms.TextInput(attrs={'placeholder': 'ระบุสี *'}),
+            'color': forms.TextInput(attrs={'placeholder': 'ระบุสี (ถ้ามี)'}),
             'note': forms.TextInput(attrs={'placeholder': 'โน้ต (ถ้ามี)'}),
         }
 
@@ -85,9 +85,9 @@ class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
 
     def clean(self):
         """Conditional required: if this variant carries any qty > 0, then
-        collar / sleeve / color must all be filled. Completely-empty variants
-        (no qty anywhere) and DELETE-marked variants skip the check so blank
-        rows in the formset don't block save.
+        collar / sleeve must be filled. Color is optional. Completely-empty
+        variants (no qty anywhere) and DELETE-marked variants skip the check
+        so blank rows in the formset don't block save.
         """
         cleaned = super().clean()
         if cleaned.get('DELETE'):
@@ -106,7 +106,7 @@ class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
                 total_qty = 0
 
         if total_qty > 0:
-            for field_name, label in (('collar', 'คอ'), ('sleeve', 'แขน'), ('color', 'สี')):
+            for field_name, label in (('collar', 'คอ'), ('sleeve', 'แขน')):
                 value = (cleaned.get(field_name) or '').strip()
                 if not value:
                     self.add_error(field_name, f'กรุณาระบุ{label}')
@@ -136,10 +136,14 @@ OrderItemFormSet = inlineformset_factory(
 
 
 # Inner formset: variants under an OrderItem.
+# extra=0 so edit pages don't render an empty "แบบที่ N+1" alongside the
+# saved variants. Client-side JS auto-clones an empty form when the user
+# clicks "+ เพิ่มแบบ", and on page load it adds one variant for any item
+# that has zero saved variants (i.e., a freshly created item).
 ShirtVariantFormSet = inlineformset_factory(
     OrderItem,
     ShirtVariant,
     form=ShirtVariantForm,
-    extra=1,
+    extra=0,
     can_delete=True,
 )

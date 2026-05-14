@@ -2,6 +2,10 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
+<style>
+    /* Formset DELETE checkboxes are managed by JS — never shown to staff. */
+    input[type="checkbox"][name$="-DELETE"] { display: none !important; }
+</style>
 <h4 class="mb-3">{{ title }}</h4>
 
 <datalist id="collar-suggestions">
@@ -131,9 +135,8 @@
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge bg-info item-qty-badge">0 ตัว</span>
                         {% if item_form.DELETE %}
-                        <label class="btn btn-outline-danger btn-sm mb-0" title="ลบรายการนี้">
-                            {{ item_form.DELETE }} ลบรายการ
-                        </label>
+                        <button type="button" class="btn btn-outline-danger btn-sm mb-0 btn-delete-item" title="ลบรายการนี้">ลบรายการ</button>
+                        {{ item_form.DELETE }}
                         {% endif %}
                     </div>
                 </div>
@@ -174,9 +177,8 @@
                                 <div class="d-flex align-items-center gap-2">
                                     <span class="badge bg-secondary variant-qty-badge">0 ตัว</span>
                                     {% if vform.DELETE %}
-                                    <label class="btn btn-outline-danger btn-sm py-0 mb-0" title="ลบแบบนี้">
-                                        {{ vform.DELETE }} ลบแบบ
-                                    </label>
+                                    <button type="button" class="btn btn-outline-danger btn-sm py-0 mb-0 btn-delete-variant" title="ลบแบบนี้">ลบแบบ</button>
+                                    {{ vform.DELETE }}
                                     {% endif %}
                                 </div>
                             </div>
@@ -194,9 +196,8 @@
                                     {% if vform.sleeve.errors %}<div class="text-danger small">{{ vform.sleeve.errors.0 }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label small mb-0">สี <span class="text-danger">*</span></label>
+                                    <label class="form-label small mb-0">สี</label>
                                     {{ vform.color }}
-                                    {% if vform.color.errors %}<div class="text-danger small">{{ vform.color.errors.0 }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small mb-0">โน้ตแบบนี้</label>
@@ -228,9 +229,8 @@
         <strong class="item-label">รายการ</strong>
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-info item-qty-badge">0 ตัว</span>
-            <label class="btn btn-outline-danger btn-sm mb-0" title="ลบรายการนี้">
-                <input type="checkbox" name="items-__prefix__-DELETE" id="id_items-__prefix__-DELETE" class="form-check-input"> ลบรายการ
-            </label>
+            <button type="button" class="btn btn-outline-danger btn-sm mb-0 btn-delete-item" title="ลบรายการนี้">ลบรายการ</button>
+            <input type="checkbox" name="items-__prefix__-DELETE" id="id_items-__prefix__-DELETE" class="form-check-input">
         </div>
     </div>
     <input type="hidden" name="items-__prefix__-id" id="id_items-__prefix__-id">
@@ -269,9 +269,8 @@
         <strong class="variant-label small">แบบ</strong>
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-secondary variant-qty-badge">0 ตัว</span>
-            <label class="btn btn-outline-danger btn-sm py-0 mb-0" title="ลบแบบนี้">
-                <input type="checkbox" name="items-__iprefix__-variants-__vprefix__-DELETE" id="id_items-__iprefix__-variants-__vprefix__-DELETE" class="form-check-input"> ลบแบบ
-            </label>
+            <button type="button" class="btn btn-outline-danger btn-sm py-0 mb-0 btn-delete-variant" title="ลบแบบนี้">ลบแบบ</button>
+            <input type="checkbox" name="items-__iprefix__-variants-__vprefix__-DELETE" id="id_items-__iprefix__-variants-__vprefix__-DELETE" class="form-check-input">
         </div>
     </div>
     <input type="hidden" name="items-__iprefix__-variants-__vprefix__-id" id="id_items-__iprefix__-variants-__vprefix__-id">
@@ -286,8 +285,8 @@
             <input type="text" name="items-__iprefix__-variants-__vprefix__-sleeve" id="id_items-__iprefix__-variants-__vprefix__-sleeve" class="form-control form-control-sm" list="sleeve-suggestions" placeholder="ระบุประเภทแขน *">
         </div>
         <div class="col-md-2">
-            <label class="form-label small mb-0">สี <span class="text-danger">*</span></label>
-            <input type="text" name="items-__iprefix__-variants-__vprefix__-color" id="id_items-__iprefix__-variants-__vprefix__-color" class="form-control form-control-sm" placeholder="ระบุสี *">
+            <label class="form-label small mb-0">สี</label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-color" id="id_items-__iprefix__-variants-__vprefix__-color" class="form-control form-control-sm" placeholder="ระบุสี (ถ้ามี)">
         </div>
         <div class="col-md-6">
             <label class="form-label small mb-0">โน้ตแบบนี้</label>
@@ -602,6 +601,63 @@ document.addEventListener('click', function (e) {
     if (!input) return;
     const preview = document.querySelector(`.paste-preview[data-for="${CSS.escape(targetId)}"]`);
     pasteImageInto(input, preview);
+});
+
+// =================== Delete handlers (variant + item) ===================
+// One click = gone from the screen. Behind the scenes we flip the formset's
+// DELETE checkbox to true and hide the form node so Django's formset.save()
+// will drop the DB row on submit; for forms that were never saved (just
+// added in this session), DELETE=on on an empty form is a harmless no-op.
+function deleteVariant(variantEl) {
+    const itemEl = variantEl.closest('.item-form');
+    if (!itemEl) return;
+    const itemIdx = itemEl.dataset.itemIndex;
+    const variantIdx = variantEl.dataset.variantIndex;
+    const cb = variantEl.querySelector(
+        `input[name="items-${itemIdx}-variants-${variantIdx}-DELETE"]`
+    );
+    if (cb) cb.checked = true;
+    variantEl.style.display = 'none';
+    variantEl.dataset.deleted = '1';
+    updateGrandTotal();
+}
+
+function deleteItem(itemEl) {
+    const itemIdx = itemEl.dataset.itemIndex;
+    const cb = itemEl.querySelector(`input[name="items-${itemIdx}-DELETE"]`);
+    if (cb) cb.checked = true;
+    itemEl.style.display = 'none';
+    itemEl.dataset.deleted = '1';
+    updateCopyImageVisibility();
+    updateGrandTotal();
+}
+
+document.addEventListener('click', function (e) {
+    const vbtn = e.target.closest('.btn-delete-variant');
+    if (vbtn) {
+        const variantEl = vbtn.closest('.variant-form');
+        if (variantEl) deleteVariant(variantEl);
+        return;
+    }
+    const ibtn = e.target.closest('.btn-delete-item');
+    if (ibtn) {
+        const itemEl = ibtn.closest('.item-form');
+        if (itemEl) deleteItem(itemEl);
+        return;
+    }
+});
+
+// =================== Auto-add first variant on init ===================
+// The inline ShirtVariantFormSet uses extra=0 so edit pages don't render a
+// stray empty "แบบที่ N+1". For a freshly created item (no saved variants
+// yet) we still want one ready to fill in, so we clone the empty template
+// for every item-form that arrives with an empty .variants-container.
+document.querySelectorAll('.item-form').forEach(function (itemEl) {
+    const idx = itemEl.dataset.itemIndex;
+    const container = variantsContainer(idx);
+    if (container && container.children.length === 0) {
+        addVariant(idx, /* copyFromPrev */ false);
+    }
 });
 
 // =================== Initial render ===================
