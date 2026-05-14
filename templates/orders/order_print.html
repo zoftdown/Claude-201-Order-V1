@@ -376,13 +376,17 @@
            PRINT — A4 portrait
            ========================================================== */
         @media print {
-            body { background: #fff; }
+            body { background: #fff; margin: 0; }
+            html { margin: 0; }
             .page-a4 {
                 width: 210mm;
                 max-width: none;
                 min-height: auto;
                 margin: 0;
-                padding: 15mm;
+                /* Tighter inner padding so a typical 1-item order fits on one
+                   sheet even if Chrome's print dialog overrides @page margin
+                   with its "Default" (~10mm) setting. */
+                padding: 8mm;
                 box-shadow: none;
             }
             .print-controls { display: none !important; }
@@ -391,7 +395,21 @@
 
             /* Keep variants and items intact when paginating */
             .variant-block { page-break-inside: avoid; break-inside: avoid; }
-            .item-block { page-break-inside: avoid; break-inside: avoid; }
+            .item-block {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                margin-bottom: 6mm;
+            }
+
+            /* Cap the design image so a tall portrait can't push items past
+               the page bottom. 130mm leaves ~150mm for header + variants +
+               footer within 297mm minus padding. */
+            .item-image-block { max-height: 130mm; }
+            .item-image-block img { max-height: 130mm; }
+
+            /* Trim header rhythm slightly to claw back vertical space. */
+            .header { margin-bottom: 8px; padding-bottom: 6px; }
+            .shirt-info { margin-bottom: 8px; padding-bottom: 6px; }
         }
         @page {
             size: A4 portrait;
