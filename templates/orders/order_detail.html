@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">{{ order.order_number }} — {{ order.customer_name }}</h4>
+    <h4 class="mb-0">{{ order.order_number }} — {{ order.shirt_name }}</h4>
     <div class="d-flex gap-1">
         <a href="{% url 'order_print' order.pk %}" class="btn btn-success btn-sm" target="_blank">พิมพ์ใบงาน</a>
         {% if not request.is_viewer %}
