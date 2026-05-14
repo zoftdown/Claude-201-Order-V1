@@ -11,20 +11,24 @@
         body {
             font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
             color: #222;
-            background: #b0b0b0;
+            background: #e5e7eb;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
 
-        /* ===== Per-item Page Container ===== */
+        /* ===== Per-item A4 page (preview-on-desk look on screen) ===== */
         .item-page {
-            max-width: 800px;
-            width: 100%;
-            margin: 12px auto;
-            padding: 22px 26px 60px 26px;
+            width: 210mm;
+            max-width: 100%;
+            min-height: 297mm;
+            margin: 20px auto;
+            padding: 15mm;
             background: #fff;
-            box-shadow: 0 2px 16px rgba(0,0,0,.25);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            box-sizing: border-box;
             position: relative;
+            display: flex;
+            flex-direction: column;
             page-break-after: always;
         }
         .item-page:last-child { page-break-after: auto; }
@@ -309,12 +313,9 @@
             line-height: 1.15;
         }
 
-        /* ===== Page Footer (totals + delivery) ===== */
+        /* ===== Page Footer (totals) — pushed to A4 bottom via flex auto-margin ===== */
         .page-footer {
-            position: absolute;
-            bottom: 14px;
-            left: 26px;
-            right: 26px;
+            margin-top: auto;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -363,8 +364,10 @@
         @media screen and (max-width: 600px) {
             body { background: #fff; }
             .item-page {
+                width: 100%;
+                min-height: auto;
                 margin: 0;
-                padding: 12px 12px 50px 12px;
+                padding: 12px;
                 box-shadow: none;
                 border-bottom: 4px solid #ddd;
             }
@@ -398,10 +401,12 @@
         @media print {
             body { background: #fff; }
             .item-page {
-                max-width: 100%;
+                width: 210mm;
+                max-width: none;
+                min-height: 297mm;
                 margin: 0;
+                padding: 15mm;
                 box-shadow: none;
-                padding: 6mm 10mm 14mm 10mm;
                 border-bottom: none;
             }
             .print-controls { display: none !important; }
@@ -417,7 +422,7 @@
         }
         @page {
             size: A4 portrait;
-            margin: 4mm;
+            margin: 0;
         }
     </style>
 </head>
