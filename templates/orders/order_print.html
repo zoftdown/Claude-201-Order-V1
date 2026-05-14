@@ -40,21 +40,43 @@
             gap: 12px;
         }
         .header-left { flex: 1; min-width: 0; }
+        .header-left .order-num {
+            display: inline-block;
+            font-size: 28pt;
+            font-weight: 900;
+            background: #222;
+            color: #fff;
+            padding: 4px 18px;
+            border-radius: 6px;
+            line-height: 1.1;
+            margin-bottom: 6px;
+            word-break: break-word;
+        }
+        .header-left .print-date {
+            font-size: 13pt;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+        .source-customer-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 4px;
+        }
         .header-left .source-badge {
             display: inline-block;
             background: #222;
             color: #fff;
-            padding: 3px 12px;
+            padding: 2px 10px;
             border-radius: 4px;
-            font-size: 11pt;
+            font-size: 10pt;
             font-weight: 700;
-            margin-bottom: 4px;
         }
-        .header-left h1 {
-            font-size: 22pt;
-            font-weight: 900;
+        .header-left .customer-name {
+            font-size: 16pt;
+            font-weight: 800;
             line-height: 1.2;
-            margin-bottom: 2px;
             word-break: break-word;
         }
         .customer-link {
@@ -67,21 +89,7 @@
             margin-bottom: 4px;
         }
         .customer-link:hover { text-decoration: underline; }
-        .header-left .print-date {
-            font-size: 13pt;
-            font-weight: 800;
-        }
         .header-right { text-align: right; flex-shrink: 0; }
-        .header-right .order-num {
-            font-size: 13pt;
-            font-weight: 700;
-            background: #222;
-            color: #fff;
-            padding: 3px 12px;
-            border-radius: 4px;
-            display: inline-block;
-            margin-bottom: 8px;
-        }
         .price-line {
             font-size: 13pt;
             font-weight: 800;
@@ -277,11 +285,12 @@
             margin: 3px 0;
         }
 
-        /* Inline sizes: "M=1" per line, centered in the variant card */
+        /* Inline sizes: "M=1" per line, left-aligned, shrunk to content */
         .variant-sizes-vertical {
             list-style: none;
             flex: 1;
-            text-align: center;
+            text-align: left;
+            align-self: flex-start;
         }
         .variant-sizes-vertical li {
             line-height: 1.15;
@@ -391,7 +400,8 @@
                 gap: 8px;
                 padding-bottom: 8px;
             }
-            .header-left h1 { font-size: 16pt; }
+            .header-left .order-num { font-size: 22pt; padding: 3px 12px; }
+            .header-left .customer-name { font-size: 14pt; }
             .header-right { text-align: left; }
             .qr-block { width: 22mm; }
             .qr-block svg { width: 22mm; height: 22mm; }
@@ -464,14 +474,17 @@
     <!-- Full header (first item only) -->
     <div class="header">
         <div class="header-left">
-            <span class="source-badge">{{ order.source }}</span>
-            <h1>{{ order.customer_name }}</h1>
-            {% if order.customer_link %}
-                <a href="{{ order.customer_link }}" class="customer-link" target="_blank" rel="noopener">ลิงก์ลูกค้า</a>
-            {% endif %}
+            <h1 class="order-num">{{ order.order_number }}</h1>
             <div class="print-date">
                 วันที่สร้าง {{ order.created_date|date:"d/n/y" }}
             </div>
+            <div class="source-customer-row">
+                <span class="source-badge">{{ order.source }}</span>
+                <span class="customer-name">{{ order.customer_name }}</span>
+            </div>
+            {% if order.customer_link %}
+                <a href="{{ order.customer_link }}" class="customer-link" target="_blank" rel="noopener">ลิงก์ลูกค้า</a>
+            {% endif %}
         </div>
         <div class="header-right">
             {% if qr_svg %}
@@ -480,7 +493,6 @@
                 <div class="qr-label">สแกนเพื่ออัปเดทสถานะ</div>
             </div>
             {% endif %}
-            <div class="order-num">{{ order.order_number }}</div>
             {% if not request.is_viewer %}
             <div class="price-line">ยอด {{ order.total_price|floatformat:0 }} บาท</div>
             <div class="price-line">มัดจำ {{ order.deposit|floatformat:0 }} บาท</div>
