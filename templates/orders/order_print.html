@@ -48,6 +48,10 @@
             margin-bottom: 8px;
             font-size: 11pt;
         }
+        .item-block-footer {
+            margin-top: 8px;
+            text-align: right;
+        }
 
         /* ===== Full Header (first physical page only) ===== */
         .header {
@@ -448,7 +452,6 @@
     <div class="item-block">
         <div class="item-block-header">
             <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
-            <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
         </div>
         <div class="item-body">
             <div class="item-image-block">
@@ -465,6 +468,9 @@
                     <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
                 {% endfor %}
             </div>
+        </div>
+        <div class="item-block-footer">
+            <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
         </div>
     </div>
     {% empty %}

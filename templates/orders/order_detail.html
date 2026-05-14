@@ -268,9 +268,8 @@
             {% endif %}
         </div>
         <div class="item-content-col">
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="mb-2">
                 <strong>รายการที่ {{ forloop.counter }}</strong>
-                <span class="qty-total-box qty-total-lg">รวม {{ item.total_qty }} ตัว</span>
             </div>
             <div class="detail-variants-wrap">
                 {% for variant in item.variants.all %}
@@ -294,6 +293,9 @@
                 {% empty %}
                     <div class="text-muted small">ยังไม่มีแบบในรายการนี้</div>
                 {% endfor %}
+            </div>
+            <div class="text-end mt-3">
+                <span class="qty-total-box qty-total-lg">รวม {{ item.total_qty }} ตัว</span>
             </div>
         </div>
     </div>
