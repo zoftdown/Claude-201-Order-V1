@@ -21,7 +21,7 @@
 </div>
 
 <style>
-    /* Zebra striping by date group (JS assigns .date-group-alt below). */
+    /* Zebra striping by date group (template assigns .date-group-alt below). */
     .order-list-table tbody tr.date-group-alt > td {
         background-color: #f1f3f5;
     }
@@ -46,18 +46,24 @@
             </tr>
         </thead>
         <tbody>
-            {% for order in orders %}
-            <tr data-date="{{ order.created_date|date:'Y-m-d' }}">
-                <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
-                <td>{{ order.created_date|date:"d/m/Y" }}</td>
-                <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
-                <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
-                <td>{{ order.customer_name }}</td>
-                <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
-                {% if not request.is_viewer %}
-                <td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
-                {% endif %}
-            </tr>
+            {# Sort by created_date desc first so {% regroup %} produces one #}
+            {# group per distinct date. Python's sort is stable, so the #}
+            {# original -id order is preserved within each date. #}
+            {% regroup orders|dictsortreversed:"created_date" by created_date as date_groups %}
+            {% for group in date_groups %}
+                {% for order in group.list %}
+                <tr{% if forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
+                    <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
+                    <td>{{ order.created_date|date:"d/m/Y" }}</td>
+                    <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
+                    <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
+                    <td>{{ order.customer_name }}</td>
+                    <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
+                    {% if not request.is_viewer %}
+                    <td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
             {% endfor %}
         </tbody>
     </table>
@@ -65,28 +71,4 @@
 {% else %}
 <p class="text-muted text-center mt-5">ไม่พบออร์เดอร์</p>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-    // Mark every row that belongs to an even-indexed date group with
-    // .date-group-alt so the CSS above can paint it a different shade.
-    // Rows already arrive sorted by id (newest first) which keeps same-date
-    // orders adjacent.
-    const rows = document.querySelectorAll('.order-list-table tbody tr');
-    let prevDate = null;
-    let groupIdx = -1;
-    rows.forEach(row => {
-        const d = row.dataset.date;
-        if (d !== prevDate) {
-            prevDate = d;
-            groupIdx++;
-        }
-        if (groupIdx % 2 === 1) {
-            row.classList.add('date-group-alt');
-        }
-    });
-})();
-</script>
 {% endblock %}
