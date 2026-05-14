@@ -181,9 +181,14 @@
             color: #555;
         }
 
-        /* ===== Item Page Layout (always image top, variants flex-wrap below) ===== */
+        /* ===== Item Page Layout (image left ~50%, variants flex-wrap right ~50%) ===== */
+        .item-body {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
         .item-image-block {
-            width: 100%;
+            flex: 0 0 48%;
             border: 1px solid #ddd;
             border-radius: 6px;
             background: #fafafa;
@@ -191,17 +196,18 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            max-height: 240px;
-            margin-bottom: 10px;
+            max-height: 360px;
         }
         .item-image-block img {
             max-width: 100%;
-            max-height: 240px;
+            max-height: 360px;
             object-fit: contain;
         }
 
         /* Variants wrap: each box auto-width, wraps to next row when full */
         .variants-wrap {
+            flex: 1 1 auto;
+            min-width: 0;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
@@ -362,8 +368,9 @@
             .qr-block svg { width: 22mm; height: 22mm; }
             .price-line { font-size: 11pt; }
             .shirt-name { font-size: 14pt; }
-            .item-image-block,
-            .item-image-block img { max-height: 180px; }
+            .item-body { flex-direction: column; }
+            .item-image-block { flex: none; width: 100%; max-height: 220px; }
+            .item-image-block img { max-height: 220px; }
             .print-controls {
                 position: sticky;
                 top: 0;
@@ -393,9 +400,9 @@
             /* Force each variant block to not split */
             .variant-block { page-break-inside: avoid; }
 
-            /* Tighter image heights for A4 */
+            /* Image shares the row with variants — can be taller */
             .item-image-block,
-            .item-image-block img { max-height: 80mm; }
+            .item-image-block img { max-height: 130mm; }
         }
         @page {
             size: A4 portrait;
@@ -465,19 +472,21 @@
     </div>
     {% endif %}
 
-    <div class="item-image-block">
-        {% if item.design_image %}
-            <img src="{{ item.design_image.url }}" alt="ดีไซน์">
-        {% else %}
-            <span class="no-img-placeholder">ยังไม่มี mockup</span>
-        {% endif %}
-    </div>
-    <div class="variants-wrap">
-        {% for v in item.variants.all %}
-            {% include "orders/_variant_block.html" with v=v %}
-        {% empty %}
-            <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
-        {% endfor %}
+    <div class="item-body">
+        <div class="item-image-block">
+            {% if item.design_image %}
+                <img src="{{ item.design_image.url }}" alt="ดีไซน์">
+            {% else %}
+                <span class="no-img-placeholder">ยังไม่มี mockup</span>
+            {% endif %}
+        </div>
+        <div class="variants-wrap">
+            {% for v in item.variants.all %}
+                {% include "orders/_variant_block.html" with v=v %}
+            {% empty %}
+                <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
+            {% endfor %}
+        </div>
     </div>
 
     <div class="page-footer">
