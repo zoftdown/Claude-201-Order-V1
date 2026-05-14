@@ -55,6 +55,25 @@
             text-align: right;
         }
 
+        /* Single grand-total line at the very bottom of the order */
+        .order-grand-total {
+            margin-top: 10mm;
+            padding-top: 5mm;
+            border-top: 2px solid #000;
+            text-align: right;
+        }
+        .order-grand-total .grand-pill {
+            display: inline-block;
+            font-size: 22pt;
+            font-weight: 900;
+            color: #111;
+            border: 3px solid #222;
+            border-radius: 8px;
+            padding: 4px 22px;
+            background: #fff;
+            line-height: 1.15;
+        }
+
         /* ===== Full Header (first physical page only) ===== */
         .header {
             display: flex;
@@ -512,13 +531,16 @@
                 {% endfor %}
             </div>
         </div>
-        <div class="item-block-footer">
-            <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
-        </div>
     </div>
     {% empty %}
     <p style="text-align:center;padding:40px;color:#888;">ไม่มีรายการในออร์เดอร์นี้</p>
     {% endfor %}
+
+    {% if items %}
+    <div class="order-grand-total">
+        <span class="grand-pill">รวมทั้งหมด {{ order.total_qty }} ตัว</span>
+    </div>
+    {% endif %}
 </div>
 
 </body>
