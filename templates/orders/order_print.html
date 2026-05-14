@@ -376,20 +376,42 @@
            PRINT — A4 portrait
            ========================================================== */
         @media print {
-            body { background: #fff; margin: 0; }
-            html { margin: 0; }
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+                width: 210mm;
+            }
+
+            /* Hide every chrome that isn't the work-order content. */
+            .print-controls,
+            .navbar,
+            nav,
+            header.navbar,
+            button,
+            .btn { display: none !important; }
+            /* Re-show buttons that are inline page furniture (e.g., QR svg
+               doesn't use button elements, so nothing to undo here). */
+
             .page-a4 {
                 width: 210mm;
                 max-width: none;
-                min-height: auto;
+                height: 297mm;
+                min-height: 297mm;
+                max-height: 297mm;
                 margin: 0;
-                /* Tighter inner padding so a typical 1-item order fits on one
-                   sheet even if Chrome's print dialog overrides @page margin
-                   with its "Default" (~10mm) setting. */
                 padding: 8mm;
                 box-shadow: none;
+                box-sizing: border-box;
+                /* Clip anything that would otherwise spill onto a phantom
+                   2nd sheet. This trades multi-page support for a hard
+                   guarantee of "1 sheet of paper" — items past page 1 are
+                   visually clipped, matching the user's requirement. */
+                overflow: hidden;
+                page-break-after: avoid;
             }
-            .print-controls { display: none !important; }
+            .page-a4:last-child { page-break-after: auto; }
+
             .qr-block svg path { fill: #000 !important; }
             .qr-label { color: #000 !important; }
 
@@ -398,18 +420,19 @@
             .item-block {
                 page-break-inside: avoid;
                 break-inside: avoid;
-                margin-bottom: 6mm;
+                margin-bottom: 4mm;
             }
+            .item-block:last-child { margin-bottom: 0 !important; }
 
             /* Cap the design image so a tall portrait can't push items past
-               the page bottom. 130mm leaves ~150mm for header + variants +
-               footer within 297mm minus padding. */
-            .item-image-block { max-height: 130mm; }
-            .item-image-block img { max-height: 130mm; }
+               the page bottom. */
+            .item-image-block { max-height: 120mm; }
+            .item-image-block img { max-height: 120mm; }
 
-            /* Trim header rhythm slightly to claw back vertical space. */
-            .header { margin-bottom: 8px; padding-bottom: 6px; }
-            .shirt-info { margin-bottom: 8px; padding-bottom: 6px; }
+            /* Trim header rhythm to claw back vertical space. */
+            .header { margin-bottom: 6px; padding-bottom: 4px; }
+            .shirt-info { margin-bottom: 6px; padding-bottom: 4px; }
+            .item-block-footer { margin-top: 8px; padding-top: 4px; }
         }
         @page {
             size: A4 portrait;
