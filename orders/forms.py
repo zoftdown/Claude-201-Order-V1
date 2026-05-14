@@ -68,9 +68,9 @@ class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
         model = ShirtVariant
         fields = ['collar', 'sleeve', 'color', 'note']
         widgets = {
-            'collar': forms.TextInput(attrs={'list': 'collar-suggestions', 'placeholder': 'คอกลม'}),
-            'sleeve': forms.TextInput(attrs={'list': 'sleeve-suggestions', 'placeholder': 'แขนสั้น'}),
-            'color': forms.TextInput(attrs={'placeholder': 'สี'}),
+            'collar': forms.TextInput(attrs={'list': 'collar-suggestions', 'placeholder': 'ระบุประเภทคอ *'}),
+            'sleeve': forms.TextInput(attrs={'list': 'sleeve-suggestions', 'placeholder': 'ระบุประเภทแขน *'}),
+            'color': forms.TextInput(attrs={'placeholder': 'ระบุสี *'}),
             'note': forms.TextInput(attrs={'placeholder': 'โน้ต (ถ้ามี)'}),
         }
 
@@ -82,6 +82,36 @@ class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
         else:
             default = [{'label': s, 'qty': 0} for s in DEFAULT_SIZES]
             self.fields['sizes_json'].initial = json.dumps(default, ensure_ascii=False)
+
+    def clean(self):
+        """Conditional required: if this variant carries any qty > 0, then
+        collar / sleeve / color must all be filled. Completely-empty variants
+        (no qty anywhere) and DELETE-marked variants skip the check so blank
+        rows in the formset don't block save.
+        """
+        cleaned = super().clean()
+        if cleaned.get('DELETE'):
+            return cleaned
+
+        raw = cleaned.get('sizes_json') or ''
+        total_qty = 0
+        if raw:
+            try:
+                sizes = json.loads(raw)
+                total_qty = sum(
+                    int(s.get('qty') or 0)
+                    for s in sizes if isinstance(s, dict)
+                )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                total_qty = 0
+
+        if total_qty > 0:
+            for field_name, label in (('collar', 'คอ'), ('sleeve', 'แขน'), ('color', 'สี')):
+                value = (cleaned.get(field_name) or '').strip()
+                if not value:
+                    self.add_error(field_name, f'กรุณาระบุ{label}')
+
+        return cleaned
 
     def save(self, commit=True):
         instance = super().save(commit=False)

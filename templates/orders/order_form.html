@@ -178,16 +178,19 @@
                             {{ vform.sizes_json }}
                             <div class="row g-2">
                                 <div class="col-md-2">
-                                    <label class="form-label small mb-0">คอ</label>
+                                    <label class="form-label small mb-0">คอ <span class="text-danger">*</span></label>
                                     {{ vform.collar }}
+                                    {% if vform.collar.errors %}<div class="text-danger small">{{ vform.collar.errors.0 }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label small mb-0">แขน</label>
+                                    <label class="form-label small mb-0">แขน <span class="text-danger">*</span></label>
                                     {{ vform.sleeve }}
+                                    {% if vform.sleeve.errors %}<div class="text-danger small">{{ vform.sleeve.errors.0 }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label small mb-0">สี</label>
+                                    <label class="form-label small mb-0">สี <span class="text-danger">*</span></label>
                                     {{ vform.color }}
+                                    {% if vform.color.errors %}<div class="text-danger small">{{ vform.color.errors.0 }}</div>{% endif %}
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small mb-0">โน้ตแบบนี้</label>
@@ -263,16 +266,16 @@
     <input type="hidden" name="items-__iprefix__-variants-__vprefix__-sizes_json" id="id_items-__iprefix__-variants-__vprefix__-sizes_json">
     <div class="row g-2">
         <div class="col-md-2">
-            <label class="form-label small mb-0">คอ</label>
-            <input type="text" name="items-__iprefix__-variants-__vprefix__-collar" id="id_items-__iprefix__-variants-__vprefix__-collar" class="form-control form-control-sm" list="collar-suggestions" placeholder="คอกลม">
+            <label class="form-label small mb-0">คอ <span class="text-danger">*</span></label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-collar" id="id_items-__iprefix__-variants-__vprefix__-collar" class="form-control form-control-sm" list="collar-suggestions" placeholder="ระบุประเภทคอ *">
         </div>
         <div class="col-md-2">
-            <label class="form-label small mb-0">แขน</label>
-            <input type="text" name="items-__iprefix__-variants-__vprefix__-sleeve" id="id_items-__iprefix__-variants-__vprefix__-sleeve" class="form-control form-control-sm" list="sleeve-suggestions" placeholder="แขนสั้น">
+            <label class="form-label small mb-0">แขน <span class="text-danger">*</span></label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-sleeve" id="id_items-__iprefix__-variants-__vprefix__-sleeve" class="form-control form-control-sm" list="sleeve-suggestions" placeholder="ระบุประเภทแขน *">
         </div>
         <div class="col-md-2">
-            <label class="form-label small mb-0">สี</label>
-            <input type="text" name="items-__iprefix__-variants-__vprefix__-color" id="id_items-__iprefix__-variants-__vprefix__-color" class="form-control form-control-sm" placeholder="สี">
+            <label class="form-label small mb-0">สี <span class="text-danger">*</span></label>
+            <input type="text" name="items-__iprefix__-variants-__vprefix__-color" id="id_items-__iprefix__-variants-__vprefix__-color" class="form-control form-control-sm" placeholder="ระบุสี *">
         </div>
         <div class="col-md-6">
             <label class="form-label small mb-0">โน้ตแบบนี้</label>
