@@ -51,11 +51,12 @@
                     {{ form.created_date }}
                     {% if form.created_date.errors %}<div class="text-danger small">{{ form.created_date.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="col-md-3">
+                {# ซ่อนชั่วคราว — ลบ style="display:none" ออกเพื่อเปิดใช้ใหม่ #}
+                <div class="col-md-3" style="display:none;">
                     <label class="form-label">สถานะ</label>
                     {{ form.status }}
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-3" style="display:none;">
                     <label class="form-label">วิธีรับสินค้า</label>
                     {{ form.delivery_method }}
                 </div>
