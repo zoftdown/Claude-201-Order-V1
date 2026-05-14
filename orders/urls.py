@@ -11,6 +11,12 @@ urlpatterns = [
     path('dept/<slug:slug>/', views.dept_dashboard, name='dept_dashboard'),
     path('<str:order_number>/update/', views.update_order_stage, name='update_order_stage'),
 
+    # User management (admin-only)
+    path('manage/users/', views.user_list, name='user_list'),
+    path('manage/users/add/', views.user_add, name='user_add'),
+    path('manage/users/<int:pk>/edit/', views.user_edit, name='user_edit'),
+    path('manage/users/<int:pk>/delete/', views.user_delete, name='user_delete'),
+
     path('<int:pk>/', views.order_detail, name='order_detail'),
     path('<int:pk>/edit/', views.order_edit, name='order_edit'),
     path('<int:pk>/print/', views.order_print, name='order_print'),

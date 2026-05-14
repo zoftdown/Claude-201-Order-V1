@@ -3,6 +3,7 @@ from datetime import datetime, time
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import Group, User
 from django.core.exceptions import PermissionDenied
 from django.db.models import OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
@@ -825,4 +826,137 @@ def update_order_stage(request, order_number):
         'tailors': tailors,
         'first_item': first_item,
         'order_tailors': list(order.tailors.all()) if order.sent_to_tailors_at else [],
+    })
+
+
+# ---------------------------------------------------------------------------
+# User management (admin-only) — list/add/edit-password/delete
+# Mounted under /order/manage/users/.
+# ---------------------------------------------------------------------------
+
+ALLOWED_USER_GROUPS = ('admin', 'staff')
+
+
+def _require_admin(user):
+    if not _is_admin(user):
+        raise PermissionDenied
+
+
+def _primary_group_name(user):
+    g = user.groups.first()
+    return g.name if g else ''
+
+
+@login_required
+def user_list(request):
+    _require_admin(request.user)
+    users = (
+        User.objects.all()
+        .prefetch_related('groups')
+        .order_by('username')
+    )
+    rows = [{
+        'user': u,
+        'group': _primary_group_name(u),
+        'is_self': u.pk == request.user.pk,
+    } for u in users]
+    return render(request, 'orders/manage/user_list.html', {
+        'rows': rows,
+    })
+
+
+@login_required
+def user_add(request):
+    _require_admin(request.user)
+    errors = {}
+    form_data = {'username': '', 'group': 'staff'}
+
+    if request.method == 'POST':
+        username = (request.POST.get('username') or '').strip()
+        password = request.POST.get('password') or ''
+        group_name = request.POST.get('group') or ''
+        form_data = {'username': username, 'group': group_name}
+
+        if not username:
+            errors['username'] = 'กรุณากรอก username'
+        elif User.objects.filter(username=username).exists():
+            errors['username'] = 'username นี้ถูกใช้แล้ว'
+
+        if not password:
+            errors['password'] = 'กรุณากรอกรหัสผ่าน'
+        elif len(password) < 4:
+            errors['password'] = 'รหัสผ่านสั้นเกินไป (อย่างน้อย 4 ตัวอักษร)'
+
+        if group_name not in ALLOWED_USER_GROUPS:
+            errors['group'] = 'กรุณาเลือก group'
+
+        if not errors:
+            user = User.objects.create_user(username=username, password=password)
+            user.groups.add(Group.objects.get(name=group_name))
+            messages.success(request, f'เพิ่ม user "{username}" แล้ว')
+            return redirect('user_list')
+
+    return render(request, 'orders/manage/user_form.html', {
+        'mode': 'add',
+        'title': 'เพิ่ม user ใหม่',
+        'form_data': form_data,
+        'errors': errors,
+        'allowed_groups': ALLOWED_USER_GROUPS,
+    })
+
+
+@login_required
+def user_edit(request, pk):
+    _require_admin(request.user)
+    target = get_object_or_404(User, pk=pk)
+    errors = {}
+    form_data = {'group': _primary_group_name(target)}
+
+    if request.method == 'POST':
+        password = request.POST.get('password') or ''
+        group_name = request.POST.get('group') or ''
+        form_data = {'group': group_name}
+
+        # Password optional on edit — only validate if provided.
+        if password and len(password) < 4:
+            errors['password'] = 'รหัสผ่านสั้นเกินไป (อย่างน้อย 4 ตัวอักษร)'
+
+        if group_name not in ALLOWED_USER_GROUPS:
+            errors['group'] = 'กรุณาเลือก group'
+
+        if not errors:
+            if password:
+                target.set_password(password)
+                target.save()
+            target.groups.clear()
+            target.groups.add(Group.objects.get(name=group_name))
+            messages.success(request, f'อัปเดต user "{target.username}" แล้ว')
+            return redirect('user_list')
+
+    return render(request, 'orders/manage/user_form.html', {
+        'mode': 'edit',
+        'title': f'แก้ user: {target.username}',
+        'target': target,
+        'form_data': form_data,
+        'errors': errors,
+        'allowed_groups': ALLOWED_USER_GROUPS,
+    })
+
+
+@login_required
+def user_delete(request, pk):
+    _require_admin(request.user)
+    target = get_object_or_404(User, pk=pk)
+    if target.pk == request.user.pk:
+        messages.error(request, 'ไม่สามารถลบ user ของตัวเองได้')
+        return redirect('user_list')
+
+    if request.method == 'POST':
+        username = target.username
+        target.delete()
+        messages.success(request, f'ลบ user "{username}" แล้ว')
+        return redirect('user_list')
+
+    return render(request, 'orders/manage/user_delete.html', {
+        'target': target,
     })

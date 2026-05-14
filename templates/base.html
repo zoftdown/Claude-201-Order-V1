@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="th">
+{% load auth_extras %}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,9 +16,12 @@
     <nav class="navbar navbar-dark mb-3">
         <div class="container-fluid">
             <a class="navbar-brand" href="{% url 'order_list' %}">ระบบออร์เดอร์ร้านพิมพ์เสื้อ</a>
-            <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
                 {% if not request.is_viewer %}
                 <a href="{% url 'order_create' %}" class="btn btn-success btn-sm">+ สร้างออร์เดอร์</a>
+                {% endif %}
+                {% if user|is_admin %}
+                <a href="{% url 'user_list' %}" class="btn btn-outline-light btn-sm">จัดการ user</a>
                 {% endif %}
                 {% if user.is_authenticated %}
                 <span class="text-light small">👤 {{ user.username }}</span>
