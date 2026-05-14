@@ -181,39 +181,8 @@
             color: #555;
         }
 
-        /* ===== Item Page Layouts ===== */
-
-        /* Variant + image side-by-side (1-2 variants) */
-        .layout-side .body-grid {
-            display: flex;
-            gap: 14px;
-            align-items: stretch;
-        }
-        .layout-side .item-image-block {
-            flex: 0 0 48%;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            background: #fafafa;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 240px;
-        }
-        .layout-side .item-image-block img {
-            max-width: 100%;
-            max-height: 360px;
-            object-fit: contain;
-        }
-        .layout-side .variants-stack {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        /* Image top + variants grid below (3-4 variants, OR first page of 5+) */
-        .layout-top .item-image-block {
+        /* ===== Item Page Layout (always image top, variants flex-wrap below) ===== */
+        .item-image-block {
             width: 100%;
             border: 1px solid #ddd;
             border-radius: 6px;
@@ -225,24 +194,19 @@
             max-height: 240px;
             margin-bottom: 10px;
         }
-        .layout-top .item-image-block img {
+        .item-image-block img {
             max-width: 100%;
             max-height: 240px;
             object-fit: contain;
         }
 
-        /* No-image continuation page (5+ variants, page 2) */
-        .layout-overflow {}
-
-        /* Variants grid */
-        .variants-grid {
-            display: grid;
-            gap: 10px;
+        /* Variants wrap: each box auto-width, wraps to next row when full */
+        .variants-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: flex-start;
         }
-        .variants-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
-        .variants-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
-        .variants-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
-        .variants-grid.cols-auto { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 
         .no-img-placeholder {
             color: #aaa;
@@ -259,6 +223,8 @@
             background: #fff;
             display: flex;
             flex-direction: column;
+            flex: 0 0 auto;
+            min-width: 110px;
         }
         .variant-title {
             font-size: 14pt;
@@ -332,16 +298,6 @@
             padding-top: 2px;
         }
 
-        /* Tighten variant block when packed into a grid (3-4 col) */
-        .variants-grid.cols-3 .variant-title,
-        .variants-grid.cols-4 .variant-title { font-size: 12pt; }
-        .variants-grid.cols-3 .variant-color-line,
-        .variants-grid.cols-4 .variant-color-line { font-size: 11pt; }
-        .variants-grid.cols-3 .variant-sizes-vertical .s-qty { font-size: 18pt; }
-        .variants-grid.cols-4 .variant-sizes-vertical .s-qty { font-size: 16pt; }
-        .variants-grid.cols-3 .variant-sizes-vertical .s-label,
-        .variants-grid.cols-4 .variant-sizes-vertical .s-label { font-size: 11pt; }
-
         /* ===== Page Footer (totals + delivery) ===== */
         .page-footer {
             position: absolute;
@@ -407,16 +363,8 @@
             .qr-block svg { width: 22mm; height: 22mm; }
             .price-line { font-size: 11pt; }
             .shirt-name { font-size: 14pt; }
-            .layout-side .body-grid { flex-direction: column; }
-            .layout-side .item-image-block { flex: none; min-height: 180px; }
-            .layout-side .item-image-block img { max-height: 220px; }
-            .layout-top .item-image-block,
-            .layout-top .item-image-block img { max-height: 180px; }
-            .variants-grid.cols-3,
-            .variants-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
-            .variants-grid.cols-3 .variant-title,
-            .variants-grid.cols-4 .variant-title { font-size: 13pt; }
-            .variants-grid.cols-4 .variant-sizes-vertical .s-qty { font-size: 18pt; }
+            .item-image-block,
+            .item-image-block img { max-height: 180px; }
             .print-controls {
                 position: sticky;
                 top: 0;
@@ -447,9 +395,8 @@
             .variant-block { page-break-inside: avoid; }
 
             /* Tighter image heights for A4 */
-            .layout-side .item-image-block img { max-height: 95mm; }
-            .layout-top .item-image-block,
-            .layout-top .item-image-block img { max-height: 80mm; }
+            .item-image-block,
+            .item-image-block img { max-height: 80mm; }
         }
         @page {
             size: A4 portrait;
@@ -465,11 +412,8 @@
 </div>
 
 {% for item in items %}
-{% with vcount=item.variants.count %}
-{# ---------- Item page (header + image + first 4 variants if 5+) ---------- #}
-<div class="item-page
-    {% if vcount <= 2 %}layout-side{% else %}layout-top{% endif %}
-">
+{# ---------- Item page (header + image on top + variants flex-wrap below) ---------- #}
+<div class="item-page">
     {% if forloop.first %}
     <!-- Full header (first item only) -->
     <div class="header">
@@ -522,25 +466,6 @@
     </div>
     {% endif %}
 
-    {# Image + variants — layout depends on count #}
-    {% if vcount <= 2 %}
-    <div class="body-grid">
-        <div class="item-image-block">
-            {% if item.design_image %}
-                <img src="{{ item.design_image.url }}" alt="ดีไซน์">
-            {% else %}
-                <span class="no-img-placeholder">ยังไม่มี mockup</span>
-            {% endif %}
-        </div>
-        <div class="variants-stack">
-            {% for v in item.variants.all %}
-                {% include "orders/_variant_block.html" with v=v %}
-            {% empty %}
-                <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
-            {% endfor %}
-        </div>
-    </div>
-    {% else %}
     <div class="item-image-block">
         {% if item.design_image %}
             <img src="{{ item.design_image.url }}" alt="ดีไซน์">
@@ -548,12 +473,13 @@
             <span class="no-img-placeholder">ยังไม่มี mockup</span>
         {% endif %}
     </div>
-    <div class="variants-grid cols-{% if vcount == 3 %}3{% else %}4{% endif %}">
-        {% for v in item.variants.all|slice:":4" %}
+    <div class="variants-wrap">
+        {% for v in item.variants.all %}
             {% include "orders/_variant_block.html" with v=v %}
+        {% empty %}
+            <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
         {% endfor %}
     </div>
-    {% endif %}
 
     <div class="page-footer">
         <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
@@ -561,29 +487,6 @@
     </div>
 </div>
 
-{% if vcount > 4 %}
-{# ---------- Continuation page (variants 5+) ---------- #}
-<div class="item-page layout-overflow">
-    <div class="compact-header">
-        <div class="left">
-            <span class="order-num">{{ order.order_number }}</span>
-            <span class="cust">{{ order.customer_name }}</span>
-        </div>
-        <div class="right">รายการที่ {{ forloop.counter }} / {{ items|length }} (แบบที่เหลือ)</div>
-    </div>
-    <div class="variants-grid cols-auto">
-        {% for v in item.variants.all|slice:"4:" %}
-            {% include "orders/_variant_block.html" with v=v %}
-        {% endfor %}
-    </div>
-    <div class="page-footer">
-        <span class="item-counter">รายการที่ {{ forloop.counter }} (ต่อ)</span>
-        <span class="item-total">รวม {{ item.total_qty }} ตัว</span>
-    </div>
-</div>
-{% endif %}
-
-{% endwith %}
 {% empty %}
 <div class="item-page">
     <p style="text-align:center;padding:40px;color:#888;">ไม่มีรายการในออร์เดอร์นี้</p>
