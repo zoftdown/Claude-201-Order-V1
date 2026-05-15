@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load auth_extras %}
+{% load humanize %}
 {% block title %}{{ order.order_number }}{% endblock %}
 
 {% block content %}
@@ -32,9 +33,9 @@
             <div class="col-md-3"><strong>ลิงก์ลูกค้า:</strong> {% if order.customer_link %}<a href="{{ order.customer_link }}" target="_blank" rel="noopener" style="color:#0d6efd;">เปิดลิงก์</a>{% else %}-{% endif %}</div>
             {% if not request.is_viewer %}
             <div class="col-md-6">
-                <strong>ยอดรวม:</strong> {{ order.total_price|floatformat:0 }} |
-                <strong>มัดจำ:</strong> {{ order.deposit|floatformat:0 }} |
-                <strong>คงเหลือ:</strong> <span class="{% if order.remaining > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{{ order.remaining|floatformat:0 }}</span>
+                <strong>ยอดรวม:</strong> {{ order.total_price|floatformat:0|intcomma }} |
+                <strong>มัดจำ:</strong> {{ order.deposit|floatformat:0|intcomma }} |
+                <strong>คงเหลือ:</strong> <span class="{% if order.remaining > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{{ order.remaining|floatformat:0|intcomma }}</span>
             </div>
             {% endif %}
         </div>

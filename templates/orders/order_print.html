@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+{% load humanize %}<!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
@@ -507,9 +507,9 @@
         <div class="header-right">
             {% if not request.is_viewer %}
             <div class="price-box">
-                <div class="price-line">ยอด {{ order.total_price|floatformat:0 }} บาท</div>
-                <div class="price-line">มัดจำ {{ order.deposit|floatformat:0 }} บาท</div>
-                <div class="price-line">คงเหลือ {{ order.remaining|floatformat:0 }} บาท</div>
+                <div class="price-line">ยอด {{ order.total_price|floatformat:0|intcomma }} บาท</div>
+                <div class="price-line">มัดจำ {{ order.deposit|floatformat:0|intcomma }} บาท</div>
+                <div class="price-line">คงเหลือ {{ order.remaining|floatformat:0|intcomma }} บาท</div>
             </div>
             {% endif %}
         </div>
