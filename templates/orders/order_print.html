@@ -167,12 +167,27 @@
             white-space: nowrap;
         }
 
-        /* Shirt name + spec/note row (first page only) */
+        /* Shirt name + spec/note row.
+           Default = centered single-line (no special note).
+           With .with-special-note = flex row: shirt-name left, note right. */
         .shirt-info {
             text-align: center;
             margin-bottom: 12px;
             padding-bottom: 10px;
             border-bottom: 1px solid #ddd;
+        }
+        .shirt-info.with-special-note {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            text-align: left;
+        }
+        .shirt-info.with-special-note .shirt-name {
+            flex: 1;
+            text-align: left;
+            min-width: 0;
+            word-break: break-word;
         }
         .shirt-name {
             font-size: 18pt;
@@ -385,6 +400,12 @@
             .qr-block svg { width: 22mm; height: 22mm; }
             .price-line { font-size: 11pt; }
             .shirt-name { font-size: 14pt; }
+            .shirt-info.with-special-note {
+                flex-direction: column;
+                text-align: center;
+                gap: 6px;
+            }
+            .shirt-info.with-special-note .shirt-name { text-align: center; }
             .item-body { flex-direction: column; }
             .item-image-block { flex: none; width: 100%; }
             .print-controls {
@@ -496,7 +517,7 @@
             {% endif %}
         </div>
     </div>
-    <div class="shirt-info">
+    <div class="shirt-info{% if order.special_note %} with-special-note{% endif %}">
         <div class="shirt-name">
             {{ order.shirt_name }}
             {% if order.source == 'เพจเสื้อคนงาน' and order.fabric_spec %}
