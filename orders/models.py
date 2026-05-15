@@ -150,6 +150,14 @@ class OrderItem(models.Model):
 class ShirtVariant(models.Model):
     """แบบ — 1 OrderItem มีได้หลายแบบ (คอ/แขน/สี/ไซส์ต่างกันบนรูปเดียว)."""
 
+    # Display order for standard adult size labels. Custom labels (เด็ก S,
+    # เด็ก 24, etc.) fall through to a large sentinel so they sort to the end
+    # while keeping their insertion order (Python's sorted() is stable).
+    STANDARD_SIZE_ORDER = {
+        'XS': 1, 'SS': 2, 'S': 3, 'M': 4, 'L': 5, 'XL': 6,
+        '2XL': 7, '3XL': 8, '4XL': 9, '5XL': 10, '6XL': 11, '7XL': 12,
+    }
+
     item = models.ForeignKey(
         OrderItem, on_delete=models.CASCADE, related_name='variants',
         verbose_name='รายการเสื้อ',
@@ -176,6 +184,18 @@ class ShirtVariant(models.Model):
     @property
     def total_qty(self):
         return sum(s.get('qty', 0) for s in self.sizes if isinstance(s, dict))
+
+    @property
+    def sizes_sorted(self):
+        """Display-only ordering: standard adult sizes first in chart order,
+        then any custom labels (เด็ก, etc.) in their original insertion order.
+        Does not mutate self.sizes — pure derived view of the JSON list.
+        """
+        sizes = self.sizes or []
+        def _key(item):
+            label = (item.get('label') or '').strip().upper()
+            return self.STANDARD_SIZE_ORDER.get(label, 999)
+        return sorted(sizes, key=_key)
 
 
 class Tailor(models.Model):

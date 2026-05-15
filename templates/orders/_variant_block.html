@@ -15,7 +15,7 @@
     {% endif %}
     <hr class="variant-sep">
     <ul class="variant-sizes-vertical">
-        {% for size in v.sizes %}
+        {% for size in v.sizes_sorted %}
             {% if size.qty %}
             <li><span class="s-label">{{ size.label }}</span><span class="s-eq">=</span><span class="s-qty">{{ size.qty }}</span></li>
             {% endif %}

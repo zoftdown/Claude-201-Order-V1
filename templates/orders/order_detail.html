@@ -321,7 +321,7 @@
                         </strong>
                         {% if variant.note %}<div class="small text-muted mt-1">📝 {{ variant.note }}</div>{% endif %}
                         <ul class="detail-sizes">
-                            {% for size in variant.sizes %}
+                            {% for size in variant.sizes_sorted %}
                                 {% if size.qty %}
                                 <li><span class="ds-label">{{ size.label }}</span><span class="ds-eq">=</span><span class="ds-qty">{{ size.qty }}</span></li>
                                 {% endif %}
