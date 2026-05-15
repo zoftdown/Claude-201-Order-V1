@@ -465,9 +465,6 @@
     <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
 </div>
 
-{# ---------- One A4 sheet for the whole order; items pack onto pages.
-   Adds .multi-items when there are 2+ items so the smart-layout CSS
-   shrinks images & switches the column split from 60/40 to 50/50. ---------- #}
 <div class="page-a4{% if items|length >= 2 %} multi-items{% endif %}">
     <!-- Order header (once at the top of the doc) -->
     <div class="header">
