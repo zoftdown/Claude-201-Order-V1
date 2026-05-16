@@ -153,7 +153,7 @@
             margin-right: 0.7rem;
             cursor: pointer;
         }
-        .tailor-row label { font-size: 1rem; cursor: pointer; flex: 1; margin: 0; }
+        .tailor-row span { font-size: 1rem; flex: 1; margin: 0; }
 
         .timeline-card {
             background: #fff;
@@ -253,10 +253,10 @@
             <p class="mb-2 fw-bold text-secondary">เลือกคนเย็บที่จะส่งงานนี้ให้:</p>
             <div class="tailor-list">
                 {% for t in tailors %}
-                <div class="tailor-row" onclick="document.getElementById('tailor-{{ t.id }}').click()">
+                <label class="tailor-row" for="tailor-{{ t.id }}">
                     <input type="checkbox" name="tailors" value="{{ t.id }}" id="tailor-{{ t.id }}">
-                    <label for="tailor-{{ t.id }}">{{ t.name }}{% if t.phone %} <small class="text-muted">{{ t.phone }}</small>{% endif %}</label>
-                </div>
+                    <span>{{ t.name }}{% if t.phone %} <small class="text-muted">{{ t.phone }}</small>{% endif %}</span>
+                </label>
                 {% endfor %}
             </div>
             <button type="submit" class="action-btn success">ส่งให้คนเย็บ</button>
