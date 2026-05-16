@@ -69,6 +69,9 @@ class Order(models.Model):
     shipping_address = models.TextField('ที่อยู่จัดส่ง', blank=True)
     status = models.CharField('สถานะ', max_length=20, choices=STATUS_CHOICES, default='รอดำเนินการ')
 
+    # Production-urgent flag: highlights the order red across list/detail/form.
+    is_urgent = models.BooleanField('ด่วน!', default=False)
+
     # Phase 1.6: stage timestamps (null = ยังไม่เสร็จ stage นั้น)
     print_done_at = models.DateTimeField('พิมพ์เสร็จเมื่อ', null=True, blank=True)
     roll_done_at = models.DateTimeField('โรลเสร็จเมื่อ', null=True, blank=True)

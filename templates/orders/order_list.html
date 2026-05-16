@@ -48,14 +48,15 @@
             </tr>
         </thead>
         <tbody>
-            {# Sort by created_date desc first so {% regroup %} produces one #}
-            {# group per distinct date. Python's sort is stable, so the #}
-            {# original -id order is preserved within each date. #}
-            {% regroup orders|dictsortreversed:"created_date" by created_date as date_groups %}
+            {# View already sorts by ('-is_urgent', '-created_date', '-id'). #}
+            {# Urgent rows surface at the top of their own date groups. Same #}
+            {# date appearing in both urgent + non-urgent buckets simply #}
+            {# splits into two adjacent groups, which is the desired visual. #}
+            {% regroup orders by created_date as date_groups %}
             {% for group in date_groups %}
                 {% for order in group.list %}
-                <tr{% if forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
-                    <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
+                <tr{% if order.is_urgent %} style="background-color:#ffebee; border-left:4px solid #d32f2f;"{% elif forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
+                    <td><a href="{% url 'order_detail' order.pk %}">{% if order.is_urgent %}🚨 {% endif %}<strong>{{ order.order_number }}</strong></a></td>
                     <td>{{ order.created_date|date:"d/m/Y" }}</td>
                     <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
                     <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>

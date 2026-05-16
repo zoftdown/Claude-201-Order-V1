@@ -4,6 +4,11 @@
 {% block title %}{{ order.order_number }}{% endblock %}
 
 {% block content %}
+{% if order.is_urgent %}
+<div style="background:#d32f2f; color:white; padding:12px; font-size:22px; font-weight:bold; text-align:center; border-radius:6px; margin-bottom:15px;">
+    🚨 ใบงานด่วน!
+</div>
+{% endif %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0">{{ order.order_number }} — {{ order.shirt_name }}</h4>
     <div class="d-flex gap-1">
@@ -47,6 +52,13 @@
         {% if order.special_note %}
         <div class="row mt-2">
             <div class="col-12"><strong>คำสั่งพิเศษ:</strong> <span class="special-note-box">{{ order.special_note }}</span></div>
+        </div>
+        {% endif %}
+        {% if order.tailors.exists %}
+        <div class="row mt-2">
+            <div class="col-12"><strong>🧵 คนเย็บ:</strong>
+                {% for t in order.tailors.all %}{{ t.name }}{% if t.phone %} ({{ t.phone }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </div>
         </div>
         {% endif %}
         {% if order.delivery_method == 'ส่ง' and order.shipping_address %}

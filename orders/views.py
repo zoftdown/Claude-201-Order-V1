@@ -36,7 +36,12 @@ def _is_admin(user):
 
 @viewer_or_login_required
 def order_list(request):
-    orders = Order.objects.prefetch_related('items').all()
+    # Urgent flag wins over date — flagged orders always sit at the top of
+    # the list (then by date desc, then -id for stable tiebreak).
+    orders = (
+        Order.objects.prefetch_related('items')
+        .order_by('-is_urgent', '-created_date', '-id')
+    )
 
     # Filter by status
     status = request.GET.get('status')

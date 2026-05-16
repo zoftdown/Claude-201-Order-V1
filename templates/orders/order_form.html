@@ -35,6 +35,14 @@
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
 
+    <!-- ===== Urgent flag (top of form) ===== -->
+    <div style="margin-bottom:15px; padding:10px; border:2px solid #d32f2f; border-radius:6px;">
+        <label style="font-size:18px; font-weight:bold; color:#d32f2f; cursor:pointer; margin:0;">
+            <input type="checkbox" name="is_urgent" {% if form.is_urgent.value %}checked{% endif %} style="transform:scale(1.5); margin-right:8px; vertical-align:middle;">
+            🚨 ใบงานด่วน!
+        </label>
+    </div>
+
     <!-- ===== Order header ===== -->
     <div class="card mb-3">
         <div class="card-header">ข้อมูลออร์เดอร์</div>
