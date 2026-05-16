@@ -965,3 +965,40 @@ def user_delete(request, pk):
     return render(request, 'orders/manage/user_delete.html', {
         'target': target,
     })
+
+
+# ---------------------------------------------------------------------------
+# Custom search (admin-only) — start with tailor filter, more filters later.
+# Mounted at /order/search/.
+# ---------------------------------------------------------------------------
+
+@login_required
+def custom_search(request):
+    _require_admin(request.user)
+
+    tailors = Tailor.objects.filter(is_active=True).order_by('name')
+
+    tailor_id = (request.GET.get('tailor') or '').strip()
+    orders = None  # None = ยังไม่ได้กดค้นหา
+    selected_tailor = None
+
+    if tailor_id:
+        try:
+            selected_tailor = Tailor.objects.get(pk=tailor_id)
+        except (Tailor.DoesNotExist, ValueError):
+            selected_tailor = None
+
+        if selected_tailor is not None:
+            orders = (
+                Order.objects
+                .filter(tailors=selected_tailor)
+                .order_by('-is_urgent', '-created_date', '-id')
+                .distinct()
+            )
+
+    return render(request, 'orders/custom_search.html', {
+        'tailors': tailors,
+        'orders': orders,
+        'selected_tailor': selected_tailor,
+        'tailor_id': tailor_id,
+    })

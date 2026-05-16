@@ -21,6 +21,7 @@
                 <a href="{% url 'order_create' %}" class="btn btn-success btn-sm">+ สร้างออร์เดอร์</a>
                 {% endif %}
                 {% if user|is_admin %}
+                <a href="{% url 'custom_search' %}" class="btn btn-outline-light btn-sm">ค้นหา</a>
                 <a href="{% url 'user_list' %}" class="btn btn-outline-light btn-sm">จัดการ user</a>
                 {% endif %}
                 {% if user.is_authenticated %}

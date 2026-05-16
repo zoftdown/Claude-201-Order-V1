@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}ค้นหาขั้นสูง{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">ค้นหาขั้นสูง</h4>
+
+<form method="get" class="mb-3" style="padding:15px; background:#f5f5f5; border-radius:6px;">
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <label class="mb-0"><strong>คนเย็บ:</strong></label>
+        <select name="tailor" class="form-select form-select-sm" style="max-width:300px;">
+            <option value="">-- เลือกคนเย็บ --</option>
+            {% for t in tailors %}
+                <option value="{{ t.id }}" {% if tailor_id == t.id|stringformat:"s" %}selected{% endif %}>
+                    {{ t.name }}{% if t.phone %} ({{ t.phone }}){% endif %}
+                </option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm">ค้นหา</button>
+        {% if selected_tailor %}
+            <a href="{% url 'custom_search' %}" class="btn btn-outline-secondary btn-sm">ล้าง</a>
+        {% endif %}
+    </div>
+</form>
+
+{% if selected_tailor %}
+    <h5 class="mt-3">
+        ใบงานของ <strong>{{ selected_tailor.name }}</strong>
+        <span class="text-muted small">— พบ {{ orders|length }} ใบ</span>
+    </h5>
+
+    {% if orders %}
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle mt-2">
+                <thead class="table-dark">
+                    <tr>
+                        <th>เลข Order</th>
+                        <th>วันที่</th>
+                        <th>ลูกค้า</th>
+                        <th>ชื่องาน</th>
+                        <th>stage ปัจจุบัน</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr{% if order.is_urgent %} style="background-color:#ffebee; border-left:5px solid #d32f2f;"{% endif %}>
+                        <td>
+                            {% if order.is_urgent %}🚨 {% endif %}
+                            <a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a>
+                        </td>
+                        <td>{{ order.created_date|date:"d/m/Y" }}</td>
+                        <td>{{ order.customer_name }}</td>
+                        <td>{{ order.shirt_name }}</td>
+                        <td>
+                            {% if order.packed_at %}เสร็จแล้ว
+                            {% elif order.sent_to_tailors_at %}ส่งเย็บ
+                            {% elif order.sort_done_at %}คัด
+                            {% elif order.cut_done_at %}ตัด
+                            {% elif order.roll_done_at %}โรล
+                            {% elif order.print_done_at %}พิมพ์
+                            {% else %}-{% endif %}
+                        </td>
+                        <td><a href="{% url 'order_detail' order.pk %}" class="btn btn-outline-primary btn-sm">ดู</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-muted mt-2">ไม่พบใบงานของคนเย็บคนนี้</p>
+    {% endif %}
+{% else %}
+    <p class="text-muted mt-3">เลือกคนเย็บแล้วกดค้นหา</p>
+{% endif %}
+{% endblock %}
