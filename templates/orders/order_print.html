@@ -208,8 +208,8 @@
         }
 
         /* ===== Item Layout =====
-           Top row: design image (60%) + first 2 variants (~20% each).
-           Bottom row: variant #3 onward in an auto-fit grid that fills width.
+           Top row: design image (80%) + first variant (~20%).
+           Bottom row: variant #2 onward in an auto-fit grid that fills width.
            Same on screen, in @media print, and in the html2canvas PNG. */
         .item-top-row {
             display: flex;
@@ -217,7 +217,7 @@
             align-items: flex-start;
         }
         .item-image-block {
-            flex: 0 0 60%;
+            flex: 0 0 80%;
             border: 1px solid #ddd;
             border-radius: 6px;
             background: #fafafa;
@@ -237,20 +237,19 @@
            same A4 sheet. */
         .multi-items .item-image-block { flex: 0 0 50%; }
 
-        /* Top-row variants: up to 2 side by side (each ~20% of item width).
-           2-col grid → one variant fills the left cell, the right cell stays
-           blank (the agreed single-variant look). */
+        /* Top-row variant: just the first variant (~20% of item width),
+           filling the narrow column next to the 80% image. */
         .top-variants {
             flex: 1 1 auto;
             min-width: 0;
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: 1fr;
             gap: 8px;
             align-items: start;
         }
 
-        /* Bottom-row variants (#3 onward): auto-fit grid that fills the width
-           and wraps on its own (3→3 cols, 4→4, 5-6 wrap, no leftover white). */
+        /* Bottom-row variants (#2 onward): auto-fit grid that fills the width
+           and wraps on its own (1→full width, 3→3 cols, 5-6 wrap, no white). */
         .item-bottom-grid {
             margin-top: 8px;
             display: grid;
@@ -578,14 +577,14 @@
                 {% endif %}
             </div>
             <div class="top-variants">
-                {% for v in item.variants.all|slice:":2" %}
+                {% for v in item.variants.all|slice:":1" %}
                     {% include "orders/_variant_block.html" with v=v %}
                 {% empty %}
                     <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
                 {% endfor %}
             </div>
         </div>
-        {% with extra_variants=item.variants.all|slice:"2:" %}
+        {% with extra_variants=item.variants.all|slice:"1:" %}
         {% if extra_variants %}
         <div class="item-bottom-grid">
             {% for v in extra_variants %}
