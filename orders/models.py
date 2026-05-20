@@ -97,6 +97,10 @@ class Order(models.Model):
                                    null=True, blank=True, related_name='created_orders',
                                    verbose_name='คนลงข้อมูล')
 
+    # Work-order printed flag (null = ยังไม่พิมพ์). Backfilled = created_date
+    # for legacy orders so they don't show "ยังไม่พิมพ์ใบงาน".
+    printed_at = models.DateTimeField('พิมพ์ใบงานเมื่อ', null=True, blank=True)
+
     class Meta:
         ordering = ['-id']
         verbose_name = 'ออร์เดอร์'
@@ -114,24 +118,9 @@ class Order(models.Model):
         return sum(item.total_qty for item in self.items.all())
 
     @property
-    def is_new(self):
-        """มาใหม่: created within 24h and never (meaningfully) edited."""
-        from datetime import timedelta
-        if not self.created_at:
-            return False
-        within_24h = (timezone.now() - self.created_at) < timedelta(hours=24)
-        was_edited = self.updated_at and (self.updated_at - self.created_at) > timedelta(minutes=1)
-        return within_24h and not was_edited
-
-    @property
-    def recently_edited(self):
-        """แก้ใบงาน: actually edited (>1 min after create) within the last 24h."""
-        from datetime import timedelta
-        if not self.updated_at or not self.created_at:
-            return False
-        was_edited = (self.updated_at - self.created_at) > timedelta(minutes=1)
-        within_24h = (timezone.now() - self.updated_at) < timedelta(hours=24)
-        return was_edited and within_24h
+    def not_printed(self):
+        """ยังไม่พิมพ์ใบงาน: the work-order sheet hasn't been printed yet."""
+        return self.printed_at is None
 
     def save(self, *args, **kwargs):
         if not self.order_number:

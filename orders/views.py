@@ -349,6 +349,16 @@ def order_print(request, pk):
 
 @login_required
 @require_POST
+def order_mark_printed(request, pk):
+    """Mark the work-order sheet as printed (from the print page button)."""
+    order = get_object_or_404(Order, pk=pk)
+    order.printed_at = timezone.now()
+    order.save(update_fields=['printed_at'])
+    return redirect('order_print', pk=order.pk)
+
+
+@login_required
+@require_POST
 def order_delete(request, pk):
     if not _is_admin(request.user):
         raise PermissionDenied

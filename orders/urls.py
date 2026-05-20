@@ -21,5 +21,6 @@ urlpatterns = [
     path('<int:pk>/', views.order_detail, name='order_detail'),
     path('<int:pk>/edit/', views.order_edit, name='order_edit'),
     path('<int:pk>/print/', views.order_print, name='order_print'),
+    path('<int:pk>/mark-printed/', views.order_mark_printed, name='order_mark_printed'),
     path('<int:pk>/delete/', views.order_delete, name='order_delete'),
 ]

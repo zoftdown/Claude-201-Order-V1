@@ -386,6 +386,17 @@
         .btn-print:hover { background: #1565C0; }
         .btn-save { background: #2e7d32; color: #fff; }
         .btn-save:hover { background: #1b5e20; }
+        .btn-printed { background: #0277bd; color: #fff; }
+        .btn-printed:hover { background: #01579b; }
+        .printed-note {
+            display: inline-block;
+            font-family: 'Sarabun', sans-serif;
+            font-size: 13pt;
+            font-weight: 700;
+            color: #2e7d32;
+            padding: 8px 14px;
+            margin: 0 6px;
+        }
         .btn-back { background: #666; color: #fff; }
         .btn-back:hover { background: #555; }
 
@@ -497,6 +508,16 @@
 <div class="print-controls">
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
     <button class="btn-save" onclick="saveWorkOrderImage(this)">📷 บันทึกภาพ</button>
+    {% if order.not_printed %}
+        {% if not request.is_viewer %}
+        <form method="post" action="{% url 'order_mark_printed' order.pk %}" style="display:inline; margin:0;">
+            {% csrf_token %}
+            <button type="submit" class="btn-printed">✓ พิมพ์ใบงานแล้ว</button>
+        </form>
+        {% endif %}
+    {% else %}
+        <span class="printed-note">✓ พิมพ์แล้ว {{ order.printed_at|date:"d/m/Y H:i" }}</span>
+    {% endif %}
     <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
 </div>
 
