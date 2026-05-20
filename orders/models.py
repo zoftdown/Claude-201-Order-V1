@@ -122,6 +122,16 @@ class Order(models.Model):
         """ยังไม่พิมพ์ใบงาน: the work-order sheet hasn't been printed yet."""
         return self.printed_at is None
 
+    @property
+    def recently_edited(self):
+        """แก้ใบงาน: actually edited (>1 min after create) within the last 24h."""
+        from datetime import timedelta
+        if not self.updated_at or not self.created_at:
+            return False
+        was_edited = (self.updated_at - self.created_at) > timedelta(minutes=1)
+        within_24h = (timezone.now() - self.updated_at) < timedelta(hours=24)
+        return was_edited and within_24h
+
     def save(self, *args, **kwargs):
         if not self.order_number:
             self.order_number = self._generate_order_number()

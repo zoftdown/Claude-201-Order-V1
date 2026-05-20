@@ -26,10 +26,12 @@
     </div>
 </div>
 
-{% if order.is_urgent or order.not_printed %}
+{% if order.is_urgent or order.not_printed or order.recently_edited %}
 <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
     {% if order.is_urgent %}<span class="badge bg-danger">ด่วน</span>{% endif %}
     {% if order.not_printed %}<span class="badge bg-secondary">ยังไม่พิมพ์ใบงาน</span>{% endif %}
+    {% if order.recently_edited %}<span class="badge bg-warning text-dark">แก้ใบงาน</span>{% endif %}
+    {% if order.recently_edited %}<span class="text-muted small">✏️ แก้ล่าสุด {{ order.updated_at|date:"d/m/Y H:i" }}</span>{% endif %}
 </div>
 {% endif %}
 
