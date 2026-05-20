@@ -1,8 +1,12 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
+> ⚠️ **อ่านก่อนแก้โค้ดทุกครั้ง** — ไฟล์นี้คือ single source of truth
+> ห้ามลบ/ทับฟีเจอร์ที่ลิสต์ใน "Features ที่มีอยู่จริง" โดยไม่ได้รับคำสั่งชัดเจน
+> เมื่อแก้ template/view ต้องคงฟีเจอร์เดิมที่อยู่ในไฟล์นั้นไว้ครบ (ดู "กฎกันของเดิมหาย")
+
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
-- Web app สำหรับใช้ในร้าน (staff only)
+- Web app สำหรับใช้ในร้าน (staff only, มีระบบ login)
 - Django + PostgreSQL
 - **URL:** https://dr89.cloud/order/
 - Deploy บน **Hostinger VPS KVM1** (฿249/เดือน แผน 12 เดือน)
@@ -14,13 +18,12 @@
 ## Tech Stack
 - **Backend:** Python 3.11+, Django 4.x
 - **Database:** PostgreSQL (dev fallback: SQLite)
-- **Frontend:** Django Templates + Tailwind CSS (หรือ Bootstrap)
+- **Frontend:** Django Templates + Bootstrap
 - **WSGI:** Gunicorn (port 8100)
 - **Static files:** WhiteNoise (CompressedManifestStaticFilesStorage)
 - **Reverse proxy:** Nginx
 - **File storage:** Local media folder (รูปภาพ)
-- **Authentication:** Django built-in auth + Groups (admin/staff)
-- **Export:** PDF (ใบออร์เดอร์พิมพ์ได้)
+- **Export:** PDF / print view (ใบออร์เดอร์พิมพ์ได้)
 
 ---
 
@@ -29,233 +32,102 @@
 config/           # Django project settings, urls, wsgi
 orders/           # Main app (models, views, forms, urls)
 templates/        # HTML templates
-  registration/   # login.html (Django auth)
+  base.html       # มี CSS class .special-note (color: red; font-weight: bold)
   orders/         # order_list, order_form, order_detail, order_print
 static/           # Source static files
 staticfiles/      # collectstatic output (gitignored)
 media/            # Uploaded images (gitignored)
-  designs/YYYY/MM/
+backups/          # DB backups (gitignored — ห้าม commit ข้อมูลลูกค้า)
 deploy/           # Production deployment configs
-  nginx.conf
+  nginx.conf      # Nginx location block for /order
   gunicorn.conf.py
-  order.service
-  setup.sh
-.env.example
+  order.service   # Systemd service
+  setup.sh        # One-click VPS setup script
+.env.example      # Template for environment variables
 ```
-
----
-
-## Authentication & Permissions
-
-### Login
-- ใช้ Django built-in authentication (ยกเลิก HTTP Basic Auth ของ nginx)
-- หน้า login: `/order/login/` (ใช้ Django's `LoginView`)
-- ทุก view ครอบด้วย `@login_required` (หรือ `LoginRequiredMixin`)
-- มีปุ่ม logout ที่มุมขวาบน พร้อมชื่อ user ที่ login อยู่
-- Redirect หลัง login → `/order/` (order list)
-
-### User Roles (Django Groups)
-| Group | สิทธิ์ |
-|---|---|
-| **admin** | สร้าง + แก้ไข + **ลบ** order + จัดการ user ผ่าน Django admin |
-| **staff** | สร้าง + แก้ไข order (**ลบไม่ได้**) |
-
-### Implementation
-- ใช้ Django Groups ชื่อ `admin` และ `staff`
-- Superuser ถือว่าเป็น admin โดยปริยาย
-- Template: ซ่อนปุ่ม "ลบ" ถ้า user ไม่ใช่ admin — `{% if user.groups.all|has_group:"admin" or user.is_superuser %}`
-- View: ใน `delete_order` view ให้เช็ค permission ด้วย — ถ้าไม่มีสิทธิ์ให้ return 403
-- เพิ่ม management command หรือใช้ Django admin จัดการ user + group
-
-### Legacy Orders (ออร์เดอร์เก่าก่อน schema ใหม่)
-- **ใช้ URL เดิม** `/order/<id>/` — ไม่แยก path
-- เพิ่ม field `Order.schema_version` (int, default=2 สำหรับ order ใหม่, =1 สำหรับ order เก่า)
-- Migration data script: set `schema_version=1` ให้ทุก order ที่มีอยู่ตอนนี้
-- Order ที่ `schema_version=1`:
-  - Detail view / Print view: แสดงได้ปกติ (backward compatible)
-  - **ซ่อนปุ่ม "แก้ไข"** และ **ซ่อนปุ่ม "ลบ"** ใน detail/list view
-  - Form view: redirect กลับ detail พร้อมข้อความ "ออร์เดอร์นี้เป็นข้อมูลเก่า ไม่สามารถแก้ไขได้"
-- Order ที่ `schema_version=2` (ใหม่): ใช้ structure ใหม่ แก้ไขได้ปกติ
 
 ---
 
 ## Data Models
 
-### Order (ใบออร์เดอร์) — *ไม่เปลี่ยน field เดิม*
+### Order (ใบออร์เดอร์)
 | Field | Type | หมายเหตุ |
 |---|---|---|
-| order_number | CharField | รันอัตโนมัติ เช่น 6903-1, 6903-45 |
-| created_date | DateField | |
-| print_date | DateField | nullable |
+| order_number | CharField | รันอัตโนมัติ เช่น 6903-1, 6903-45 (ขึ้นใหม่ทุกเดือน) |
+| created_date | DateField | วันที่สร้าง |
+| print_date | DateField | วันที่พิมพ์เสื้อ (nullable) |
 | source | CharField | choices: เพจเสื้อเนินสูง / เพจเสื้อคนงาน / เฮีย&เจ๊ / หน้าร้าน / เพจปักผ้า / LINE OA / เพจร้าน Yada / เพจเสื้อทุเรียน / Shopee / Tiktok |
-| customer_name | CharField | |
-| customer_link | CharField | |
-| shirt_name | CharField | |
-| fabric_spec | TextField | แสดงเฉพาะ source=เพจเสื้อคนงาน |
-| special_note | TextField | แสดงสีแดง |
-| total_price | DecimalField | |
-| deposit | DecimalField | |
-| delivery_method | CharField | รับเอง / ส่ง |
-| shipping_address | TextField | |
-| status | CharField | รอดำเนินการ / กำลังผลิต / เสร็จแล้ว / ส่งแล้ว |
-| **schema_version** | **IntegerField** | **ใหม่: default=2, legacy=1** |
-| **created_by** | **FK → User** | **ใหม่: nullable (legacy order ไม่มี)** |
+| customer_name | CharField | ชื่อลูกค้า |
+| customer_link | CharField | Facebook URL หรือเบอร์โทร |
+| shirt_name | CharField | ชื่องาน/ชื่อเสื้อ เช่น "แผงกั๊วเป้า" |
+| fabric_spec | TextField | spec ผ้า (แสดงเฉพาะ source=เพจเสื้อคนงาน) |
+| special_note | TextField | คำสั่งพิเศษ (แสดงสีแดง) |
+| **is_urgent** | BooleanField | **ใบงานด่วน** (default=False) — ติ๊กในหน้า create/edit, แสดง 🚨 หน้าเลข order + แถวสีแดงในหน้า list + banner ในหน้า detail + ลอยขึ้นบนสุดของ list ✅ ทำจริงแล้ว (models.py + forms.py + views.py order_by('-is_urgent','-id')) |
+| total_price | DecimalField | ยอดรวม |
+| deposit | DecimalField | มัดจำ |
+| delivery_method | CharField | choices: รับเอง / ส่ง |
+| shipping_address | TextField | ที่อยู่จัดส่ง |
+| status | CharField | choices: รอดำเนินการ / กำลังผลิต / เสร็จแล้ว / ส่งแล้ว |
+| **stage** | CharField/Int | **ขั้นตอนการผลิต** (timeline) — พิมพ์ / โรล / ตัด / คัด / ส่งเย็บ / รีด+แพ็ค / ลูกค้ารับ *(ยืนยันโครงสร้างจริงใน models.py)* |
 
-### OrderItem (รายการเสื้อ) — *ปรับ structure ใหม่*
-> **เปลี่ยนบทบาท**: จากเดิม 1 item = 1 รายการเสื้อครบ (รูป+คอ+แขน+สี+ไซส์)
-> → ใหม่: 1 item = **1 รูปดีไซน์** (พร้อมมีหลาย variant ข้างใน)
-
-| Field | Type | หมายเหตุ |
-|---|---|---|
-| order | FK → Order | |
-| design_image | ImageField | รูปดีไซน์ (optional — บางรายการยังไม่มี mockup) |
-| order_index | IntegerField | ลำดับแสดง (1, 2, 3, ...) |
-| note | CharField(blank) | หมายเหตุของรูปนี้ เช่น "ยังไม่มี mockup" |
-
-### ShirtVariant (แบบเสื้อในรูปเดียวกัน) — **ใหม่**
-> 1 OrderItem มีได้หลาย ShirtVariant
-> ตัวอย่าง: รูปเดียว → variant 1 แขนสั้น สีดำ M=1 XL=1, variant 2 แขนยาว สีดำ M=2 L=5 XL=3
+### OrderItem (รายการในใบออร์เดอร์)
+1 Order มีได้หลาย Item (ไม่จำกัด)
 
 | Field | Type | หมายเหตุ |
 |---|---|---|
-| item | FK → OrderItem | |
-| sleeve_type | CharField | แขนสั้น / แขนยาว / แขนกุด |
-| collar_type | CharField | คอกลม / คอวี / โปโล / คอปกวี / คอกีฬา / อื่นๆ |
-| color | CharField | กรอกอิสระ |
-| sizes | JSONField | `[{"label": "S", "qty": 5}, {"label": "M", "qty": 10}]` |
-| variant_index | IntegerField | ลำดับแสดง |
+| order | ForeignKey | → Order |
+| design_image | ImageField | รูปดีไซน์ (optional) |
+| sleeve_type | CharField | choices: แขนสั้น / แขนยาว / แขนกุด |
+| collar_type | CharField | choices: คอกลม / คอวี / โปโล / คอปกวี / คอกีฬา / อื่นๆ |
+| color | CharField | สีเสื้อ (กรอกอิสระ) |
+| sizes | JSONField | `[{"label": "S", "qty": 5}, {"label": "M", "qty": 10}, ...]` |
 
-### CustomItem (รายการอื่นๆ ที่ไม่ใช่เสื้อ) — **ใหม่**
-> แยก section จากเสื้อ เช่น กระเป๋าผ้า, ของพรีเมี่ยม
-
-| Field | Type | หมายเหตุ |
-|---|---|---|
-| order | FK → Order | |
-| image | ImageField | optional |
-| name | CharField | ชื่อสินค้า เช่น "กระเป๋าผ้าลายโลโก้" |
-| quantity | IntegerField | จำนวน |
-| note | TextField(blank) | หมายเหตุ |
-| order_index | IntegerField | ลำดับแสดง |
+> หมายเหตุ: 1 OrderItem (1 รูปดีไซน์) รองรับได้หลาย "แบบ" (variant: คอ/แขน/สี/ไซส์) — เห็นในหน้าแก้ไข "แบบที่ 1, 2, 3..." ใต้แต่ละรูป
 
 ---
 
-## Features
+## Features ที่มีอยู่จริง (อย่าทำหาย)
 
-### ✅ Phase 1 — Core (เสร็จแล้ว)
-- [x] สร้าง/แก้ไขใบออร์เดอร์
-- [x] รันเลข order อัตโนมัติ
-- [x] เพิ่ม/ลบ OrderItem แบบ dynamic
-- [x] แนบรูปดีไซน์แต่ละ item
+### ✅ Core
+- [x] สร้าง/แก้ไขใบออร์เดอร์ + รันเลข order อัตโนมัติ
+- [x] เพิ่ม/ลบ OrderItem แบบ dynamic (ไม่จำกัด) + แนบรูปดีไซน์ + วางจากคลิปบอร์ด
+- [x] หลาย "แบบ" ต่อ 1 รูป (variant: คอ/แขน/สี/ไซส์)
 - [x] แสดง fabric_spec เฉพาะเมื่อ source = เพจเสื้อคนงาน
-- [x] ค้นหา order
-- [x] Print view ใบออร์เดอร์
-- [x] หน้า list order + filter status
-- [x] Production deployment config
+- [x] ค้นหา order (ชื่อลูกค้า / ชื่อเสื้อ / เลข order)
+- [x] Print view ใบออร์เดอร์ (พิมพ์ได้)
+- [x] Production deployment (nginx, gunicorn, systemd)
 
-### 🛠️ Phase 1.5 — กำลังทำ (Iteration นี้)
+### ✅ หน้า List
+- [x] **🚨 ตัวเตือนด่วน** — order ที่ติ๊ก is_urgent มี icon 🚨 สีแดงหน้าเลข order **และลอยขึ้นบนสุด** ⚠️ ห้ามทำหาย
+- [x] Filter status (ทั้งหมด / รอดำเนินการ / กำลังผลิต / เสร็จแล้ว / ส่งแล้ว)
+- [x] **คอลัมน์คำสั่งพิเศษ** — แสดง special_note สีแดง (class `.special-note`) ถัดจากชื่อลูกค้า, word-wrap, max-width 220px, โชว์ทั้ง desktop+mobile
+- [x] คอลัมน์: เลข Order / วันที่ / แหล่ง / ชื่อเสื้อ / ชื่อลูกค้า / คำสั่งพิเศษ / จำนวน (+ปุ่มแก้ไข)
 
-#### 1. Authentication ด้วย Django
-- [ ] ติดตั้ง `django.contrib.auth` URLs (`/order/login/`, `/order/logout/`)
-- [ ] สร้าง template `registration/login.html`
-- [ ] ครอบทุก view ด้วย `login_required`
-- [ ] สร้าง Groups: `admin`, `staff` (via migration หรือ management command)
-- [ ] แสดงชื่อ user + ปุ่ม logout ใน header ทุกหน้า
-- [ ] ซ่อนปุ่มลบ order จาก staff
-- [ ] ยกเลิก HTTP Basic Auth ใน nginx config (ถ้ามี)
+### ✅ ระบบ User / สิทธิ์
+- [x] **Django login** (แทน HTTP Basic Auth เดิม) — มีปุ่ม "ออกจากระบบ"
+- [x] **จัดการ user** (หน้า admin จัดการ user) — แยกสิทธิ์ admin vs staff (Groups)
+- [x] **PIN 4 หลัก** ก่อนตั้ง department cookie *(feat: require 4-digit PIN)*
+- [x] **Read-only department "ดู/ค้นหา"** — viewer ดูได้อย่างเดียว แก้ไม่ได้
 
-#### 2. Print view — รูปใหญ่ + layout ใหม่ (ข้อ 2)
-เปลี่ยน layout จากแบบ side-by-side (รูปซ้าย / รายละเอียดขวา) เป็น **stacked (รูปบน / รายละเอียดล่าง)**
+### ✅ Dashboard / Timeline
+- [x] **Stage progress timeline** ในหน้า detail (เหนือ section รายการ) — พิมพ์→โรล→ตัด→คัด→ส่งเย็บ→รีด+แพ็ค→ลูกค้ารับ
+- [x] **Department dashboard** — inline search + per-order stage action
 
-Layout ใหม่ของแต่ละ OrderItem:
-```
-┌─────────────────────────────────────┐
-│                                     │
-│         [รูปดีไซน์ใหญ่]              │
-│         (max-width เต็ม card,        │
-│          aspect-ratio คงที่)         │
-│                                     │
-├─────────────────────────────────────┤
-│ Variant 1:                          │
-│   คอกลมแขนสั้น สีดำ                  │
-│   M=3  XL=6  3XL=3                  │
-│   รวม 12 ตัว                        │
-│ ─────────────────────────────────   │
-│ Variant 2:                          │
-│   คอกลมแขนยาว สีน้ำเงิน              │
-│   M=2  L=5  XL=3                    │
-│   รวม 10 ตัว                        │
-└─────────────────────────────────────┘
-```
-
-- [ ] รูปใช้พื้นที่ด้านบนเต็มความกว้าง card (รูปเดิมเล็กไป ฝ่ายผลิตดูไม่ชัด)
-- [ ] รายละเอียด variant แสดงด้านล่าง แยกด้วยเส้นคั่น
-- [ ] แสดง "รวม X ตัว" ต่อ variant + "รวมทั้งหมด Y ตัว" ต่อ item
-- [ ] ถ้าไม่มีรูป → แสดง placeholder พร้อมข้อความ "ยังไม่มี mockup"
-- [ ] Mobile-responsive: รูปใหญ่ขึ้นเมื่อเปิดบนมือถือ
-
-#### 3 + 4. 1 รูป → หลาย variant (ShirtVariant)
-- [ ] สร้าง model `ShirtVariant` ใหม่ (ดู Data Models)
-- [ ] Migration: สร้างตาราง `shirtvariant`
-- [ ] Data migration script:
-  - สำหรับ order ที่ `schema_version=1` (เก่า): ไม่ต้องย้ายข้อมูล, field เก่าใน OrderItem (sleeve_type, collar_type, color, sizes) ยังคงอยู่เพื่อ display
-  - สำหรับ order ใหม่: field เก่าใน OrderItem จะไม่ถูกใช้งาน (อาจ null หรือ leave as-is)
-- [ ] Form: เปลี่ยน OrderItem form ให้มี nested formset ของ ShirtVariant
-- [ ] UI form ใน order_form.html:
-  ```
-  รายการที่ 1: [รูปดีไซน์]
-    ├─ แบบที่ 1: [คอ][แขน][สี][ไซส์...]
-    ├─ แบบที่ 2: [คอ][แขน][สี][ไซส์...]
-    └─ [+ เพิ่มแบบเสื้อในรูปนี้]
-  [+ เพิ่มรายการใหม่ (รูปใหม่)]
-  ```
-- [ ] JavaScript: dynamic add/remove variant ภายใน item (คล้ายกับที่เพิ่ม item ได้อยู่แล้ว)
-- [ ] validate: 1 item ต้องมีอย่างน้อย 1 variant (ถ้าเป็นเสื้อ)
-
-#### 5. Custom items (รายการอื่นๆ)
-- [ ] สร้าง model `CustomItem` (ดู Data Models)
-- [ ] Form: เพิ่ม section "รายการอื่นๆ (ไม่ใช่เสื้อ)" ในหน้าสร้าง/แก้ไข
-- [ ] แต่ละ custom item มี: รูป (optional) + ชื่อ + จำนวน + หมายเหตุ
-- [ ] Detail/Print view: แสดงเป็น section แยก หัวข้อ "เสื้อ" กับ "อื่นๆ"
-- [ ] Custom item ไม่นับรวมใน "รวมทั้งหมด X ตัว" ของเสื้อ (แสดงแยก "อื่นๆ: X ชิ้น")
-
-### 🔜 Phase 2 — เพิ่มเติม (ยังไม่ทำ)
-- [ ] Export PDF ใบออร์เดอร์
+### 🔜 Phase 2 — เพิ่มเติม
+- [ ] Export PDF ใบออร์เดอร์ (จริงจัง)
 - [ ] สถิติ/รายงาน (ยอดขาย, จำนวนเสื้อ)
 - [ ] วันส่งเย็บ / วันนัดลูกค้า
 - [ ] ประวัติการแก้ไข order
 
 ---
 
-## UI/UX Notes
+## กฎกันของเดิมหาย (สำคัญมาก)
 
-### Order Form (create/edit)
-- Header: ชื่อ user + ปุ่ม logout (มุมขวาบน)
-- Section: ข้อมูลลูกค้า (เหมือนเดิม)
-- **Section: "เสื้อ"** — รายการ OrderItem + ShirtVariant ซ้อนกัน
-  - ปุ่ม "+ เพิ่มแบบเสื้อในรูปนี้" อยู่ภายใน item
-  - ปุ่ม "+ เพิ่มรายการ (รูปใหม่)" อยู่ท้าย section
-- **Section: "อื่นๆ"** — รายการ CustomItem
-  - ปุ่ม "+ เพิ่มรายการอื่นๆ"
-- Footer: ยอดเงิน + ปุ่มบันทึก
-
-### Order Detail / Print View
-- Layout แบบ stacked (รูปบน รายละเอียดล่าง) — **รูปใหญ่สำหรับฝ่ายผลิต**
-- Section "เสื้อ" แสดงก่อน แล้วตามด้วย section "อื่นๆ" (ถ้ามี)
-- คำสั่งพิเศษแสดงด้วยสีแดง (เหมือนเดิม)
-- Print view ต้องมี: เลข order, วันที่, ชื่อลูกค้า, รูปดีไซน์ (ใหญ่), variant ทั้งหมด, custom items, ยอดเงิน
-- mobile-friendly (staff + ฝ่ายผลิตใช้มือถือในร้านได้)
-
-### Order List
-- แสดงเลข order, วันที่, ลูกค้า, ยอดรวม, status, badge "เก่า" ถ้า schema_version=1
-- ปุ่ม "แก้ไข" ซ่อนถ้าเป็น legacy order
-- ปุ่ม "ลบ" แสดงเฉพาะ admin และไม่ใช่ legacy order
-
----
-
-## Order Number Format
-`{ปี พ.ศ. 2 หลัก}{เดือน 2 หลัก}-{running 1-999}` เช่น `6903-1`, `6903-45`, `6903-999`
-- ขึ้น running ใหม่ทุกเดือน
-- ไม่ pad ศูนย์หน้าเลข running
+1. **ก่อนแก้ template/view ใดๆ** ให้อ่านไฟล์นั้นทั้งไฟล์ก่อน แล้วลิสต์ฟีเจอร์ที่มีอยู่ออกมา — ห้ามแก้แบบไม่ดูของเดิม
+2. **เปลี่ยนเฉพาะส่วนที่ผู้ใช้สั่ง** ส่วนอื่นในไฟล์ต้องเหมือนเดิมเป๊ะ (เช่น เพิ่มคอลัมน์ใหม่ ห้ามลบ icon 🚨 หรือคอลัมน์อื่น)
+3. **หลังแก้เสร็จ** ตรวจว่าฟีเจอร์ในลิสต์ "Features ที่มีอยู่จริง" ที่เกี่ยวกับไฟล์นั้น ยังอยู่ครบ
+4. **ทุกครั้งที่เพิ่ม/แก้ฟีเจอร์** → อัปเดต CLAUDE.md ส่วน "Features ที่มีอยู่จริง" ในงานเดียวกัน ก่อน commit
+5. ทดสอบด้วย test client + rollback ไม่ให้ dev DB โดนแตะ
 
 ---
 
@@ -276,70 +148,82 @@ Layout ใหม่ของแต่ละ OrderItem:
 | DB_PASSWORD | (ตั้งเอง) |
 
 ### Deploy Commands
+> ⚠️ เครื่อง dev (Windows) **ไม่มี rsync** และ WSL ไม่มี distro → ใช้ `scp` แทน
 ```bash
-# First time
-sudo bash deploy/setup.sh
+# แก้ไฟล์เดียว/ไม่กี่ไฟล์ (template-only / view-only) — ไม่ต้อง migrate/collectstatic
+scp <path/file> root@dr89.cloud:/opt/order/<path/file>
+ssh root@dr89.cloud "cd /opt/order && systemctl restart order"
 
-# After code update
-rsync -av --exclude='.git' --exclude='db.sqlite3' --exclude='media/' ./ root@dr89.cloud:/opt/order/
-ssh root@dr89.cloud "cd /opt/order && venv/bin/python manage.py migrate && venv/bin/python manage.py collectstatic --noinput && systemctl restart order"
+# ถ้าแก้ model (เพิ่ม field) — ต้อง migrate ด้วย
+ssh root@dr89.cloud "cd /opt/order && venv/bin/python manage.py migrate && systemctl restart order"
+
+# ถ้าแก้ static files — ต้อง collectstatic ด้วย
+ssh root@dr89.cloud "cd /opt/order && venv/bin/python manage.py collectstatic --noinput && systemctl restart order"
 ```
-
-### Migration สำหรับ Phase 1.5
-```bash
-# บน VPS:
-cd /opt/order
-venv/bin/python manage.py migrate                           # สร้าง ShirtVariant + CustomItem + schema_version
-venv/bin/python manage.py set_legacy_schema                 # management command: set schema_version=1 ให้ order เก่า
-venv/bin/python manage.py create_default_groups             # สร้าง Groups: admin, staff
-venv/bin/python manage.py createsuperuser                   # สร้าง admin user
-# สร้าง staff user ผ่าน Django admin ที่ /order/admin/
-```
-
-### Nginx Config (ยกเลิก Basic Auth)
-ลบบรรทัด `auth_basic` และ `auth_basic_user_file` ออกจาก nginx.conf
-(Django จะจัดการ authentication แทน)
+> ⚠️ Caveat ของ scp ทีละไฟล์: ถ้า VPS ตามหลัง repo หลายไฟล์ จะ sync ไม่ครบ
+> ทางเลือกระยะยาว: เปลี่ยน VPS เป็น `git pull` หรือ script scp ที่ mirror exclude list
 
 ### Service Management
 ```bash
-systemctl status order
-systemctl restart order
-journalctl -u order -f
+systemctl status order        # เช็คสถานะ
+systemctl restart order       # restart หลังแก้โค้ด
+journalctl -u order -f        # ดู logs
 ```
+
+---
+
+## Git Workflow
+- **Repo:** github.com/zoftdown/Claude-201-Order-V1 (remote `origin`)
+- **Branch หลัก:** `main`
+- **Claude Code ใช้ git worktree** — แต่ละ task อยู่ branch `claude/...` ของตัวเอง, primary tree เป็น `main`
+- เครื่องร้าน ↔ บ้าน: commit → push origin main → อีกเครื่อง pull
+- **commit เฉพาะไฟล์ที่แก้** (`git add <file>` ไม่ใช่ `git add .`) — กัน CLAUDE-V2.md / _nul / db.sqlite3 หลุดขึ้น git
+- ไฟล์ห้าม commit: `backups/`, `media/`, `staticfiles/`, `db.sqlite3`, `_nul`, ข้อมูลลูกค้า
+
+---
+
+## UI/UX Notes
+- ใบออร์เดอร์แสดงแบบ card ต่อ item — รูป + ประเภท + สี + ตารางไซส์
+- คำสั่งพิเศษ (special_note) แสดงด้วยสีแดง — class `.special-note` ใน base.html (color: red; font-weight: bold)
+- ใบงานด่วน (is_urgent) — 🚨 หน้าเลข order + ขึ้นบนสุด list
+- Print view ต้องมี: เลข order, วันที่, ชื่อลูกค้า, รูปดีไซน์, จำนวนแต่ละไซส์, ยอดเงิน, QR code
+- Print: รูปอยู่ซ้าย ตารางไซส์ขวา — variant block spacing แน่นเพื่อให้ 1 หน้าได้ 2-3 แบบ
+- mobile-friendly (staff ใช้มือถือในร้าน)
+
+---
+
+## Order Number Format
+`{ปี พ.ศ. 2 หลัก}{เดือน 2 หลัก}-{running 1-999}` เช่น `6903-1`, `6903-45`, `6903-999`
+- ขึ้น running ใหม่ทุกเดือน (เริ่ม 1 ใหม่)
+- ไม่ pad ศูนย์หน้าเลข running
 
 ---
 
 ## Decisions Log
 - ใช้ Django เพราะ migration ง่าย เพิ่ม field ได้โดยไม่ยุ่งยาก
-- staff only ไม่มี customer login (phase 1)
+- staff only — ใช้ Django login + Groups (admin/staff), ไม่มี customer login
 - รูปเก็บ local media ก่อน ไม่ใช้ cloud storage
 - ไม่ใช้ DRF — ใช้ Django Templates แบบ traditional
 - OrderItem sizes ใช้ JSONField แทน individual qty fields — ยืดหยุ่นกว่า
 - Sub-path deploy ที่ `/order/` ด้วย FORCE_SCRIPT_NAME
 - WhiteNoise serve static files แทน nginx
 - Gunicorn bind localhost:8100, nginx reverse proxy
-- **[Phase 1.5]** เปลี่ยน auth จาก HTTP Basic → Django built-in เพื่อรองรับหลาย user + สิทธิ์
-- **[Phase 1.5]** แยก ShirtVariant ออกจาก OrderItem: 1 รูปใส่ได้หลายแบบ ไม่ต้องอัปรูปซ้ำ
-- **[Phase 1.5]** แยก CustomItem เป็น model ต่างหาก เพื่อรองรับสินค้าที่ไม่ใช่เสื้อ (กระเป๋าผ้า ฯลฯ)
-- **[Phase 1.5]** ออร์เดอร์เก่า (schema_version=1): ไม่ migrate ข้อมูล, แสดง read-only, ใช้ URL เดิม
-- **[Phase 1.5]** Print view: เปลี่ยน layout เป็นรูปบน/รายละเอียดล่าง เพราะรูปเล็กไป ฝ่ายผลิตดูไม่ชัด
+- เครื่อง dev ไม่มี rsync → deploy ด้วย scp ทีละไฟล์ (key-based auth ตั้งไว้แล้ว)
+- Claude Code ใช้ git worktree (หลาย branch พร้อมกัน)
 
 ---
 
 ## Local Development
 ```bash
-# Setup
 python -m venv venv
 venv\Scripts\activate          # Windows
 pip install -r requirements.txt
 
-# Run
 python manage.py migrate
-python manage.py create_default_groups
-python manage.py createsuperuser
-python manage.py runserver
+python manage.py runserver      # ใช้ SQLite อัตโนมัติถ้าไม่มี DB env vars
 
 # เพิ่ม field ใหม่
+# 1. แก้ models.py
 python manage.py makemigrations
 python manage.py migrate
 ```
