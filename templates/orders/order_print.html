@@ -207,8 +207,11 @@
             margin-top: 6px;
         }
 
-        /* ===== Item Body Layout (image left 60%, variants flex-wrap right 40%) ===== */
-        .item-body {
+        /* ===== Item Layout =====
+           Top row: design image (60%) + first 2 variants (~20% each).
+           Bottom row: variant #3 onward in an auto-fit grid that fills width.
+           Same on screen, in @media print, and in the html2canvas PNG. */
+        .item-top-row {
             display: flex;
             gap: 14px;
             align-items: flex-start;
@@ -231,18 +234,29 @@
         }
 
         /* Smart layout: ≥2 items → smaller image column so they pack on the
-           same A4 sheet. Variants column auto-expands (flex 1 1 auto) to
-           fill the remaining 50%. Font sizes are unchanged. */
+           same A4 sheet. */
         .multi-items .item-image-block { flex: 0 0 50%; }
 
-        /* Variants wrap: each box auto-width, wraps to next row when full */
-        .variants-wrap {
+        /* Top-row variants: up to 2 side by side (each ~20% of item width).
+           2-col grid → one variant fills the left cell, the right cell stays
+           blank (the agreed single-variant look). */
+        .top-variants {
             flex: 1 1 auto;
             min-width: 0;
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
-            align-items: flex-start;
+            align-items: start;
+        }
+
+        /* Bottom-row variants (#3 onward): auto-fit grid that fills the width
+           and wraps on its own (3→3 cols, 4→4, 5-6 wrap, no leftover white). */
+        .item-bottom-grid {
+            margin-top: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+            align-items: start;
         }
 
         .no-img-placeholder {
@@ -405,7 +419,7 @@
                 gap: 6px;
             }
             .shirt-info.with-special-note .shirt-name { text-align: center; }
-            .item-body { flex-direction: column; }
+            .item-top-row { flex-direction: column; }
             .item-image-block { flex: none; width: 100%; }
             .print-controls {
                 position: sticky;
@@ -534,7 +548,7 @@
         <div class="item-block-header">
             <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
         </div>
-        <div class="item-body">
+        <div class="item-top-row">
             <div class="item-image-block">
                 {% if item.design_image %}
                     <img src="{{ item.design_image.url }}" alt="ดีไซน์">
@@ -542,14 +556,23 @@
                     <span class="no-img-placeholder">ยังไม่มี mockup</span>
                 {% endif %}
             </div>
-            <div class="variants-wrap">
-                {% for v in item.variants.all %}
+            <div class="top-variants">
+                {% for v in item.variants.all|slice:":2" %}
                     {% include "orders/_variant_block.html" with v=v %}
                 {% empty %}
                     <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
                 {% endfor %}
             </div>
         </div>
+        {% with extra_variants=item.variants.all|slice:"2:" %}
+        {% if extra_variants %}
+        <div class="item-bottom-grid">
+            {% for v in extra_variants %}
+                {% include "orders/_variant_block.html" with v=v %}
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
     </div>
     {% empty %}
     <p style="text-align:center;padding:40px;color:#888;">ไม่มีรายการในออร์เดอร์นี้</p>
