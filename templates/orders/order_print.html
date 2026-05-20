@@ -130,7 +130,7 @@
         }
         .header-right { flex-shrink: 0; }
         .price-box {
-            display: inline-block;
+            display: table;  /* not inline-block: html2canvas drops nested block text in inline-block */
             border: 2px solid #222;
             border-radius: 6px;
             padding: 6px 14px;
@@ -572,16 +572,53 @@ function saveWorkOrderImage(btn) {
     }
     var label = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก…'; }
-    // useCORS/allowTaint cover any cross-origin /media images; scale:2 = sharper PNG.
+    // useCORS/allowTaint cover any cross-origin /media images; scale = sharper PNG.
+    var SCALE = 2;
     html2canvas(sheet, {
         useCORS: true,
         allowTaint: true,
-        scale: 2,
+        scale: SCALE,
         backgroundColor: '#ffffff'
     }).then(function (canvas) {
+        // Auto-crop the empty white tail below the content. .page-a4 is a full
+        // A4 (min-height 297mm), so short orders leave a long white area at the
+        // bottom. Scan rows from the bottom up for the last row with non-white
+        // content, then crop to it (+ ~20px breathing room). Width is kept.
+        var out = canvas;
+        var w = canvas.width, h = canvas.height;
+        try {
+            var data = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+            var contentBottom = -1;
+            for (var y = h - 1; y >= 0 && contentBottom === -1; y--) {
+                var row = y * w * 4;
+                for (var x = 0; x < w; x++) {
+                    var i = row + x * 4;
+                    if (data[i + 3] > 10 && (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250)) {
+                        contentBottom = y;
+                        break;
+                    }
+                }
+            }
+            if (contentBottom !== -1) {
+                var pad = Math.round(20 * SCALE);            // ~20 CSS px margin
+                var cropH = Math.min(contentBottom + pad + 1, h);
+                if (cropH < h) {                              // only if there's tail to trim
+                    var cropped = document.createElement('canvas');
+                    cropped.width = w;
+                    cropped.height = cropH;
+                    var cctx = cropped.getContext('2d');
+                    cctx.fillStyle = '#ffffff';
+                    cctx.fillRect(0, 0, w, cropH);
+                    cctx.drawImage(canvas, 0, 0, w, cropH, 0, 0, w, cropH);
+                    out = cropped;
+                }
+            }
+        } catch (e) {
+            out = canvas;                                    // tainted canvas → keep full image
+        }
         var link = document.createElement('a');
         link.download = '{{ order.order_number }}.png';
-        link.href = canvas.toDataURL('image/png');
+        link.href = out.toDataURL('image/png');
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
