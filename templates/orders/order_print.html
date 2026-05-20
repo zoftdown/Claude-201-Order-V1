@@ -370,6 +370,8 @@
         }
         .btn-print { background: #1976D2; color: #fff; }
         .btn-print:hover { background: #1565C0; }
+        .btn-save { background: #2e7d32; color: #fff; }
+        .btn-save:hover { background: #1b5e20; }
         .btn-back { background: #666; color: #fff; }
         .btn-back:hover { background: #555; }
 
@@ -480,6 +482,7 @@
 
 <div class="print-controls">
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
+    <button class="btn-save" onclick="saveWorkOrderImage(this)">📷 บันทึกภาพ</button>
     <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
 </div>
 
@@ -558,6 +561,37 @@
     </div>
     {% endif %}
 </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+function saveWorkOrderImage(btn) {
+    var sheet = document.querySelector('.page-a4');
+    if (!sheet || typeof html2canvas === 'undefined') {
+        alert('โหลด html2canvas ไม่สำเร็จ — ลองใหม่อีกครั้ง');
+        return;
+    }
+    var label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก…'; }
+    // useCORS/allowTaint cover any cross-origin /media images; scale:2 = sharper PNG.
+    html2canvas(sheet, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 2,
+        backgroundColor: '#ffffff'
+    }).then(function (canvas) {
+        var link = document.createElement('a');
+        link.download = '{{ order.order_number }}.png';
+        link.href = canvas.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }).catch(function (err) {
+        alert('บันทึกภาพไม่สำเร็จ: ' + err);
+    }).finally(function () {
+        if (btn) { btn.disabled = false; btn.textContent = label; }
+    });
+}
+</script>
 
 </body>
 </html>

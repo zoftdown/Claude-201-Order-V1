@@ -42,7 +42,6 @@
                 <th>วันที่</th>
                 <th class="d-none d-md-table-cell">แหล่ง</th>
                 <th class="d-none d-md-table-cell">ชื่อเสื้อ</th>
-                <th>ชื่อลูกค้า</th>
                 <th>คำสั่งพิเศษ</th>
                 <th class="text-end">จำนวน</th>
                 {% if not request.is_viewer %}<th></th>{% endif %}
@@ -61,8 +60,7 @@
                     <td>{{ order.created_date|date:"d/m/Y" }}</td>
                     <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
                     <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
-                    <td>{{ order.customer_name }}</td>
-                    <td class="special-note" style="white-space: normal; word-break: break-word; max-width: 220px;">{{ order.special_note }}</td>
+                    <td class="special-note" style="color:red; font-weight:bold; white-space:normal; word-break:break-word; max-width:220px;">{{ order.special_note }}</td>
                     <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
                     {% if not request.is_viewer %}
                     <td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
