@@ -38,12 +38,14 @@
     <table class="table table-hover table-sm order-list-table align-middle">
         <thead class="table-dark">
             <tr>
-                <th>เลข Order</th>
                 <th>วันที่</th>
-                <th class="d-none d-md-table-cell">แหล่ง</th>
+                <th>เลข Order</th>
+                <th>สถานะ</th>
                 <th class="d-none d-md-table-cell">ชื่อเสื้อ</th>
+                <th class="d-none d-md-table-cell">แหล่ง</th>
                 <th>คำสั่งพิเศษ</th>
                 <th class="text-end">จำนวน</th>
+                <th>คนลงข้อมูล</th>
                 {% if not request.is_viewer %}<th></th>{% endif %}
             </tr>
         </thead>
@@ -55,13 +57,20 @@
             {% regroup orders by created_date as date_groups %}
             {% for group in date_groups %}
                 {% for order in group.list %}
-                <tr{% if order.is_urgent %} style="background-color:#ffebee; border-left:4px solid #d32f2f;"{% elif forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
-                    <td><a href="{% url 'order_detail' order.pk %}">{% if order.is_urgent %}🚨 {% endif %}<strong>{{ order.order_number }}</strong></a></td>
+                <tr{% if forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
                     <td>{{ order.created_date|date:"d/m/Y" }}</td>
-                    <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
+                    <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
+                    <td>
+                        {% if order.is_urgent %}<span class="badge bg-danger me-1">ด่วน</span>{% endif %}
+                        {% if order.is_new %}<span class="badge bg-success me-1">มาใหม่</span>{% endif %}
+                        {% if order.recently_edited %}<span class="badge bg-warning text-dark">แก้ใบงาน</span>{% endif %}
+                        {% if not order.is_urgent and not order.is_new and not order.recently_edited %}—{% endif %}
+                    </td>
                     <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
+                    <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
                     <td class="special-note" style="color:red; font-weight:bold; white-space:normal; word-break:break-word; max-width:220px;">{{ order.special_note }}</td>
                     <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
+                    <td>{{ order.created_by.username|default:"-" }}</td>
                     {% if not request.is_viewer %}
                     <td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
                     {% endif %}

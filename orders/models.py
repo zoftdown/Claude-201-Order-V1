@@ -89,6 +89,14 @@ class Order(models.Model):
     # Phase 1.6: tailors (M2M เพราะ 1 order ส่งหลายเจ้าได้)
     tailors = models.ManyToManyField('Tailor', blank=True, related_name='orders', verbose_name='คนเย็บ')
 
+    # Audit: when/who created + last edit. nullable so legacy orders (created
+    # before this field existed) read as null → shown as "-".
+    created_at = models.DateTimeField('สร้างเมื่อ', auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField('แก้ไขล่าสุด', auto_now=True, null=True, blank=True)
+    created_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='created_orders',
+                                   verbose_name='คนลงข้อมูล')
+
     class Meta:
         ordering = ['-id']
         verbose_name = 'ออร์เดอร์'
@@ -104,6 +112,26 @@ class Order(models.Model):
     @property
     def total_qty(self):
         return sum(item.total_qty for item in self.items.all())
+
+    @property
+    def is_new(self):
+        """มาใหม่: created within 24h and never (meaningfully) edited."""
+        from datetime import timedelta
+        if not self.created_at:
+            return False
+        within_24h = (timezone.now() - self.created_at) < timedelta(hours=24)
+        was_edited = self.updated_at and (self.updated_at - self.created_at) > timedelta(minutes=1)
+        return within_24h and not was_edited
+
+    @property
+    def recently_edited(self):
+        """แก้ใบงาน: actually edited (>1 min after create) within the last 24h."""
+        from datetime import timedelta
+        if not self.updated_at or not self.created_at:
+            return False
+        was_edited = (self.updated_at - self.created_at) > timedelta(minutes=1)
+        within_24h = (timezone.now() - self.updated_at) < timedelta(hours=24)
+        return was_edited and within_24h
 
     def save(self, *args, **kwargs):
         if not self.order_number:

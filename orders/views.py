@@ -40,6 +40,7 @@ def order_list(request):
     # the list (then by date desc, then -id for stable tiebreak).
     orders = (
         Order.objects.prefetch_related('items')
+        .select_related('created_by')
         .order_by('-is_urgent', '-created_date', '-id')
     )
 
@@ -177,6 +178,9 @@ def _save_with_variants(form, item_formset, variant_formsets, request, *, set_cr
     order = form.save(commit=False)
     if set_created_date and not order.created_date:
         order.created_date = timezone.now().date()
+    # Record who created the order — only on create, never overwrite on edit.
+    if set_created_date and request.user.is_authenticated:
+        order.created_by = request.user
     order.save()
     form.save_m2m()
 
