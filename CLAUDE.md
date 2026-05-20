@@ -155,7 +155,8 @@ scp <path/file> root@dr89.cloud:/opt/order/<path/file>
 ssh root@dr89.cloud "cd /opt/order && systemctl restart order"
 
 # ถ้าแก้ model (เพิ่ม field) — ต้อง migrate ด้วย
-ssh root@dr89.cloud "cd /opt/order && venv/bin/python manage.py migrate && systemctl restart order"
+# ⚠️ migrate over ssh ต้อง source .env ก่อน ไม่งั้นไปโดน SQLite แทน Postgres
+ssh root@dr89.cloud "cd /opt/order && set -a && . ./.env && set +a && venv/bin/python manage.py migrate && systemctl restart order"
 
 # ถ้าแก้ static files — ต้อง collectstatic ด้วย
 ssh root@dr89.cloud "cd /opt/order && venv/bin/python manage.py collectstatic --noinput && systemctl restart order"
