@@ -580,36 +580,43 @@ function saveWorkOrderImage(btn) {
         scale: SCALE,
         backgroundColor: '#ffffff'
     }).then(function (canvas) {
-        // Auto-crop the empty white tail below the content. .page-a4 is a full
-        // A4 (min-height 297mm), so short orders leave a long white area at the
-        // bottom. Scan rows from the bottom up for the last row with non-white
-        // content, then crop to it (+ ~20px breathing room). Width is kept.
+        // Auto-crop the empty white margins around the content. .page-a4 is a
+        // full A4 sheet, so short orders leave a long white tail at the bottom
+        // and white gutters on the left/right. One pass over the pixels finds
+        // the content bounds (non-white, tolerance <250 — so the #fafafa image
+        // backdrop counts as white, which is fine: real content = money box,
+        // image, tables). Then crop to those bounds + ~20px on each side. Top
+        // is kept as-is.
         var out = canvas;
         var w = canvas.width, h = canvas.height;
         try {
             var data = canvas.getContext('2d').getImageData(0, 0, w, h).data;
-            var contentBottom = -1;
-            for (var y = h - 1; y >= 0 && contentBottom === -1; y--) {
+            var minX = w, maxX = -1, maxY = -1;              // content bounds
+            for (var y = 0; y < h; y++) {
                 var row = y * w * 4;
                 for (var x = 0; x < w; x++) {
                     var i = row + x * 4;
                     if (data[i + 3] > 10 && (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250)) {
-                        contentBottom = y;
-                        break;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        maxY = y;                            // last row with content
                     }
                 }
             }
-            if (contentBottom !== -1) {
-                var pad = Math.round(20 * SCALE);            // ~20 CSS px margin
-                var cropH = Math.min(contentBottom + pad + 1, h);
-                if (cropH < h) {                              // only if there's tail to trim
+            if (maxY !== -1 && maxX !== -1) {                // not all-white
+                var pad = Math.round(20 * SCALE);            // ~20 CSS px margin per side
+                var x0 = Math.max(minX - pad, 0);
+                var x1 = Math.min(maxX + pad + 1, w);
+                var cropW = x1 - x0;
+                var cropH = Math.min(maxY + pad + 1, h);     // top stays at 0
+                if (cropW > 0 && (cropW < w || cropH < h)) { // only if there is margin to trim
                     var cropped = document.createElement('canvas');
-                    cropped.width = w;
+                    cropped.width = cropW;
                     cropped.height = cropH;
                     var cctx = cropped.getContext('2d');
                     cctx.fillStyle = '#ffffff';
-                    cctx.fillRect(0, 0, w, cropH);
-                    cctx.drawImage(canvas, 0, 0, w, cropH, 0, 0, w, cropH);
+                    cctx.fillRect(0, 0, cropW, cropH);
+                    cctx.drawImage(canvas, x0, 0, cropW, cropH, 0, 0, cropW, cropH);
                     out = cropped;
                 }
             }
