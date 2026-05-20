@@ -39,6 +39,7 @@
         <thead class="table-dark">
             <tr>
                 <th>วันที่</th>
+                <th>เวลา</th>
                 <th>เลข Order</th>
                 <th>สถานะ</th>
                 <th class="d-none d-md-table-cell">ชื่อเสื้อ</th>
@@ -59,6 +60,7 @@
                 {% for order in group.list %}
                 <tr{% if forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
                     <td>{{ order.created_date|date:"d/m/Y" }}</td>
+                    <td>{{ order.created_time_display|default:"—" }}</td>
                     <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
                     <td>
                         {% if order.is_urgent %}<span class="badge bg-danger me-1">ด่วน</span>{% endif %}

@@ -132,6 +132,17 @@ class Order(models.Model):
         within_24h = (timezone.now() - self.updated_at) < timedelta(hours=24)
         return was_edited and within_24h
 
+    @property
+    def created_time_display(self):
+        """HH:MM (Asia/Bangkok) of created_at; None when 00:00 (legacy backfilled
+        orders have midnight, so they hide). created_at is stored UTC → localtime()."""
+        if not self.created_at:
+            return None
+        local = timezone.localtime(self.created_at)
+        if local.hour == 0 and local.minute == 0:
+            return None
+        return local.strftime('%H:%M')
+
     def save(self, *args, **kwargs):
         if not self.order_number:
             self.order_number = self._generate_order_number()
