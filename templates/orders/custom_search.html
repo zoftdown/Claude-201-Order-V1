@@ -27,6 +27,15 @@
             </select>
         </div>
         <div>
+            <label class="form-label mb-1"><strong>แหล่งที่มา</strong></label>
+            <select name="source" class="form-select form-select-sm" style="min-width:160px;">
+                <option value="">-- ทั้งหมด --</option>
+                {% for value, label in source_choices %}
+                    <option value="{{ value }}" {% if source == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
             <label class="form-label mb-1"><strong>วันที่สร้าง ตั้งแต่</strong></label>
             <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="min-width:150px;">
         </div>
