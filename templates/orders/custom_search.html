@@ -5,26 +5,47 @@
 <h4 class="mb-3">ค้นหาขั้นสูง</h4>
 
 <form method="get" class="mb-3" style="padding:15px; background:#f5f5f5; border-radius:6px;">
-    <div class="d-flex gap-2 align-items-center flex-wrap">
-        <label class="mb-0"><strong>คนเย็บ:</strong></label>
-        <select name="tailor" class="form-select form-select-sm" style="max-width:300px;">
-            <option value="">-- เลือกคนเย็บ --</option>
-            {% for t in tailors %}
-                <option value="{{ t.id }}" {% if tailor_id == t.id|stringformat:"s" %}selected{% endif %}>
-                    {{ t.name }}{% if t.phone %} ({{ t.phone }}){% endif %}
-                </option>
-            {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-primary btn-sm">ค้นหา</button>
-        {% if selected_tailor %}
-            <a href="{% url 'custom_search' %}" class="btn btn-outline-secondary btn-sm">ล้าง</a>
-        {% endif %}
+    <div class="d-flex gap-3 align-items-end flex-wrap">
+        <div>
+            <label class="form-label mb-1"><strong>คนเย็บ</strong></label>
+            <select name="tailor" class="form-select form-select-sm" style="min-width:220px;">
+                <option value="">-- ทั้งหมด --</option>
+                {% for t in tailors %}
+                    <option value="{{ t.id }}" {% if tailor_id == t.id|stringformat:"s" %}selected{% endif %}>
+                        {{ t.name }}{% if t.phone %} ({{ t.phone }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label mb-1"><strong>ผลิตที่</strong></label>
+            <select name="production_place" class="form-select form-select-sm" style="min-width:160px;">
+                <option value="">-- ทั้งหมด --</option>
+                {% for value, label in production_choices %}
+                    <option value="{{ value }}" {% if production_place == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label mb-1"><strong>วันที่สร้าง ตั้งแต่</strong></label>
+            <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="min-width:150px;">
+        </div>
+        <div>
+            <label class="form-label mb-1"><strong>ถึง</strong></label>
+            <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="min-width:150px;">
+        </div>
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm">ค้นหา</button>
+            {% if has_filter %}
+                <a href="{% url 'custom_search' %}" class="btn btn-outline-secondary btn-sm">ล้าง</a>
+            {% endif %}
+        </div>
     </div>
 </form>
 
-{% if selected_tailor %}
+{% if has_filter %}
     <h5 class="mt-3">
-        ใบงานของ <strong>{{ selected_tailor.name }}</strong>
+        ผลการค้นหา
         <span class="text-muted small">— พบ {{ orders|length }} ใบ</span>
     </h5>
 
@@ -37,6 +58,7 @@
                         <th>วันที่</th>
                         <th>ลูกค้า</th>
                         <th>ชื่องาน</th>
+                        <th>ผลิตที่</th>
                         <th>stage ปัจจุบัน</th>
                         <th></th>
                     </tr>
@@ -51,6 +73,7 @@
                         <td>{{ order.created_date|date:"d/m/Y" }}</td>
                         <td>{{ order.customer_name }}</td>
                         <td>{{ order.shirt_name }}</td>
+                        <td><span{% if order.production_place != 'ผลิตเอง' %} class="text-success fw-bold"{% endif %}>{{ order.production_place }}</span></td>
                         <td>
                             {% if order.packed_at %}เสร็จแล้ว
                             {% elif order.sent_to_tailors_at %}ส่งเย็บ
@@ -67,9 +90,9 @@
             </table>
         </div>
     {% else %}
-        <p class="text-muted mt-2">ไม่พบใบงานของคนเย็บคนนี้</p>
+        <p class="text-muted mt-2">ไม่พบใบงานตามเงื่อนไขที่เลือก</p>
     {% endif %}
 {% else %}
-    <p class="text-muted mt-3">เลือกคนเย็บแล้วกดค้นหา</p>
+    <p class="text-muted mt-3">เลือกเงื่อนไข (คนเย็บ / ผลิตที่ / ช่วงวันที่) แล้วกดค้นหา — เว้นว่างได้ทุกช่อง</p>
 {% endif %}
 {% endblock %}

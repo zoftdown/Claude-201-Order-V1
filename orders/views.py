@@ -9,6 +9,7 @@ from django.db.models import OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -982,7 +983,8 @@ def user_delete(request, pk):
 
 
 # ---------------------------------------------------------------------------
-# Custom search (admin-only) — start with tailor filter, more filters later.
+# Custom search (admin-only) — filters: คนเย็บ + ผลิตที่ + ช่วงวันที่สร้าง.
+# All filters AND together; every field is optional (blank = skip that one).
 # Mounted at /order/search/.
 # ---------------------------------------------------------------------------
 
@@ -993,26 +995,45 @@ def custom_search(request):
     tailors = Tailor.objects.filter(is_active=True).order_by('name')
 
     tailor_id = (request.GET.get('tailor') or '').strip()
-    orders = None  # None = ยังไม่ได้กดค้นหา
-    selected_tailor = None
+    production_place = (request.GET.get('production_place') or '').strip()
+    date_from = (request.GET.get('date_from') or '').strip()
+    date_to = (request.GET.get('date_to') or '').strip()
 
+    selected_tailor = None
     if tailor_id:
         try:
             selected_tailor = Tailor.objects.get(pk=tailor_id)
         except (Tailor.DoesNotExist, ValueError):
             selected_tailor = None
 
+    valid_production = production_place in dict(Order.PRODUCTION_CHOICES)
+    parsed_from = parse_date(date_from)
+    parsed_to = parse_date(date_to)
+
+    # Any usable filter present? Blank/invalid fields are simply ignored.
+    has_filter = bool(selected_tailor or valid_production or parsed_from or parsed_to)
+
+    orders = None  # None = ยังไม่ได้กดค้นหา / ไม่มี filter
+    if has_filter:
+        qs = Order.objects.all()
         if selected_tailor is not None:
-            orders = (
-                Order.objects
-                .filter(tailors=selected_tailor)
-                .order_by('-is_urgent', '-created_date', '-id')
-                .distinct()
-            )
+            qs = qs.filter(tailors=selected_tailor)
+        if valid_production:
+            qs = qs.filter(production_place=production_place)
+        if parsed_from:
+            qs = qs.filter(created_date__gte=parsed_from)
+        if parsed_to:
+            qs = qs.filter(created_date__lte=parsed_to)
+        orders = qs.order_by('-is_urgent', '-created_date', '-id').distinct()
 
     return render(request, 'orders/custom_search.html', {
         'tailors': tailors,
         'orders': orders,
         'selected_tailor': selected_tailor,
         'tailor_id': tailor_id,
+        'production_choices': Order.PRODUCTION_CHOICES,
+        'production_place': production_place,
+        'date_from': date_from,
+        'date_to': date_to,
+        'has_filter': has_filter,
     })
