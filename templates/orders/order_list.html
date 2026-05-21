@@ -31,6 +31,14 @@
     .order-list-table.table-hover tbody tr:hover > td {
         background-color: #dee2e6 !important;
     }
+    /* Truncate long shirt names to a fixed width with "…"; full name on hover
+       via the title attribute (~25-30 chars at this table font size). */
+    .order-list-table td.shirt-name-cell {
+        max-width: 240px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 </style>
 
 {% if orders %}
@@ -69,7 +77,7 @@
                         {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
                         {% if not order.is_urgent and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
                     </td>
-                    <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
+                    <td class="d-none d-md-table-cell shirt-name-cell" title="{{ order.shirt_name }}">{{ order.shirt_name }}</td>
                     <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
                     <td class="special-note" style="color:red; font-weight:bold; white-space:normal; word-break:break-word; max-width:220px;">{{ order.special_note }}</td>
                     <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
