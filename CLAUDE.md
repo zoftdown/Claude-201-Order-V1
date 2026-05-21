@@ -156,6 +156,21 @@ journalctl -u order -f      # ดู logs
 ### Environment Variables (.env)
 SECRET_KEY, DEBUG=False, ALLOWED_HOSTS=dr89.cloud, FORCE_SCRIPT_NAME=/order, DB_NAME=order_db, DB_USER=order_user, DB_PASSWORD
 
+### Backup (DB)
+**ชั้นใน — cron อัตโนมัติบน VPS:**
+- Script `deploy/backup_db.sh` (= `/opt/order/backup_db.sh` บน VPS): source .env → `pg_dump -h … -w` (ดู Lessons ข้อ 7) → เขียน `/opt/order/backups/order_db_YYYYMMDD_HHMM.sql` → ลบไฟล์เก่ากว่า 90 วัน (`find -mtime +90 -delete`)
+- Cron (root): `0 2 * * * /opt/order/backup_db.sh` — ทุกวันตี 2 (เวลา VPS). เช็ก `crontab -l`
+- ⚠️ cron PATH น้อย (`/usr/bin:/bin`) — pg_dump ต้องอยู่ที่ `/usr/bin/pg_dump` (เป็นอยู่แล้ว). ทดสอบแบบ cron: `env -i PATH=/usr/bin:/bin /opt/order/backup_db.sh`
+- `/opt/order/backups/` **gitignored** — ห้าม dump หลุดขึ้น git
+
+**ชั้นนอก — ดึงลงเครื่อง dev + Google Drive (off-site, ทำเอง):**
+```bash
+ssh root@dr89.cloud "cd /opt/order && set -a && . ./.env && set +a && PGPASSWORD=\$DB_PASSWORD pg_dump -h \${DB_HOST:-localhost} -p \${DB_PORT:-5432} -w -U \$DB_USER \$DB_NAME > /tmp/order_db_dump.sql"
+scp root@dr89.cloud:/tmp/order_db_dump.sql "C:\K6\CLAUDE\backups\order_db_$(date +%Y%m%d_%H%M).sql"
+ssh root@dr89.cloud "rm -f /tmp/order_db_dump.sql"
+# แล้วก๊อปไฟล์ใน C:\K6\CLAUDE\backups\ ขึ้น Google Drive
+```
+
 ---
 
 ## Order Number Format
@@ -177,6 +192,8 @@ SECRET_KEY, DEBUG=False, ALLOWED_HOSTS=dr89.cloud, FORCE_SCRIPT_NAME=/order, DB_
 5. **html2canvas จุกจิก** — .price-box ต้อง display:table ไม่ใช่ inline-block (ไม่งั้น render ตัวเลขแดงไม่ติด). ปุ่มที่ไม่อยากให้ติดใน PNG ต้องอยู่นอก div.page-a4
 
 6. **timezone** — created_at เก็บ UTC, ต้องใช้ timezone.localtime() แปลงเป็นไทยก่อนแสดง/เทียบเวลา (ไม่งั้นเพี้ยน 7 ชม.)
+
+7. **pg_dump ต้องต่อ TCP (-h + PGPASSWORD + -w)** — `PGPASSWORD=$DB_PASSWORD pg_dump -h ${DB_HOST:-localhost} -p ${DB_PORT:-5432} -w -U $DB_USER $DB_NAME` ไม่งั้น default ไป Unix socket ที่ตั้ง **peer auth** → `FATAL: Peer authentication failed for user "order_user"` (peer = จับคู่ OS user `root` กับ DB role ไม่ตรง). ต้อง source .env ก่อนให้มี `$DB_*` ด้วย (เหมือนข้อ 1) — ต่อแบบเดียวกับที่ Django ต่อ (HOST=localhost + password). เคยพลาดตอน backup ก่อน deploy
 
 ---
 
