@@ -54,10 +54,17 @@ class Order(models.Model):
         ('ส่ง', 'ส่ง'),
     ]
 
+    PRODUCTION_CHOICES = [
+        ('ผลิตเอง', 'ผลิตเอง'),
+        ('ร้านแอม', 'ร้านแอม'),
+        ('ร้านแบ้งค์', 'ร้านแบ้งค์'),
+    ]
+
     order_number = models.CharField('เลขออร์เดอร์', max_length=20, unique=True, editable=False)
     created_date = models.DateField('วันที่สร้าง', default=timezone.now)
     print_date = models.DateField('วันที่พิมพ์เสื้อ', null=True, blank=True)
     source = models.CharField('แหล่งที่มา', max_length=50, choices=SOURCE_CHOICES)
+    production_place = models.CharField('ผลิตที่', max_length=20, choices=PRODUCTION_CHOICES, default='ผลิตเอง')
     customer_name = models.CharField('ชื่อลูกค้า', max_length=200)
     customer_link = models.CharField('Facebook/เบอร์โทร', max_length=500, blank=True)
     shirt_name = models.CharField('ชื่องาน/ชื่อเสื้อ', max_length=200)

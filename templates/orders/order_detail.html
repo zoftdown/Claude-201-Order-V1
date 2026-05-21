@@ -40,7 +40,8 @@
         <div class="row">
             <div class="col-md-3"><strong>วันที่สร้าง:</strong> {{ order.created_date|date:"d/m/Y" }}</div>
             <div class="col-md-3"><strong>แหล่ง:</strong> {{ order.source }}</div>
-            <div class="col-md-6"><strong>ชื่อลูกค้า:</strong> {{ order.customer_name|default:"-" }}</div>
+            <div class="col-md-3"><strong>ผลิตที่:</strong> <span{% if order.production_place != 'ผลิตเอง' %} class="text-success fw-bold"{% endif %}>{{ order.production_place }}</span></div>
+            <div class="col-md-3"><strong>ชื่อลูกค้า:</strong> {{ order.customer_name|default:"-" }}</div>
         </div>
         <div class="row mt-2">
             <div class="col-md-3"><strong>ชื่อเสื้อ:</strong> {{ order.shirt_name }}</div>

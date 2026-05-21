@@ -65,8 +65,9 @@
                     <td>
                         {% if order.is_urgent %}<span class="badge bg-danger me-1">ด่วน</span>{% endif %}
                         {% if order.not_printed %}<span class="badge bg-secondary me-1">ยังไม่พิมพ์ใบงาน</span>{% endif %}
-                        {% if order.recently_edited %}<span class="badge bg-warning text-dark">แก้ใบงาน</span>{% endif %}
-                        {% if not order.is_urgent and not order.not_printed and not order.recently_edited %}—{% endif %}
+                        {% if order.recently_edited %}<span class="badge bg-warning text-dark me-1">แก้ใบงาน</span>{% endif %}
+                        {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
+                        {% if not order.is_urgent and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
                     </td>
                     <td class="d-none d-md-table-cell">{{ order.shirt_name }}</td>
                     <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
