@@ -394,6 +394,8 @@
         .btn-print:hover { background: #1565C0; }
         .btn-save { background: #2e7d32; color: #fff; }
         .btn-save:hover { background: #1b5e20; }
+        .btn-pick { background: #6a1b9a; color: #fff; }
+        .btn-pick:hover { background: #4a148c; }
         .btn-printed { background: #0277bd; color: #fff; }
         .btn-printed:hover { background: #01579b; }
         .printed-note {
@@ -516,6 +518,7 @@
 <div class="print-controls">
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
     <button class="btn-save" onclick="saveWorkOrderImage(this)">📷 บันทึกภาพ</button>
+    <button class="btn-pick" onclick="window.location.href='{% url 'order_pick' order.pk %}'">📋 พิมพ์ใบคัด</button>
     {% if order.not_printed %}
         {% if not request.is_viewer %}
         <form method="post" action="{% url 'order_mark_printed' order.pk %}" style="display:inline; margin:0;">

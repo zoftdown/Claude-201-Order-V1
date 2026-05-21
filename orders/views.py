@@ -358,6 +358,19 @@ def order_mark_printed(request, pk):
     return redirect('order_print', pk=order.pk)
 
 
+@viewer_or_login_required
+def order_pick(request, pk):
+    """ใบคัด (pick/sorting sheet): one OrderItem per A4 page, big design image
+    + variant tables. Separate view/template from order_print so the work-order
+    sheet (4 copies + save-image) is untouched. No QR/price/customer info."""
+    order = get_object_or_404(Order, pk=pk)
+    items = list(order.items.prefetch_related('variants').all())
+    return render(request, 'orders/order_pick.html', {
+        'order': order,
+        'items': items,
+    })
+
+
 @login_required
 @require_POST
 def order_delete(request, pk):
