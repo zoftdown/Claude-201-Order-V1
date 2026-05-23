@@ -296,6 +296,60 @@
         .item-image-col { flex: none; width: 100%; min-height: 160px; }
         .item-content-col { padding: 8px 10px; }
     }
+
+    /* ===== Master images: thumbnail grid + click-to-zoom lightbox ===== */
+    .master-thumbs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .master-thumb {
+        width: 140px;
+        height: 140px;
+        object-fit: cover;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        background: #f8f9fa;
+        cursor: zoom-in;
+        transition: transform .1s, box-shadow .1s;
+    }
+    .master-thumb:hover {
+        transform: scale(1.03);
+        box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .master-lightbox {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.85);
+        z-index: 1080;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        cursor: zoom-out;
+    }
+    .master-lightbox.open { display: flex; }
+    .master-lightbox img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        box-shadow: 0 0 30px rgba(0,0,0,.5);
+    }
+    .master-lightbox .lb-close {
+        position: absolute;
+        top: 12px;
+        right: 24px;
+        color: #fff;
+        font-size: 42px;
+        font-weight: 700;
+        line-height: 1;
+        background: none;
+        border: none;
+        cursor: pointer;
+    }
+    @media (max-width: 600px) {
+        .master-thumb { width: 100px; height: 100px; }
+    }
 </style>
 <div class="card mb-3">
     <div class="card-header py-2"><strong>ความคืบหน้า</strong></div>
@@ -365,5 +419,46 @@
 <div class="order-grand-total">
     <span class="grand-pill">รวมทั้งหมด {{ order.total_qty }} ตัว</span>
 </div>
+{% endif %}
+
+{% if order.master_images.all %}
+<div class="card mb-3">
+    <div class="card-header py-2"><strong>รูปมาสเตอร์</strong> <span class="text-muted small">(คลิกเพื่อดูรูปใหญ่)</span></div>
+    <div class="card-body">
+        <div class="master-thumbs">
+            {% for m in order.master_images.all %}
+            <img src="{{ m.image.url }}" class="master-thumb" alt="รูปมาสเตอร์ {{ forloop.counter }}" loading="lazy">
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="master-lightbox" id="masterLightbox">
+    <button type="button" class="lb-close" aria-label="ปิด">&times;</button>
+    <img src="" alt="รูปมาสเตอร์ขยาย">
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if order.master_images.all %}
+<script>
+(function () {
+    const lb = document.getElementById('masterLightbox');
+    if (!lb) return;  // ไม่มีรูปมาสเตอร์ → ไม่มี lightbox
+    const lbImg = lb.querySelector('img');
+    document.querySelectorAll('.master-thumb').forEach(function (t) {
+        t.addEventListener('click', function () {
+            lbImg.src = t.src;
+            lb.classList.add('open');
+        });
+    });
+    function close() { lb.classList.remove('open'); lbImg.src = ''; }
+    lb.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') close();
+    });
+})();
+</script>
 {% endif %}
 {% endblock %}
