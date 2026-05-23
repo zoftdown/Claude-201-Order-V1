@@ -247,8 +247,22 @@
                 {% endfor %}
             </div>
             {% endif %}
-            <label class="form-label">เพิ่มรูปมาสเตอร์ <small class="text-muted">(เลือกได้หลายไฟล์พร้อมกัน)</small></label>
-            <input type="file" name="master_images" accept="image/*" multiple class="form-control form-control-sm">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">เพิ่มรูปมาสเตอร์ <small class="text-muted">(1 ช่อง = 1 รูป · เลือกไฟล์ หรือวางจากคลิปบอร์ดก็ได้)</small></label>
+                <button type="button" class="btn btn-success btn-sm" id="add-master-slot">+ เพิ่มช่องรูปมาสเตอร์</button>
+            </div>
+            <div id="master-slots" class="d-flex flex-wrap gap-2">
+                <div class="master-slot border rounded p-2" style="width:280px;">
+                    <input type="file" name="master_images" accept="image/*" class="form-control form-control-sm" id="master-img-0">
+                    <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+                            data-target="master-img-0"
+                            title="วางรูปจากคลิปบอร์ด (Print Screen / Photoshop / Snipping Tool)">
+                        📋 วางจากคลิปบอร์ด
+                    </button>
+                    <div class="paste-preview mt-1" data-for="master-img-0"></div>
+                    <button type="button" class="btn btn-outline-danger btn-sm mt-1 btn-remove-master-slot">ลบช่องนี้</button>
+                </div>
+            </div>
             <div class="form-text">รูปจะถูกย่ออัตโนมัติให้ด้านยาวสุดไม่เกิน 1600px</div>
         </div>
     </div>
@@ -333,6 +347,19 @@
     </div>
     <div class="sizes-container mt-2"></div>
     <button type="button" class="btn btn-outline-secondary btn-sm mt-1 add-size-btn">+ เพิ่มไซส์อื่น</button>
+</div>
+</template>
+
+<template id="master-slot-template">
+<div class="master-slot border rounded p-2" style="width:280px;">
+    <input type="file" name="master_images" accept="image/*" class="form-control form-control-sm" id="master-img-__mprefix__">
+    <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+            data-target="master-img-__mprefix__"
+            title="วางรูปจากคลิปบอร์ด (Print Screen / Photoshop / Snipping Tool)">
+        📋 วางจากคลิปบอร์ด
+    </button>
+    <div class="paste-preview mt-1" data-for="master-img-__mprefix__"></div>
+    <button type="button" class="btn btn-outline-danger btn-sm mt-1 btn-remove-master-slot">ลบช่องนี้</button>
 </div>
 </template>
 
@@ -696,6 +723,34 @@ document.querySelectorAll('.item-form').forEach(function (itemEl) {
     if (container && container.children.length === 0) {
         addVariant(idx, /* copyFromPrev */ false);
     }
+});
+
+// =================== Master image slots ===================
+// Multi-slot uploader: each slot is one single-file <input name="master_images">
+// + the shared clipboard-paste button (handled by the generic .paste-image-btn
+// delegate above). All slots share the name so request.FILES.getlist() on the
+// server collects every filled slot. IDs are unique so paste targets the right
+// input. Removing a slot just drops the node — empty slots are ignored on save.
+const masterSlots = document.getElementById('master-slots');
+const addMasterSlotBtn = document.getElementById('add-master-slot');
+let masterSlotCounter = 1; // static first slot uses index 0
+
+if (addMasterSlotBtn && masterSlots) {
+    addMasterSlotBtn.addEventListener('click', function () {
+        const i = masterSlotCounter++;
+        const tpl = document.getElementById('master-slot-template').innerHTML
+            .replaceAll('__mprefix__', i);
+        const wrap = document.createElement('div');
+        wrap.innerHTML = tpl.trim();
+        masterSlots.appendChild(wrap.firstElementChild);
+    });
+}
+
+document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.btn-remove-master-slot');
+    if (!btn) return;
+    const slot = btn.closest('.master-slot');
+    if (slot) slot.remove();
 });
 
 // =================== Initial render ===================

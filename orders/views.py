@@ -177,7 +177,10 @@ def _validate_variants_present(item_formset, variant_formsets):
 def _save_master_images(request, order):
     """Persist รูปมาสเตอร์ for an order: delete any checked existing images,
     then append all newly uploaded files. Independent of the OrderItem flow —
-    a plain multi-file <input> + per-image delete checkboxes, not a formset."""
+    the form renders one single-file <input name="master_images"> per slot
+    (Choose-file or clipboard-paste). getlist() gathers the files from every
+    filled slot at once, so empty slots are skipped automatically; per-image
+    delete checkboxes remove existing ones. Not a formset."""
     delete_ids = request.POST.getlist('delete_master')
     if delete_ids:
         order.master_images.filter(pk__in=delete_ids).delete()
