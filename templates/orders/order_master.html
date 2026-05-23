@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ใบมาสเตอร์ {{ order.order_number }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ===== Reset & Base ===== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
+            color: #222;
+            background: #e5e7eb;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* ===== A4 sheet ===== */
+        .page-a4 {
+            width: 210mm;
+            max-width: 100%;
+            min-height: 297mm;
+            margin: 20px auto;
+            padding: 15mm;
+            background: #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        /* ===== Header ===== */
+        .master-header {
+            border-bottom: 3px solid #222;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+        .mh-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .mh-top .order-num {
+            display: inline-block;
+            font-size: 26pt;
+            font-weight: 900;
+            background: #222;
+            color: #fff;
+            padding: 3px 16px;
+            border-radius: 6px;
+            line-height: 1.1;
+            word-break: break-word;
+        }
+        .mh-top .sheet-tag {
+            flex: 0 0 auto;
+            font-size: 16pt;
+            font-weight: 900;
+            color: #6a1b9a;
+            border: 2px solid #6a1b9a;
+            border-radius: 6px;
+            padding: 2px 14px;
+            background: #fff;
+            white-space: nowrap;
+        }
+        .mh-title {
+            font-size: 19pt;
+            font-weight: 900;
+            line-height: 1.25;
+            margin-top: 6px;
+            word-break: break-word;
+        }
+
+        /* ===== Warning banner ===== */
+        .warn-banner {
+            text-align: center;
+            font-size: 18pt;
+            font-weight: 900;
+            color: #fff;
+            background: #d32f2f;
+            border-radius: 6px;
+            padding: 6px 0;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+        }
+
+        /* ===== Master images (big, flowing down) ===== */
+        .master-image-block {
+            text-align: center;
+            margin-bottom: 14px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .master-image-block img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            display: block;
+            margin: 0 auto;
+        }
+        .no-master {
+            text-align: center;
+            color: #888;
+            font-size: 14pt;
+            padding: 40px 0;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            margin-bottom: 14px;
+        }
+
+        /* ===== Signature section ===== */
+        .sign-section {
+            margin-top: 18px;
+            padding-top: 12px;
+            border-top: 3px solid #222;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .sign-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 22px 28px;
+            margin-top: 10px;
+        }
+        .sign-cell {
+            display: flex;
+            flex-direction: column;
+        }
+        .sign-line {
+            border-bottom: 1.5px solid #222;
+            height: 34px;
+        }
+        .sign-label {
+            font-size: 12pt;
+            font-weight: 800;
+            color: #333;
+            margin-top: 4px;
+            text-align: center;
+        }
+
+        /* ===== Print controls (outside .page-a4 — never printed) ===== */
+        .print-controls {
+            text-align: center;
+            padding: 12px 0;
+        }
+        .print-controls button {
+            font-family: 'Sarabun', sans-serif;
+            font-size: 13pt;
+            font-weight: 700;
+            padding: 8px 28px;
+            margin: 0 6px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .btn-print { background: #6a1b9a; color: #fff; }
+        .btn-print:hover { background: #4a148c; }
+        .btn-back { background: #666; color: #fff; }
+        .btn-back:hover { background: #555; }
+
+        /* ========================================================== MOBILE */
+        @media screen and (max-width: 600px) {
+            body { background: #fff; }
+            .page-a4 {
+                width: 100%;
+                min-height: auto;
+                margin: 0 0 12px;
+                padding: 12px;
+                box-shadow: none;
+            }
+            .mh-top .order-num { font-size: 20pt; padding: 2px 12px; }
+            .mh-top .sheet-tag { font-size: 13pt; }
+            .mh-title { font-size: 16pt; }
+            .warn-banner { font-size: 15pt; }
+            .sign-grid { grid-template-columns: 1fr 1fr; gap: 18px 18px; }
+            .print-controls {
+                position: sticky;
+                top: 0;
+                background: #fff;
+                z-index: 10;
+                border-bottom: 1px solid #ddd;
+            }
+        }
+
+        /* ========================================================== PRINT */
+        @media print {
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+                width: 210mm;
+            }
+            .print-controls,
+            button,
+            .btn { display: none !important; }
+
+            .page-a4 {
+                width: 210mm;
+                max-width: none;
+                min-height: 297mm;
+                margin: 0;
+                padding: 10mm;
+                box-shadow: none;
+                box-sizing: border-box;
+            }
+            /* Keep a single image from splitting across two sheets. */
+            .master-image-block img { max-height: 240mm; width: auto; max-width: 100%; }
+        }
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="print-controls">
+    <button class="btn-print" onclick="window.print()">พิมพ์ใบมาสเตอร์</button>
+    <button class="btn-back" onclick="window.location.href='{% url 'order_print' order.pk %}'">กลับใบงาน</button>
+</div>
+
+<div class="page-a4">
+    <div class="master-header">
+        <div class="mh-top">
+            <span class="order-num">{{ order.order_number }}</span>
+            <span class="sheet-tag">ใบมาสเตอร์</span>
+        </div>
+        <div class="mh-title">{{ order.shirt_name }}</div>
+    </div>
+
+    <div class="warn-banner">⚠ ดูให้ดีก่อนเซ็น ⚠</div>
+
+    {% for m in master_images %}
+    <div class="master-image-block">
+        <img src="{{ m.image.url }}" alt="รูปมาสเตอร์ {{ forloop.counter }}">
+    </div>
+    {% empty %}
+    <div class="no-master">— ยังไม่มีรูปมาสเตอร์ —</div>
+    {% endfor %}
+
+    <div class="sign-section">
+        <div class="sign-grid">
+            <div class="sign-cell"><div class="sign-line"></div><div class="sign-label">วันที่</div></div>
+            <div class="sign-cell"><div class="sign-line"></div><div class="sign-label">กราฟิก</div></div>
+            <div class="sign-cell"><div class="sign-line"></div><div class="sign-label">วางพิมพ์</div></div>
+            <div class="sign-cell"><div class="sign-line"></div><div class="sign-label">เลเซอร์</div></div>
+            <div class="sign-cell"><div class="sign-line"></div><div class="sign-label">คนคัด</div></div>
+            <div class="sign-cell"><div class="sign-line"></div><div class="sign-label">ชื่อลูกค้า</div></div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

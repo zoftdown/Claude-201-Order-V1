@@ -518,7 +518,7 @@
 <div class="print-controls">
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
     <button class="btn-save" onclick="saveWorkOrderImage(this)">📷 บันทึกภาพ</button>
-    <button class="btn-pick" onclick="window.location.href='{% url 'order_pick' order.pk %}'">📋 พิมพ์ใบคัด</button>
+    <button class="btn-pick" onclick="window.location.href='{% url 'order_master' order.pk %}'">📋 พิมพ์ใบมาสเตอร์</button>
     {% if order.not_printed %}
         {% if not request.is_viewer %}
         <form method="post" action="{% url 'order_mark_printed' order.pk %}" style="display:inline; margin:0;">

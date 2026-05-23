@@ -1,11 +1,17 @@
 from django.contrib import admin
-from .models import Order, OrderItem, ShirtVariant, Tailor, StageLog, DepartmentPIN
+from .models import Order, OrderItem, MasterImage, ShirtVariant, Tailor, StageLog, DepartmentPIN
 
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
     fields = ['order_index', 'design_image']
+
+
+class MasterImageInline(admin.TabularInline):
+    model = MasterImage
+    extra = 1
+    fields = ['order_index', 'image']
 
 
 class ShirtVariantInline(admin.TabularInline):
@@ -20,7 +26,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ['status', 'source']
     search_fields = ['order_number', 'customer_name', 'shirt_name']
     readonly_fields = ['order_number']
-    inlines = [OrderItemInline]
+    inlines = [OrderItemInline, MasterImageInline]
     filter_horizontal = ['tailors']
 
 

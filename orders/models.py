@@ -28,6 +28,18 @@ def design_upload_path(instance, filename):
     return f'designs/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
 
 
+def master_upload_path(instance, filename):
+    """Upload path for รูปมาสเตอร์: masters/YYYY/MM/<order_number>_<8-char-uuid><ext>.
+    Mirrors design_upload_path so long original filenames never trip the
+    100-char FileField limit."""
+    ext = (os.path.splitext(filename)[1] or '.jpg').lower()
+    order = getattr(instance, 'order', None)
+    order_num = getattr(order, 'order_number', None) or 'tmp'
+    unique = uuid.uuid4().hex[:8]
+    now = timezone.now()
+    return f'masters/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
+
+
 class Order(models.Model):
     SOURCE_CHOICES = [
         ('เพจเสื้อเนินสูง', 'เพจเสื้อเนินสูง'),
@@ -193,6 +205,63 @@ class OrderItem(models.Model):
     @property
     def total_qty(self):
         return sum(v.total_qty for v in self.variants.all())
+
+
+class MasterImage(models.Model):
+    """รูปมาสเตอร์ — 1 Order มีได้หลายรูป. ใช้พิมพ์ "ใบมาสเตอร์" ให้ทีมเซ็นตรวจ
+    (กราฟิก/วางพิมพ์/เลเซอร์/คนคัด). แยกจาก OrderItem.design_image โดยสิ้นเชิง."""
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='master_images')
+    image = models.ImageField('รูปมาสเตอร์', upload_to=master_upload_path)
+    order_index = models.PositiveIntegerField('ลำดับ', default=0)
+
+    class Meta:
+        ordering = ['order_index', 'id']
+        verbose_name = 'รูปมาสเตอร์'
+        verbose_name_plural = 'รูปมาสเตอร์'
+
+    def __str__(self):
+        return f'Master #{self.pk} (order {self.order_id})'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._downscale()
+
+    def _downscale(self, max_side=1600, quality=85):
+        """Shrink oversized uploads in place: cap the long edge at max_side and
+        re-encode at ~quality. Local-filesystem storage only — silently skips
+        when the file is missing or the storage backend has no local path,
+        so it never blocks a save."""
+        if not self.image:
+            return
+        try:
+            path = self.image.path
+        except (ValueError, NotImplementedError):
+            return
+        try:
+            from PIL import Image, ImageOps
+        except ImportError:
+            return
+        try:
+            img = Image.open(path)
+        except (FileNotFoundError, OSError):
+            return
+        if max(img.size) <= max_side:
+            return
+        fmt = (img.format or 'JPEG').upper()
+        img = ImageOps.exif_transpose(img)
+        img.thumbnail((max_side, max_side), Image.LANCZOS)
+        save_kwargs = {}
+        if fmt in ('JPEG', 'JPG'):
+            if img.mode in ('RGBA', 'P', 'LA'):
+                img = img.convert('RGB')
+            save_kwargs = {'quality': quality, 'optimize': True}
+        elif fmt == 'PNG':
+            save_kwargs = {'optimize': True}
+        try:
+            img.save(path, format='JPEG' if fmt == 'JPG' else fmt, **save_kwargs)
+        except (OSError, KeyError):
+            img.save(path)
 
 
 class ShirtVariant(models.Model):

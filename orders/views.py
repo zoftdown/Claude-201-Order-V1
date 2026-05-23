@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import PermissionDenied
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import Max, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -25,7 +25,7 @@ from .forms import (
     COLLAR_SUGGESTIONS,
     SLEEVE_SUGGESTIONS,
 )
-from .models import DepartmentPIN, Order, StageLog, Tailor
+from .models import DepartmentPIN, MasterImage, Order, StageLog, Tailor
 from .qr_utils import generate_qr_svg
 
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
@@ -174,6 +174,21 @@ def _validate_variants_present(item_formset, variant_formsets):
     return errors
 
 
+def _save_master_images(request, order):
+    """Persist รูปมาสเตอร์ for an order: delete any checked existing images,
+    then append all newly uploaded files. Independent of the OrderItem flow —
+    a plain multi-file <input> + per-image delete checkboxes, not a formset."""
+    delete_ids = request.POST.getlist('delete_master')
+    if delete_ids:
+        order.master_images.filter(pk__in=delete_ids).delete()
+
+    new_files = request.FILES.getlist('master_images')
+    if new_files:
+        start = order.master_images.aggregate(m=Max('order_index'))['m'] or 0
+        for offset, f in enumerate(new_files, start=1):
+            MasterImage.objects.create(order=order, image=f, order_index=start + offset)
+
+
 def _save_with_variants(form, item_formset, variant_formsets, request, *, set_created_date):
     """Persist Order + items + variants. Caller has confirmed everything is valid."""
     order = form.save(commit=False)
@@ -198,6 +213,7 @@ def _save_with_variants(form, item_formset, variant_formsets, request, *, set_cr
         vfs.save()
 
     _copy_images_from_first(request, item_formset)
+    _save_master_images(request, order)
     return order
 
 
@@ -368,6 +384,19 @@ def order_pick(request, pk):
     return render(request, 'orders/order_pick.html', {
         'order': order,
         'items': items,
+    })
+
+
+@viewer_or_login_required
+def order_master(request, pk):
+    """ใบมาสเตอร์ (master sheet): แสดงรูปมาสเตอร์ใหญ่ๆ ทุกรูป ไล่ลงมา + ช่องเซ็นตรวจ
+    (วันที่/กราฟิก/วางพิมพ์/เลเซอร์/คนคัด/ลูกค้า). ไม่มี QR/ราคา. ปุ่มควบคุมอยู่นอก
+    div ที่พิมพ์ (เหมือน order_print/order_pick)."""
+    order = get_object_or_404(Order, pk=pk)
+    master_images = list(order.master_images.all())
+    return render(request, 'orders/order_master.html', {
+        'order': order,
+        'master_images': master_images,
     })
 
 

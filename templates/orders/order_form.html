@@ -228,6 +228,31 @@
         </div>
     </div>
 
+    <!-- ===== Master images (รูปมาสเตอร์ — ใช้พิมพ์ใบมาสเตอร์ให้ทีมเซ็นตรวจ) ===== -->
+    <div class="card mb-3">
+        <div class="card-header">
+            รูปมาสเตอร์ <small class="text-muted">(สำหรับพิมพ์ใบมาสเตอร์ให้ทีมเซ็นตรวจ — แยกจากรูปดีไซน์ด้านบน)</small>
+        </div>
+        <div class="card-body">
+            {% if order and order.master_images.all %}
+            <div class="row g-3 mb-3">
+                {% for m in order.master_images.all %}
+                <div class="col-auto text-center">
+                    <img src="{{ m.image.url }}" style="max-height:120px; max-width:160px;" class="rounded border d-block mb-1">
+                    <div class="form-check d-inline-block">
+                        <input class="form-check-input" type="checkbox" name="delete_master" value="{{ m.pk }}" id="del-master-{{ m.pk }}">
+                        <label class="form-check-label small text-danger" for="del-master-{{ m.pk }}">ลบรูปนี้</label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <label class="form-label">เพิ่มรูปมาสเตอร์ <small class="text-muted">(เลือกได้หลายไฟล์พร้อมกัน)</small></label>
+            <input type="file" name="master_images" accept="image/*" multiple class="form-control form-control-sm">
+            <div class="form-text">รูปจะถูกย่ออัตโนมัติให้ด้านยาวสุดไม่เกิน 1600px</div>
+        </div>
+    </div>
+
     <div class="mb-4">
         <button type="submit" class="btn btn-primary">บันทึก</button>
         <a href="{% if order %}{% url 'order_detail' order.pk %}{% else %}{% url 'order_list' %}{% endif %}" class="btn btn-outline-secondary">ยกเลิก</a>
