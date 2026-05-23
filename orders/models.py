@@ -40,6 +40,53 @@ def master_upload_path(instance, filename):
     return f'masters/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
 
 
+def signed_upload_path(instance, filename):
+    """Upload path for รูปที่เซ็นแล้ว: signed/YYYY/MM/<order_number>_<8-char-uuid><ext>.
+    instance is the Order itself (signed_image lives on Order, 1 per order)."""
+    ext = (os.path.splitext(filename)[1] or '.jpg').lower()
+    order_num = getattr(instance, 'order_number', None) or 'tmp'
+    unique = uuid.uuid4().hex[:8]
+    now = timezone.now()
+    return f'signed/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
+
+
+def downscale_image_field(field, max_side=1600, quality=85):
+    """Shrink an oversized ImageField file in place: cap the long edge at max_side
+    and re-encode at ~quality. Local-filesystem storage only — silently skips when
+    the file is missing or the storage backend has no local path, so it never
+    blocks a save. Shared by MasterImage.image and Order.signed_image."""
+    if not field:
+        return
+    try:
+        path = field.path
+    except (ValueError, NotImplementedError):
+        return
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return
+    try:
+        img = Image.open(path)
+    except (FileNotFoundError, OSError):
+        return
+    if max(img.size) <= max_side:
+        return
+    fmt = (img.format or 'JPEG').upper()
+    img = ImageOps.exif_transpose(img)
+    img.thumbnail((max_side, max_side), Image.LANCZOS)
+    save_kwargs = {}
+    if fmt in ('JPEG', 'JPG'):
+        if img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+        save_kwargs = {'quality': quality, 'optimize': True}
+    elif fmt == 'PNG':
+        save_kwargs = {'optimize': True}
+    try:
+        img.save(path, format='JPEG' if fmt == 'JPG' else fmt, **save_kwargs)
+    except (OSError, KeyError):
+        img.save(path)
+
+
 class Order(models.Model):
     SOURCE_CHOICES = [
         ('เพจเสื้อเนินสูง', 'เพจเสื้อเนินสูง'),
@@ -120,6 +167,12 @@ class Order(models.Model):
     # for legacy orders so they don't show "ยังไม่พิมพ์ใบงาน".
     printed_at = models.DateTimeField('พิมพ์ใบงานเมื่อ', null=True, blank=True)
 
+    # Signed copy: photo of the master sheet after every dept reviewed + signed.
+    # 1 per order (all signatures on one sheet). nullable — legacy orders have
+    # none. Auto-downscaled on save (phone photos). See save() below.
+    signed_image = models.ImageField('รูปที่เซ็นแล้ว', upload_to=signed_upload_path,
+                                     null=True, blank=True)
+
     class Meta:
         ordering = ['-id']
         verbose_name = 'ออร์เดอร์'
@@ -166,6 +219,9 @@ class Order(models.Model):
         if not self.order_number:
             self.order_number = self._generate_order_number()
         super().save(*args, **kwargs)
+        # Auto-downscale the signed photo (no-op when empty or already ≤1600px,
+        # so the common save path — and stage updates — pays ~nothing).
+        downscale_image_field(self.signed_image)
 
     def _generate_order_number(self):
         today = self.created_date or timezone.now().date()
@@ -225,43 +281,7 @@ class MasterImage(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        self._downscale()
-
-    def _downscale(self, max_side=1600, quality=85):
-        """Shrink oversized uploads in place: cap the long edge at max_side and
-        re-encode at ~quality. Local-filesystem storage only — silently skips
-        when the file is missing or the storage backend has no local path,
-        so it never blocks a save."""
-        if not self.image:
-            return
-        try:
-            path = self.image.path
-        except (ValueError, NotImplementedError):
-            return
-        try:
-            from PIL import Image, ImageOps
-        except ImportError:
-            return
-        try:
-            img = Image.open(path)
-        except (FileNotFoundError, OSError):
-            return
-        if max(img.size) <= max_side:
-            return
-        fmt = (img.format or 'JPEG').upper()
-        img = ImageOps.exif_transpose(img)
-        img.thumbnail((max_side, max_side), Image.LANCZOS)
-        save_kwargs = {}
-        if fmt in ('JPEG', 'JPG'):
-            if img.mode in ('RGBA', 'P', 'LA'):
-                img = img.convert('RGB')
-            save_kwargs = {'quality': quality, 'optimize': True}
-        elif fmt == 'PNG':
-            save_kwargs = {'optimize': True}
-        try:
-            img.save(path, format='JPEG' if fmt == 'JPG' else fmt, **save_kwargs)
-        except (OSError, KeyError):
-            img.save(path)
+        downscale_image_field(self.image)
 
 
 class ShirtVariant(models.Model):

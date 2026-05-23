@@ -192,6 +192,20 @@ def _save_master_images(request, order):
             MasterImage.objects.create(order=order, image=f, order_index=start + offset)
 
 
+def _save_signed_image(request, order):
+    """Attach / replace / remove the single signed-copy photo (รูปที่เซ็นแล้ว).
+    A checked 'delete_signed' removes the current one; a new 'signed_image' upload
+    replaces it. Order.save() auto-downscales (reuses downscale_image_field)."""
+    if request.POST.get('delete_signed') and order.signed_image:
+        order.signed_image.delete(save=False)  # drop the file off disk
+        order.save(update_fields=['signed_image'])
+        return
+    f = request.FILES.get('signed_image')
+    if f:
+        order.signed_image = f
+        order.save(update_fields=['signed_image'])  # triggers downscale
+
+
 def _save_with_variants(form, item_formset, variant_formsets, request, *, set_created_date):
     """Persist Order + items + variants. Caller has confirmed everything is valid."""
     order = form.save(commit=False)
@@ -217,6 +231,7 @@ def _save_with_variants(form, item_formset, variant_formsets, request, *, set_cr
 
     _copy_images_from_first(request, item_formset)
     _save_master_images(request, order)
+    _save_signed_image(request, order)
     return order
 
 

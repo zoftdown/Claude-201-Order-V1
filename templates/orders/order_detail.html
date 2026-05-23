@@ -432,20 +432,33 @@
         </div>
     </div>
 </div>
+{% endif %}
 
+{% if order.signed_image %}
+<div class="card mb-3">
+    <div class="card-header py-2"><strong>✅ รูปที่เซ็นแล้ว</strong> <span class="text-muted small">(หลักฐานทุกฝ่ายเซ็นตรวจ · คลิกเพื่อดูรูปใหญ่)</span></div>
+    <div class="card-body">
+        <div class="master-thumbs">
+            <img src="{{ order.signed_image.url }}" class="master-thumb" alt="รูปที่เซ็นแล้ว" loading="lazy">
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if order.master_images.all or order.signed_image %}
 <div class="master-lightbox" id="masterLightbox">
     <button type="button" class="lb-close" aria-label="ปิด">&times;</button>
-    <img src="" alt="รูปมาสเตอร์ขยาย">
+    <img src="" alt="รูปขยาย">
 </div>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
-{% if order.master_images.all %}
+{% if order.master_images.all or order.signed_image %}
 <script>
 (function () {
     const lb = document.getElementById('masterLightbox');
-    if (!lb) return;  // ไม่มีรูปมาสเตอร์ → ไม่มี lightbox
+    if (!lb) return;  // ไม่มีรูปมาสเตอร์/รูปเซ็น → ไม่มี lightbox
     const lbImg = lb.querySelector('img');
     document.querySelectorAll('.master-thumb').forEach(function (t) {
         t.addEventListener('click', function () {

@@ -267,6 +267,35 @@
         </div>
     </div>
 
+    <!-- ===== Signed copy (รูปที่เซ็นแล้ว — หลักฐานทุกฝ่ายเซ็นตรวจ, 1 รูปต่อใบ) ===== -->
+    <div class="card mb-3">
+        <div class="card-header">
+            รูปที่เซ็นแล้ว <small class="text-muted">(หลักฐานทุกฝ่ายตรวจ+เซ็นบนใบมาสเตอร์ — 1 รูปต่อใบ)</small>
+        </div>
+        <div class="card-body">
+            {% if order and order.signed_image %}
+            <div class="mb-2 text-center d-inline-block me-3">
+                <img src="{{ order.signed_image.url }}" style="max-height:140px; max-width:200px;" class="rounded border d-block mb-1">
+                <div class="form-check d-inline-block">
+                    <input class="form-check-input" type="checkbox" name="delete_signed" value="1" id="del-signed">
+                    <label class="form-check-label small text-danger" for="del-signed">ลบรูปนี้</label>
+                </div>
+            </div>
+            {% endif %}
+            <div class="signed-slot border rounded p-2" style="width:280px;">
+                <input type="file" name="signed_image" accept="image/*" class="form-control form-control-sm" id="signed-img">
+                <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+                        data-target="signed-img"
+                        title="วางรูปจากคลิปบอร์ด (ถ่ายมือถือ / Print Screen)">
+                    📋 วางจากคลิปบอร์ด
+                </button>
+                <div class="paste-preview mt-1" data-for="signed-img"></div>
+            </div>
+            {% if order and order.signed_image %}<div class="form-text">อัปโหลดรูปใหม่เพื่อแทนที่รูปเดิม</div>{% endif %}
+            <div class="form-text">รูปจะถูกย่ออัตโนมัติให้ด้านยาวสุดไม่เกิน 1600px</div>
+        </div>
+    </div>
+
     <div class="mb-4">
         <button type="submit" class="btn btn-primary">บันทึก</button>
         <a href="{% if order %}{% url 'order_detail' order.pk %}{% else %}{% url 'order_list' %}{% endif %}" class="btn btn-outline-secondary">ยกเลิก</a>
