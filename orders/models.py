@@ -117,6 +117,7 @@ class Order(models.Model):
         ('ผลิตเอง', 'ผลิตเอง'),
         ('ร้านแอม', 'ร้านแอม'),
         ('ร้านแบ้งค์', 'ร้านแบ้งค์'),
+        ('ร้านตูน', 'ร้านตูน'),
     ]
 
     order_number = models.CharField('เลขออร์เดอร์', max_length=20, unique=True, editable=False)
