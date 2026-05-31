@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.3 · อัปเดตล่าสุด 2026-05-23 · migration ล่าสุด `0014_order_signed_image`
+> **Version:** V2.3 · อัปเดตล่าสุด 2026-05-31 · migration ล่าสุด `0015_alter_order_production_place` (เพิ่ม "ร้านตูน" ใน production_place choices)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -230,6 +230,10 @@ ssh root@dr89.cloud "rm -f /tmp/order_db_dump.sql"
 9. **reuse helper/component เดิม อย่าเขียนซ้ำ** — logic ย่อรูปดึงเป็น `downscale_image_field` module-level ใช้ร่วม MasterImage + signed_image; lightbox หน้า detail ใช้ตัวเดียว (`.master-thumb` + `#masterLightbox`) gate รวม master_images OR signed_image; clipboard paste ใช้ `.paste-image-btn` delegate ตัวเดิมทุกที่ (data-target ชี้ id ของ input). ก่อนเพิ่มของใหม่ เช็กก่อนว่ามี pattern เดิมให้ reuse ไหม
 
 10. **verify ว่า commit ทำจริงครบก่อนสรุปว่าเสร็จ** — เคยเข้าใจว่า order_detail โชว์รูปมาสเตอร์แล้ว แต่จริงๆ ยังไม่มีทั้งใน git และ VPS (grep/checksum ยืนยันก่อน). ก่อน deploy ทุกครั้ง: `git fetch` + เทียบ HEAD กับ origin/main + `sha256sum` ไฟล์ VPS เทียบ local ก่อน scp ทับ (กันเขียนทับงานที่แก้มือบน VPS)
+
+11. **PowerShell ≠ Bash — `&&` ใช้ไม่ได้ ห้าม batch คำสั่ง deploy** — เครื่อง dev เป็น Windows (PowerShell). ใน PowerShell 5.1 ตัว `&&`/`||` เป็น parser error และถ้าส่งหลายคำสั่งพร้อมกันใน turn เดียวแล้วอันใดอันหนึ่ง syntax พัง → **ทั้งชุดถูก cancel** (เคยทำ scp+migrate หาย เพราะ git diff ตัวก่อนหน้า quoting พังเลยยกเลิกหมด). **deploy ต้องรันทีละคำสั่ง sequential** + verify ผลแต่ละขั้นก่อนไปต่อ. ระวัง nested quoting ลึก (PowerShell→ssh→bash→python) — เลี่ยงโดยเขียนไฟล์ `.sql`/`.py` บน VPS แล้วรันด้วย `-f`/pipe แทนการยัด quote ซ้อน
+
+12. **`git hash-object` MISMATCH หลัง scp บน Windows = false alarm** — Windows checkout เป็น CRLF + บางไฟล์มี BOM, แต่ VPS เก็บดิบ → `git hash-object` ฝั่ง Windows ทำ CRLF→LF normalization เลยได้ hash ต่างจาก VPS **ทั้งที่เนื้อไฟล์เหมือนกัน** (scp คัดลอก byte-exact). อย่าด่วนสรุปว่า "VPS ถูกแก้มือ/scp พัง" — ยืนยันด้วย `git diff --no-index --ignore-all-space` (ดูเนื้อจริง) หรือ semantic check (grep โค้ดที่เพิ่ม / `makemigrations --check`) ก่อนตัดสิน. **อย่าใช้ PowerShell `Out-File`/pipe สร้างไฟล์ที่ python จะ exec** — มันเติม BOM (U+FEFF) ทำ SyntaxError
 
 ---
 
