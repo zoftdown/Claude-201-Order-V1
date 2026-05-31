@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.3 · อัปเดตล่าสุด 2026-05-31 · migration ล่าสุด `0015_alter_order_production_place` (เพิ่ม "ร้านตูน" ใน production_place choices)
+> **Version:** V2.3 · อัปเดตล่าสุด 2026-05-31 · migration ล่าสุด `0015_alter_order_production_place` (เพิ่ม "ร้านตูน" ใน production_place choices) · feature ล่าสุด: หน้า list 2 tab (ด่วน / เรียงตามวันปกติ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -122,7 +122,11 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - แนบรูปดีไซน์, fabric_spec เฉพาะเพจเสื้อคนงาน
 - **custom_search** — ค้นหา (หน้าแยก)
 - **user-management** — จัดการ user (admin)
-- หน้า list: filter status, เรียง -is_urgent ขึ้นบน
+- หน้า list: filter status + **2 tab (ด่วน / เรียงตามวันปกติ)**
+- **Tab หน้า list (`?tab=`)** — แก้ปัญหาใบด่วนถูกยกไปกองบนสุดจน "หลุด" ลำดับวันปกติ คนพิมพ์มองข้าม:
+  - **ด่วน** (default, `tab=urgent`) — เฉพาะ `is_urgent=True`, เรียง `-created_date, -id`
+  - **เรียงตามวันปกติ** (`tab=normal`) — **ทุกใบ** inline by date (`-created_date, -id` เท่านั้น ไม่มี `-is_urgent`) ใบด่วนคงลำดับวัน + badge "ด่วน"
+  - ค่าแปลก/ว่าง → fallback `urgent`. status filter + search `q` คง tab (hidden input `tab` ในฟอร์มค้นหา + ต่อ `&tab=` ทุก status link รวมปุ่ม "ทั้งหมด")
 - **คอลัมน์หน้า list (เรียงซ้าย→ขวา):** วันที่ | เวลา | เลข Order | สถานะ(badge) | ชื่อเสื้อ | แหล่ง | คำสั่งพิเศษ(แดง) | จำนวน | คนลงข้อมูล | [แก้ไข]
 - **Badge สถานะ (Bootstrap, ใส่หลายอันพร้อมกันได้):**
   - ด่วน (bg-danger แดง) ← is_urgent
