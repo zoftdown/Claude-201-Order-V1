@@ -37,13 +37,23 @@ def _is_admin(user):
 
 @viewer_or_login_required
 def order_list(request):
-    # Urgent flag wins over date — flagged orders always sit at the top of
-    # the list (then by date desc, then -id for stable tiebreak).
+    # Two tabs to fix urgent orders being hoisted to the top and slipping out
+    # of the normal date order (staff overlooked them):
+    #   'urgent' (default) — only urgent orders, by date desc
+    #   'normal'           — ALL orders inline by date desc (no -is_urgent),
+    #                        urgent ones keep their date slot + "ด่วน" badge
+    tab = request.GET.get('tab')
+    if tab not in ('urgent', 'normal'):
+        tab = 'urgent'
+
     orders = (
         Order.objects.prefetch_related('items')
         .select_related('created_by')
-        .order_by('-is_urgent', '-created_date', '-id')
     )
+    if tab == 'urgent':
+        orders = orders.filter(is_urgent=True).order_by('-created_date', '-id')
+    else:
+        orders = orders.order_by('-created_date', '-id')
 
     # Filter by status
     status = request.GET.get('status')
@@ -64,6 +74,7 @@ def order_list(request):
         'current_status': status,
         'search_query': q or '',
         'status_choices': Order.STATUS_CHOICES,
+        'current_tab': tab,
     })
 
 

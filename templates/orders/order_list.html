@@ -2,9 +2,20 @@
 {% block title %}รายการออร์เดอร์{% endblock %}
 
 {% block content %}
+<!-- Tabs: ด่วน (default) vs เรียงตามวันปกติ -->
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if current_tab == 'urgent' %}active{% endif %}" href="?tab=urgent">ด่วน</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if current_tab == 'normal' %}active{% endif %}" href="?tab=normal">เรียงตามวันปกติ</a>
+    </li>
+</ul>
+
 <div class="row mb-3">
     <div class="col-md-6">
         <form method="get" class="d-flex gap-2">
+            <input type="hidden" name="tab" value="{{ current_tab }}">
             <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="ค้นหา ชื่อลูกค้า / ชื่อเสื้อ / เลข order">
             {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
             <button class="btn btn-primary btn-sm">ค้นหา</button>
@@ -12,9 +23,9 @@
     </div>
     <div class="col-md-6">
         <div class="d-flex gap-1 flex-wrap justify-content-end">
-            <a href="{% url 'order_list' %}" class="btn btn-sm {% if not current_status %}btn-dark{% else %}btn-outline-secondary{% endif %}">ทั้งหมด</a>
+            <a href="{% url 'order_list' %}?tab={{ current_tab }}" class="btn btn-sm {% if not current_status %}btn-dark{% else %}btn-outline-secondary{% endif %}">ทั้งหมด</a>
             {% for value, label in status_choices %}
-                <a href="?status={{ value }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm {% if current_status == value %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+                <a href="?status={{ value }}&tab={{ current_tab }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm {% if current_status == value %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
             {% endfor %}
         </div>
     </div>
@@ -59,10 +70,9 @@
             </tr>
         </thead>
         <tbody>
-            {# View already sorts by ('-is_urgent', '-created_date', '-id'). #}
-            {# Urgent rows surface at the top of their own date groups. Same #}
-            {# date appearing in both urgent + non-urgent buckets simply #}
-            {# splits into two adjacent groups, which is the desired visual. #}
+            {# View sorts by ('-created_date', '-id') in both tabs. Tab "ด่วน" #}
+            {# pre-filters is_urgent=True; tab "เรียงตามวันปกติ" shows all rows #}
+            {# inline by date (urgent ones keep their date slot + "ด่วน" badge). #}
             {% regroup orders by created_date as date_groups %}
             {% for group in date_groups %}
                 {% for order in group.list %}
