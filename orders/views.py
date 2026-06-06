@@ -264,8 +264,9 @@ def _form_render_context(form, item_formset, variant_formsets, **extra):
 
 @login_required
 def order_create(request):
+    is_admin = _is_admin(request.user)
     if request.method == 'POST':
-        form = OrderForm(request.POST)
+        form = OrderForm(request.POST, is_admin=is_admin)
         item_formset = OrderItemFormSet(request.POST, request.FILES, prefix='items')
         variant_formsets = _build_variant_formsets(item_formset, request.POST, request.FILES)
 
@@ -280,7 +281,7 @@ def order_create(request):
             )
             return redirect('order_detail', pk=order.pk)
     else:
-        form = OrderForm()
+        form = OrderForm(is_admin=is_admin)
         item_formset = OrderItemFormSet(prefix='items')
         variant_formsets = _build_variant_formsets(item_formset)
         variant_errors = []
@@ -289,14 +290,16 @@ def order_create(request):
         form, item_formset, variant_formsets,
         title='สร้างออร์เดอร์ใหม่',
         variant_errors=variant_errors,
+        is_admin=is_admin,
     ))
 
 
 @login_required
 def order_edit(request, pk):
     order = get_object_or_404(Order, pk=pk)
+    is_admin = _is_admin(request.user)
     if request.method == 'POST':
-        form = OrderForm(request.POST, instance=order)
+        form = OrderForm(request.POST, instance=order, is_admin=is_admin)
         item_formset = OrderItemFormSet(
             request.POST, request.FILES, instance=order, prefix='items',
         )
@@ -313,7 +316,7 @@ def order_edit(request, pk):
             )
             return redirect('order_detail', pk=order.pk)
     else:
-        form = OrderForm(instance=order)
+        form = OrderForm(instance=order, is_admin=is_admin)
         item_formset = OrderItemFormSet(instance=order, prefix='items')
         variant_formsets = _build_variant_formsets(item_formset)
         variant_errors = []
@@ -323,6 +326,7 @@ def order_edit(request, pk):
         order=order,
         title=f'แก้ไขออร์เดอร์ {order.order_number}',
         variant_errors=variant_errors,
+        is_admin=is_admin,
     ))
 
 

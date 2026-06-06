@@ -68,11 +68,14 @@
                     {{ form.created_date }}
                     {% if form.created_date.errors %}<div class="text-danger small">{{ form.created_date.errors.0 }}</div>{% endif %}
                 </div>
-                {# ซ่อนชั่วคราว — ลบ style="display:none" ออกเพื่อเปิดใช้ใหม่ #}
-                <div class="col-md-3" style="display:none;">
+                {# สถานะ — เห็น/แก้ได้เฉพาะ admin (กัน POST ฝั่ง server ใน OrderForm.__init__) #}
+                {% if is_admin %}
+                <div class="col-md-3">
                     <label class="form-label">สถานะ</label>
                     {{ form.status }}
+                    {% if form.status.errors %}<div class="text-danger small">{{ form.status.errors.0 }}</div>{% endif %}
                 </div>
+                {% endif %}
                 <div class="col-md-3" style="display:none;">
                     <label class="form-label">วิธีรับสินค้า</label>
                     {{ form.delivery_method }}
