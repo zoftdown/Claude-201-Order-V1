@@ -261,7 +261,10 @@
             {% endif %}
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <label class="form-label mb-0">เพิ่มรูป <small class="text-muted">(1 ช่อง = 1 รูป · เลือกไฟล์ หรือวางจากคลิปบอร์ดก็ได้)</small></label>
-                <button type="button" class="btn btn-success btn-sm" id="add-extra-slot">+ เพิ่มช่องรูป</button>
+                <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="open-annot-btn" data-bs-toggle="modal" data-bs-target="#annotModal" title="วาดวงกลม / ลูกศร / กล่องข้อความ ทับรูป">✏️ วาดทับรูป</button>
+                    <button type="button" class="btn btn-success btn-sm" id="add-extra-slot">+ เพิ่มช่องรูป</button>
+                </div>
             </div>
             <div id="extra-slots" class="d-flex flex-wrap gap-2 mb-3">
                 <div class="extra-slot border rounded p-2" style="width:280px;">
@@ -498,9 +501,50 @@
 </tr>
 </template>
 
+<!-- ===== Annotate-image editor modal (Fabric.js) — ผลิต PNG ยัดเข้า extra_images ===== -->
+<div class="modal fade" id="annotModal" tabindex="-1" aria-labelledby="annotModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="annotModalLabel">✏️ วาดทับรูป (วงกลม / ลูกศร)</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="annot-paste">📋 วางรูปจากคลิปบอร์ด</button>
+          <label class="btn btn-outline-secondary btn-sm mb-0">เลือกไฟล์<input type="file" id="annot-file" accept="image/*" hidden></label>
+          <span class="vr"></span>
+          <div class="btn-group btn-group-sm" role="group" aria-label="เครื่องมือ">
+            <button type="button" class="btn btn-outline-primary annot-tool" data-tool="select" title="เลือก/ย้าย">🖱️</button>
+            <button type="button" class="btn btn-outline-primary annot-tool" data-tool="circle" title="วงกลม/วงรี">⭕</button>
+            <button type="button" class="btn btn-outline-primary annot-tool" data-tool="arrow" title="ลูกศร">➡️</button>
+          </div>
+          <span class="vr"></span>
+          <div class="d-flex align-items-center gap-1" id="annot-colors">
+            <button type="button" class="btn p-0 annot-color border" data-color="#d00000" style="background:#d00000;width:26px;height:26px;" title="แดง"></button>
+            <button type="button" class="btn p-0 annot-color border" data-color="#1565c0" style="background:#1565c0;width:26px;height:26px;" title="น้ำเงิน"></button>
+            <button type="button" class="btn p-0 annot-color border" data-color="#2e7d32" style="background:#2e7d32;width:26px;height:26px;" title="เขียว"></button>
+            <button type="button" class="btn p-0 annot-color border" data-color="#000000" style="background:#000000;width:26px;height:26px;" title="ดำ"></button>
+          </div>
+          <span class="vr"></span>
+          <button type="button" class="btn btn-outline-warning btn-sm" id="annot-del">↩️ ลบที่เลือก</button>
+          <button type="button" class="btn btn-outline-danger btn-sm" id="annot-clear">🗑️ ล้างทั้งหมด</button>
+        </div>
+        <div id="annot-canvas-wrap" class="border rounded" style="overflow:auto; background:#f3f4f6; display:flex; justify-content:center; align-items:flex-start; padding:6px; min-height:200px;"></div>
+        <div class="form-text">วางรูปก่อน → เลือกวงกลม/ลูกศรแล้วลากวาดทับ · ลากเพื่อย้าย/ปรับขนาด/ลบ</div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-success" id="annot-save">✓ บันทึกเข้าช่องเพิ่มเติม</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 <script>
 (function () {
 
@@ -895,15 +939,21 @@ const extraSlots = document.getElementById('extra-slots');
 const addExtraSlotBtn = document.getElementById('add-extra-slot');
 let extraSlotCounter = 1; // static first slot uses index 0
 
+// Clone the empty-slot template, append it, return the new slot element.
+// Shared by the "+ เพิ่มช่องรูป" button and the annotate-editor save.
+function createExtraSlot() {
+    const i = extraSlotCounter++;
+    const tpl = document.getElementById('extra-slot-template').innerHTML
+        .replaceAll('__eprefix__', i);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = tpl.trim();
+    const slot = wrap.firstElementChild;
+    extraSlots.appendChild(slot);
+    return slot;
+}
+
 if (addExtraSlotBtn && extraSlots) {
-    addExtraSlotBtn.addEventListener('click', function () {
-        const i = extraSlotCounter++;
-        const tpl = document.getElementById('extra-slot-template').innerHTML
-            .replaceAll('__eprefix__', i);
-        const wrap = document.createElement('div');
-        wrap.innerHTML = tpl.trim();
-        extraSlots.appendChild(wrap.firstElementChild);
-    });
+    addExtraSlotBtn.addEventListener('click', createExtraSlot);
 }
 
 document.addEventListener('click', function (e) {
@@ -912,6 +962,271 @@ document.addEventListener('click', function (e) {
     const slot = btn.closest('.extra-slot');
     if (slot) slot.remove();
 });
+
+// =================== Annotate-image editor (Fabric.js) ===================
+// Draw circle/arrow/text over a pasted base image → flatten to one PNG →
+// drop into a NEW extra-images slot via DataTransfer (same pipeline as a
+// normal upload; no backend changes). Canvas is built fresh on each modal
+// open and disposed on close so repeated opens don't leak.
+(function initAnnotateEditor() {
+    const modalEl = document.getElementById('annotModal');
+    if (!modalEl || !extraSlots) return;
+
+    let fc = null;                 // fabric.Canvas instance (null while closed)
+    let tool = 'select';
+    let color = '#d00000';
+    let drawing = false, sx = 0, sy = 0, drawObj = null;
+    let hasBase = false, baseScale = 1;
+
+    const wrap = document.getElementById('annot-canvas-wrap');
+    const MAX_W = 880, MAX_H = 560;
+
+    function blobToDataURL(blob) {
+        return new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+        });
+    }
+    function dataURLtoBlob(d) {
+        const [head, b64] = d.split(',');
+        const mime = (head.match(/:(.*?);/) || [, 'image/png'])[1];
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return new Blob([arr], {type: mime});
+    }
+
+    // Arrow = group of a line + a triangle head, computed from start→end.
+    function makeArrow(x1, y1, x2, y2, col, w) {
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const headLen = 16 + w * 2;
+        const line = new fabric.Line([x1, y1, x2, y2], {
+            stroke: col, strokeWidth: w, selectable: false, evented: false,
+        });
+        const head = new fabric.Triangle({
+            left: x2, top: y2, originX: 'center', originY: 'center',
+            angle: (angle * 180 / Math.PI) + 90, width: headLen, height: headLen,
+            fill: col, selectable: false, evented: false,
+        });
+        return new fabric.Group([line, head]);
+    }
+
+    function normalizeSelectable() {
+        if (!fc) return;
+        const sel = (tool === 'select');
+        fc.forEachObject(o => { o.selectable = sel; o.evented = sel; });
+        if (!sel) fc.discardActiveObject();
+        fc.requestRenderAll();
+    }
+
+    function setTool(t) {
+        tool = t;
+        if (fc) {
+            fc.selection = (t === 'select');
+            fc.defaultCursor = (t === 'select') ? 'default' : 'crosshair';
+            normalizeSelectable();
+        }
+        modalEl.querySelectorAll('.annot-tool').forEach(b => {
+            b.classList.toggle('active', b.dataset.tool === t);
+        });
+    }
+    function setColor(c) {
+        color = c;
+        modalEl.querySelectorAll('.annot-color').forEach(b => {
+            b.classList.toggle('border-dark', b.dataset.color === c);
+            b.style.outline = (b.dataset.color === c) ? '3px solid #333' : '';
+        });
+    }
+
+    function loadBase(dataURL) {
+        if (!fc) return;
+        fabric.Image.fromURL(dataURL, function (img) {
+            baseScale = Math.min(MAX_W / img.width, MAX_H / img.height, 1);
+            const cw = Math.round(img.width * baseScale);
+            const ch = Math.round(img.height * baseScale);
+            fc.setWidth(cw); fc.setHeight(ch);
+            img.set({selectable: false, evented: false, scaleX: baseScale, scaleY: baseScale});
+            fc.setBackgroundImage(img, fc.renderAll.bind(fc));
+            hasBase = true;
+            // setWidth/Height computes the offset before the flex-centered canvas
+            // reflows to its new position; recompute after the next frame so the
+            // first click lands accurately.
+            requestAnimationFrame(() => { if (fc) fc.calcOffset(); });
+        });
+    }
+
+    function buildCanvas() {
+        if (typeof fabric === 'undefined') {
+            alert('โหลด Fabric.js ไม่สำเร็จ — เช็คอินเทอร์เน็ตแล้วเปิดใหม่');
+            return;
+        }
+        wrap.innerHTML = '<canvas id="annot-canvas"></canvas>';
+        fc = new fabric.Canvas('annot-canvas', {backgroundColor: '#ffffff', selection: true});
+        fc.setWidth(MAX_W); fc.setHeight(420);
+        hasBase = false; baseScale = 1;
+
+        fc.on('mouse:down', function (opt) {
+            if (tool === 'select') return;
+            fc.calcOffset();              // canvas may have moved (base-image resize / scroll) →
+                                          // refresh cached offset so getPointer() is accurate
+            const p = fc.getPointer(opt.e);
+            sx = p.x; sy = p.y;
+            if (tool === 'circle') {
+                drawing = true;
+                drawObj = new fabric.Ellipse({
+                    left: sx, top: sy, rx: 0, ry: 0, originX: 'left', originY: 'top',
+                    fill: 'transparent', stroke: color, strokeWidth: 3,
+                    selectable: false, evented: false,
+                });
+                fc.add(drawObj);
+            } else if (tool === 'arrow') {
+                drawing = true;
+                drawObj = new fabric.Line([sx, sy, sx, sy], {
+                    stroke: color, strokeWidth: 3, strokeDashArray: [5, 4],
+                    selectable: false, evented: false,
+                });
+                fc.add(drawObj);
+            }
+        });
+
+        fc.on('mouse:move', function (opt) {
+            if (!drawing) return;
+            const p = fc.getPointer(opt.e);
+            if (tool === 'circle') {
+                drawObj.set({
+                    left: Math.min(sx, p.x), top: Math.min(sy, p.y),
+                    rx: Math.abs(p.x - sx) / 2, ry: Math.abs(p.y - sy) / 2,
+                });
+            } else if (tool === 'arrow') {
+                drawObj.set({x2: p.x, y2: p.y});
+            }
+            fc.requestRenderAll();
+        });
+
+        fc.on('mouse:up', function (opt) {
+            if (!drawing) return;
+            drawing = false;
+            const p = fc.getPointer(opt.e);
+            let finished = null;
+            if (tool === 'circle') {
+                if (drawObj.rx < 3 && drawObj.ry < 3) fc.remove(drawObj);  // too tiny → discard
+                else finished = drawObj;
+            } else if (tool === 'arrow') {
+                fc.remove(drawObj);                       // drop the dashed preview line
+                if (Math.hypot(p.x - sx, p.y - sy) > 5) {
+                    finished = makeArrow(sx, sy, p.x, p.y, color, 3);
+                    fc.add(finished);
+                }
+            }
+            drawObj = null;
+            // Drew one shape → snap back to select mode and select it, so the
+            // user can drag/resize immediately without clicking the select tool.
+            setTool('select');                            // makes every object selectable again
+            if (finished) fc.setActiveObject(finished);
+            fc.requestRenderAll();
+        });
+    }
+
+    function destroyCanvas() {
+        if (fc) { fc.dispose(); fc = null; }
+        if (wrap) wrap.innerHTML = '';
+    }
+
+    async function readClipboardImage() {
+        if (!navigator.clipboard || !navigator.clipboard.read) {
+            alert('เบราว์เซอร์ไม่รองรับการอ่านคลิปบอร์ด — ใช้ Chrome/Edge ใหม่');
+            return null;
+        }
+        try {
+            const items = await navigator.clipboard.read();
+            for (const it of items) {
+                const type = it.types.find(t => t.startsWith('image/'));
+                if (!type) continue;
+                return await blobToDataURL(await it.getType(type));
+            }
+            alert('ไม่พบรูปในคลิปบอร์ด — คัดลอกรูปก่อน (Print Screen / Snipping Tool)');
+        } catch (err) {
+            alert('อ่านคลิปบอร์ดไม่ได้: ' + (err && err.message ? err.message : err));
+        }
+        return null;
+    }
+
+    // ---- toolbar wiring (delegated, lives whether or not canvas is built) ----
+    modalEl.querySelectorAll('.annot-tool').forEach(b => {
+        b.addEventListener('click', () => setTool(b.dataset.tool));
+    });
+    modalEl.querySelectorAll('.annot-color').forEach(b => {
+        b.addEventListener('click', () => setColor(b.dataset.color));
+    });
+    document.getElementById('annot-paste').addEventListener('click', async () => {
+        const d = await readClipboardImage();
+        if (d) loadBase(d);
+    });
+    document.getElementById('annot-file').addEventListener('change', async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) loadBase(await blobToDataURL(f));
+        e.target.value = '';
+    });
+    document.getElementById('annot-del').addEventListener('click', () => {
+        if (!fc) return;
+        const objs = fc.getActiveObjects();
+        objs.forEach(o => fc.remove(o));
+        fc.discardActiveObject();
+        fc.requestRenderAll();
+    });
+    document.getElementById('annot-clear').addEventListener('click', () => {
+        if (!fc) return;
+        fc.getObjects().slice().forEach(o => fc.remove(o));
+        fc.requestRenderAll();
+    });
+    // Delete/Backspace removes the selected shape.
+    document.addEventListener('keydown', (e) => {
+        if (!fc || !modalEl.classList.contains('show')) return;
+        if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+        const a = fc.getActiveObject();
+        if (!a) return;
+        e.preventDefault();
+        fc.getActiveObjects().forEach(o => fc.remove(o));
+        fc.discardActiveObject();
+        fc.requestRenderAll();
+    });
+
+    document.getElementById('annot-save').addEventListener('click', () => {
+        if (!fc) return;
+        if (!hasBase && fc.getObjects().length === 0) {
+            alert('ยังไม่มีรูป/สิ่งที่วาด — วางรูปแล้ววาดทับก่อน');
+            return;
+        }
+        const mult = Math.min(hasBase ? (1 / baseScale) : 1, 2);
+        const dataURL = fc.toDataURL({format: 'png', multiplier: mult});
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const file = new File([dataURLtoBlob(dataURL)], `annotated_${ts}.png`, {type: 'image/png'});
+
+        const slot = createExtraSlot();
+        const input = slot.querySelector('input[type=file]');
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', {bubbles: true}));
+        const preview = slot.querySelector('.paste-preview');
+        if (preview) {
+            preview.innerHTML =
+                `<img src="${dataURL}" style="max-height:80px;" class="rounded border">` +
+                `<div class="small text-success">วาดทับรูปแล้ว: ${file.name}</div>`;
+        }
+        bootstrap.Modal.getInstance(modalEl).hide();
+    });
+
+    // Build on open, dispose on close, reset defaults each open.
+    modalEl.addEventListener('shown.bs.modal', () => {
+        buildCanvas();
+        setTool('select');
+        setColor('#d00000');
+    });
+    modalEl.addEventListener('hidden.bs.modal', destroyCanvas);
+})();
 
 // =================== Extra name-rows (รันชื่อ-เบอร์) ===================
 // Client-side add/remove rows in a plain table; server rebuilds from the
