@@ -415,6 +415,38 @@
 <p class="text-muted">ไม่มีรายการ</p>
 {% endfor %}
 
+{% if order.extra_note or order.extra_images.all or order.extra_name_rows.all %}
+<div class="card mb-3">
+    <div class="card-header"><strong>เพิ่มเติม</strong></div>
+    <div class="card-body">
+        <div class="row g-3">
+            {% if order.extra_images.all %}
+            <div class="col-md-6">
+                <div class="d-flex flex-wrap gap-2">
+                    {% for img in order.extra_images.all %}
+                    <img src="{{ img.image.url }}" style="max-width:300px; max-height:300px;" class="rounded border">
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            <div class="{% if order.extra_images.all %}col-md-6{% else %}col-12{% endif %}">
+                {% if order.extra_note %}<div style="white-space:pre-wrap;" class="mb-2">{{ order.extra_note }}</div>{% endif %}
+                {% if order.extra_name_rows.all %}
+                <table class="table table-sm table-bordered" style="max-width:500px;">
+                    <thead><tr><th>ไซส์</th><th>เบอร์</th><th>ชื่อ</th></tr></thead>
+                    <tbody>
+                    {% for r in order.extra_name_rows.all %}
+                        <tr><td>{{ r.size }}</td><td>{{ r.number }}</td><td>{{ r.name }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% if order.items.all %}
 <div class="order-grand-total">
     <span class="grand-pill">รวมทั้งหมด {{ order.total_qty }} ตัว</span>

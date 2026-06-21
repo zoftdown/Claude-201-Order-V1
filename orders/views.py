@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import PermissionDenied
 from django.db.models import Max, OuterRef, Q, Subquery
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -25,7 +26,9 @@ from .forms import (
     COLLAR_SUGGESTIONS,
     SLEEVE_SUGGESTIONS,
 )
-from .models import DepartmentPIN, MasterImage, Order, StageLog, Tailor
+from .models import (
+    DepartmentPIN, ExtraImage, ExtraNameRow, MasterImage, Order, StageLog, Tailor,
+)
 from .qr_utils import generate_qr_svg
 
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
@@ -217,6 +220,42 @@ def _save_signed_image(request, order):
         order.save(update_fields=['signed_image'])  # triggers downscale
 
 
+def _save_extra_images(request, order):
+    """Persist รูปเพิ่มเติม (ExtraImage) for an order. Same multi-slot flow as
+    _save_master_images: delete any checked existing images, then append all
+    newly uploaded files from the <input name="extra_images"> slots. Empty slots
+    are skipped automatically by getlist(); ExtraImage.save() auto-downscales."""
+    delete_ids = request.POST.getlist('delete_extra')
+    if delete_ids:
+        order.extra_images.filter(pk__in=delete_ids).delete()
+
+    new_files = request.FILES.getlist('extra_images')
+    if new_files:
+        start = order.extra_images.aggregate(m=Max('order_index'))['m'] or 0
+        for offset, f in enumerate(new_files, start=1):
+            ExtraImage.objects.create(order=order, image=f, order_index=start + offset)
+
+
+def _save_extra_name_rows(request, order):
+    """Rebuild the order's รันชื่อ-เบอร์ table from the parallel POST arrays
+    (extra_size[], extra_number[], extra_name[]). Wipe-and-recreate keeps it
+    simple; rows where all three fields are blank are skipped."""
+    sizes = request.POST.getlist('extra_size')
+    numbers = request.POST.getlist('extra_number')
+    names = request.POST.getlist('extra_name')
+    order.extra_name_rows.all().delete()
+    rows = []
+    for i in range(max(len(sizes), len(numbers), len(names))):
+        s = (sizes[i] if i < len(sizes) else '').strip()
+        n = (numbers[i] if i < len(numbers) else '').strip()
+        nm = (names[i] if i < len(names) else '').strip()
+        if not (s or n or nm):
+            continue
+        rows.append(ExtraNameRow(order=order, size=s, number=n, name=nm, order_index=i))
+    if rows:
+        ExtraNameRow.objects.bulk_create(rows)
+
+
 def _save_with_variants(form, item_formset, variant_formsets, request, *, set_created_date):
     """Persist Order + items + variants. Caller has confirmed everything is valid."""
     order = form.save(commit=False)
@@ -243,6 +282,8 @@ def _save_with_variants(form, item_formset, variant_formsets, request, *, set_cr
     _copy_images_from_first(request, item_formset)
     _save_master_images(request, order)
     _save_signed_image(request, order)
+    _save_extra_images(request, order)
+    _save_extra_name_rows(request, order)
     return order
 
 
@@ -431,6 +472,25 @@ def order_master(request, pk):
         'order': order,
         'master_images': master_images,
     })
+
+
+@viewer_or_login_required
+def order_extra_csv(request, pk):
+    """Export the order's รันชื่อ-เบอร์ table (ExtraNameRow) as CSV for the
+    nesting software. UTF-8 + BOM so Excel/the nesting tool read Thai correctly."""
+    import csv
+    order = get_object_or_404(Order, pk=pk)
+    # charset=utf-8 (NOT utf-8-sig): Django re-encodes every resp.write() with
+    # the response charset, and utf-8-sig prepends a BOM on each call → a BOM
+    # before every CSV row. We write one explicit BOM below instead.
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="{order.order_number}_names.csv"'
+    resp.write('﻿')  # one BOM ให้ Excel/โปรแกรม nesting อ่านไทยถูก
+    w = csv.writer(resp)
+    w.writerow(['ไซส์', 'เบอร์', 'ชื่อ'])
+    for r in order.extra_name_rows.all():
+        w.writerow([r.size, r.number, r.name])
+    return resp
 
 
 @login_required

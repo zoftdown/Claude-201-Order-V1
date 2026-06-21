@@ -231,9 +231,90 @@
         </div>
     </div>
 
+    <!-- ===== Extra block (เพิ่มเติม — โน้ต + รูป + ตารางรันชื่อ, 1 ต่อใบ) ===== -->
+    <div class="card mb-3" style="background:#eef5ff; border-left:4px solid #3b82f6;">
+        <div class="card-header" style="background:#dbeafe;">
+            เพิ่มเติม <small class="text-muted">(โน้ต + รูป + ตารางรันชื่อ-เบอร์ — แสดงใต้รายการเสื้อในใบงาน)</small>
+        </div>
+        <div class="card-body">
+            <!-- โน้ตเพิ่มเติม -->
+            <div class="row g-2 mb-3">
+                <div class="col-12">
+                    <label class="form-label">โน้ตเพิ่มเติม</label>
+                    {{ form.extra_note }}
+                </div>
+            </div>
+
+            <!-- รูปเพิ่มเติม (multi-slot — เหมือนรูปมาสเตอร์) -->
+            {% if order and order.extra_images.all %}
+            <div class="row g-3 mb-3">
+                {% for ex in order.extra_images.all %}
+                <div class="col-auto text-center">
+                    <img src="{{ ex.image.url }}" style="max-height:120px; max-width:160px;" class="rounded border d-block mb-1">
+                    <div class="form-check d-inline-block">
+                        <input class="form-check-input" type="checkbox" name="delete_extra" value="{{ ex.pk }}" id="del-extra-{{ ex.pk }}">
+                        <label class="form-check-label small text-danger" for="del-extra-{{ ex.pk }}">ลบรูปนี้</label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">เพิ่มรูป <small class="text-muted">(1 ช่อง = 1 รูป · เลือกไฟล์ หรือวางจากคลิปบอร์ดก็ได้)</small></label>
+                <button type="button" class="btn btn-success btn-sm" id="add-extra-slot">+ เพิ่มช่องรูป</button>
+            </div>
+            <div id="extra-slots" class="d-flex flex-wrap gap-2 mb-3">
+                <div class="extra-slot border rounded p-2" style="width:280px;">
+                    <input type="file" name="extra_images" accept="image/*" class="form-control form-control-sm" id="extra-img-0">
+                    <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+                            data-target="extra-img-0"
+                            title="วางรูปจากคลิปบอร์ด (Print Screen / Photoshop / Snipping Tool)">
+                        📋 วางจากคลิปบอร์ด
+                    </button>
+                    <div class="paste-preview mt-1" data-for="extra-img-0"></div>
+                    <button type="button" class="btn btn-outline-danger btn-sm mt-1 btn-remove-extra-slot">ลบช่องนี้</button>
+                </div>
+            </div>
+            <div class="form-text mb-3">รูปจะถูกย่ออัตโนมัติให้ด้านยาวสุดไม่เกิน 1600px</div>
+
+            <!-- ตารางรันชื่อ-เบอร์ (export CSV ได้) -->
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">ตารางรันชื่อ-เบอร์ <small class="text-muted">(สำหรับ export CSV เข้าโปรแกรม nesting)</small></label>
+                <button type="button" class="btn btn-success btn-sm" id="add-name-row">+ เพิ่มแถว</button>
+            </div>
+            <table class="table table-sm table-bordered align-middle mb-0" id="name-rows-table" style="max-width:560px;">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:110px;">ไซส์</th>
+                        <th style="width:130px;">เบอร์</th>
+                        <th>ชื่อ</th>
+                        <th style="width:48px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="name-rows-body">
+                    {% for r in order.extra_name_rows.all %}
+                    <tr class="name-row">
+                        <td><input type="text" name="extra_size" value="{{ r.size }}" class="form-control form-control-sm"></td>
+                        <td><input type="text" name="extra_number" value="{{ r.number }}" class="form-control form-control-sm"></td>
+                        <td><input type="text" name="extra_name" value="{{ r.name }}" class="form-control form-control-sm"></td>
+                        <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 btn-remove-name-row">✕</button></td>
+                    </tr>
+                    {% empty %}
+                    <tr class="name-row">
+                        <td><input type="text" name="extra_size" class="form-control form-control-sm"></td>
+                        <td><input type="text" name="extra_number" class="form-control form-control-sm"></td>
+                        <td><input type="text" name="extra_name" class="form-control form-control-sm"></td>
+                        <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 btn-remove-name-row">✕</button></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- ===== Master images (รูปมาสเตอร์ — ใช้พิมพ์ใบมาสเตอร์ให้ทีมเซ็นตรวจ) ===== -->
-    <div class="card mb-3">
-        <div class="card-header">
+    <div class="card mb-3" style="background:#eefaf0; border-left:4px solid #22a55a;">
+        <div class="card-header" style="background:#d1f0db;">
             รูปมาสเตอร์ <small class="text-muted">(สำหรับพิมพ์ใบมาสเตอร์ให้ทีมเซ็นตรวจ — แยกจากรูปดีไซน์ด้านบน)</small>
         </div>
         <div class="card-body">
@@ -271,8 +352,8 @@
     </div>
 
     <!-- ===== Signed copy (รูปที่เซ็นแล้ว — หลักฐานทุกฝ่ายเซ็นตรวจ, 1 รูปต่อใบ) ===== -->
-    <div class="card mb-3">
-        <div class="card-header">
+    <div class="card mb-3" style="background:#fdf6e3; border-left:4px solid #e0b400;">
+        <div class="card-header" style="background:#faedc4;">
             รูปที่เซ็นแล้ว <small class="text-muted">(หลักฐานทุกฝ่ายตรวจ+เซ็นบนใบมาสเตอร์ — 1 รูปต่อใบ)</small>
         </div>
         <div class="card-body">
@@ -393,6 +474,28 @@
     <div class="paste-preview mt-1" data-for="master-img-__mprefix__"></div>
     <button type="button" class="btn btn-outline-danger btn-sm mt-1 btn-remove-master-slot">ลบช่องนี้</button>
 </div>
+</template>
+
+<template id="extra-slot-template">
+<div class="extra-slot border rounded p-2" style="width:280px;">
+    <input type="file" name="extra_images" accept="image/*" class="form-control form-control-sm" id="extra-img-__eprefix__">
+    <button type="button" class="btn btn-outline-info btn-sm mt-1 paste-image-btn"
+            data-target="extra-img-__eprefix__"
+            title="วางรูปจากคลิปบอร์ด (Print Screen / Photoshop / Snipping Tool)">
+        📋 วางจากคลิปบอร์ด
+    </button>
+    <div class="paste-preview mt-1" data-for="extra-img-__eprefix__"></div>
+    <button type="button" class="btn btn-outline-danger btn-sm mt-1 btn-remove-extra-slot">ลบช่องนี้</button>
+</div>
+</template>
+
+<template id="name-row-template">
+<tr class="name-row">
+    <td><input type="text" name="extra_size" class="form-control form-control-sm"></td>
+    <td><input type="text" name="extra_number" class="form-control form-control-sm"></td>
+    <td><input type="text" name="extra_name" class="form-control form-control-sm"></td>
+    <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 btn-remove-name-row">✕</button></td>
+</tr>
 </template>
 
 {% endblock %}
@@ -783,6 +886,58 @@ document.addEventListener('click', function (e) {
     if (!btn) return;
     const slot = btn.closest('.master-slot');
     if (slot) slot.remove();
+});
+
+// =================== Extra image slots ===================
+// Same multi-slot pattern as master images: one single-file
+// <input name="extra_images"> per slot, shared .paste-image-btn delegate.
+const extraSlots = document.getElementById('extra-slots');
+const addExtraSlotBtn = document.getElementById('add-extra-slot');
+let extraSlotCounter = 1; // static first slot uses index 0
+
+if (addExtraSlotBtn && extraSlots) {
+    addExtraSlotBtn.addEventListener('click', function () {
+        const i = extraSlotCounter++;
+        const tpl = document.getElementById('extra-slot-template').innerHTML
+            .replaceAll('__eprefix__', i);
+        const wrap = document.createElement('div');
+        wrap.innerHTML = tpl.trim();
+        extraSlots.appendChild(wrap.firstElementChild);
+    });
+}
+
+document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.btn-remove-extra-slot');
+    if (!btn) return;
+    const slot = btn.closest('.extra-slot');
+    if (slot) slot.remove();
+});
+
+// =================== Extra name-rows (รันชื่อ-เบอร์) ===================
+// Client-side add/remove rows in a plain table; server rebuilds from the
+// parallel POST arrays (extra_size[], extra_number[], extra_name[]).
+const nameRowsBody = document.getElementById('name-rows-body');
+const addNameRowBtn = document.getElementById('add-name-row');
+
+if (addNameRowBtn && nameRowsBody) {
+    addNameRowBtn.addEventListener('click', function () {
+        const tpl = document.getElementById('name-row-template').innerHTML;
+        const wrap = document.createElement('tbody');
+        wrap.innerHTML = tpl.trim();
+        nameRowsBody.appendChild(wrap.firstElementChild);
+    });
+}
+
+document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.btn-remove-name-row');
+    if (!btn) return;
+    const row = btn.closest('.name-row');
+    if (!row || !nameRowsBody) return;
+    row.remove();
+    // Keep at least one empty row so the table never collapses to nothing.
+    if (nameRowsBody.querySelectorAll('.name-row').length === 0 && addNameRowBtn) {
+        addNameRowBtn.click();
+    }
 });
 
 // =================== Initial render ===================

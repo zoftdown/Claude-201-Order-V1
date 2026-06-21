@@ -40,6 +40,18 @@ def master_upload_path(instance, filename):
     return f'masters/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
 
 
+def extra_upload_path(instance, filename):
+    """Upload path for รูปเพิ่มเติม: extras/YYYY/MM/<order_number>_<8-char-uuid><ext>.
+    Mirrors master_upload_path so long original filenames never trip the
+    100-char FileField limit."""
+    ext = (os.path.splitext(filename)[1] or '.jpg').lower()
+    order = getattr(instance, 'order', None)
+    order_num = getattr(order, 'order_number', None) or 'tmp'
+    unique = uuid.uuid4().hex[:8]
+    now = timezone.now()
+    return f'extras/{now.year}/{now.month:02d}/{order_num}_{unique}{ext}'
+
+
 def signed_upload_path(instance, filename):
     """Upload path for รูปที่เซ็นแล้ว: signed/YYYY/MM/<order_number>_<8-char-uuid><ext>.
     instance is the Order itself (signed_image lives on Order, 1 per order)."""
@@ -174,6 +186,10 @@ class Order(models.Model):
     signed_image = models.ImageField('รูปที่เซ็นแล้ว', upload_to=signed_upload_path,
                                      null=True, blank=True)
 
+    # "เพิ่มเติม" block (1 per order): free-text note + ExtraImage(s) + ExtraNameRow(s).
+    # Shown below the shirt items on the form and the print sheet.
+    extra_note = models.TextField('โน้ตเพิ่มเติม', blank=True)
+
     class Meta:
         ordering = ['-id']
         verbose_name = 'ออร์เดอร์'
@@ -283,6 +299,44 @@ class MasterImage(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         downscale_image_field(self.image)
+
+
+class ExtraImage(models.Model):
+    """รูปเพิ่มเติม — 1 Order มีได้หลายรูป. แนบในบล็อก "เพิ่มเติม" ท้ายรายการเสื้อ
+    (แสดงในฟอร์ม + ใบ print). เลียนแบบ MasterImage ทุกอย่าง."""
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='extra_images')
+    image = models.ImageField('รูปเพิ่มเติม', upload_to=extra_upload_path)
+    order_index = models.PositiveIntegerField('ลำดับ', default=0)
+
+    class Meta:
+        ordering = ['order_index', 'id']
+        verbose_name = 'รูปเพิ่มเติม'
+        verbose_name_plural = 'รูปเพิ่มเติม'
+
+    def __str__(self):
+        return f'Extra #{self.pk} (order {self.order_id})'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        downscale_image_field(self.image)
+
+
+class ExtraNameRow(models.Model):
+    """แถวในตารางรันชื่อ-เบอร์ของช่องเพิ่มเติม. export เป็น CSV เข้าโปรแกรม nesting ได้."""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='extra_name_rows')
+    size = models.CharField('ไซส์', max_length=20, blank=True)
+    number = models.CharField('เบอร์', max_length=20, blank=True)
+    name = models.CharField('ชื่อ', max_length=100, blank=True)
+    order_index = models.PositiveIntegerField('ลำดับ', default=0)
+
+    class Meta:
+        ordering = ['order_index', 'id']
+        verbose_name = 'แถวรันชื่อ'
+        verbose_name_plural = 'แถวรันชื่อ'
+
+    def __str__(self):
+        return f'NameRow #{self.pk} (order {self.order_id})'
 
 
 class ShirtVariant(models.Model):

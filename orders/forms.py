@@ -34,7 +34,7 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
         fields = [
             'is_urgent',
             'source', 'production_place', 'created_date', 'customer_name',
-            'customer_link', 'shirt_name', 'fabric_spec', 'special_note',
+            'customer_link', 'shirt_name', 'fabric_spec', 'special_note', 'extra_note',
             'total_price', 'deposit', 'delivery_method', 'shipping_address', 'status',
         ]
         widgets = {
@@ -43,6 +43,7 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
             ),
             'fabric_spec': forms.Textarea(attrs={'rows': 2, 'placeholder': 'ผ้า 120 แกรม'}),
             'special_note': forms.Textarea(attrs={'rows': 2}),
+            'extra_note': forms.Textarea(attrs={'rows': 2}),
             'shipping_address': forms.Textarea(attrs={'rows': 3, 'placeholder': 'ชื่อ-ที่อยู่-เบอร์โทร สำหรับจัดส่งพัสดุ'}),
         }
 
