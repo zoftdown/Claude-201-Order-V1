@@ -628,7 +628,11 @@
             </div>
             {% endif %}
             <div style="flex:1 1 280px; min-width:0;">
-                {% if order.extra_note %}<div style="white-space:pre-wrap; margin-bottom:8px;">{{ order.extra_note }}</div>{% endif %}
+                {% if order.extra_note %}
+                <div style="border:3px solid #d00; border-radius:8px; padding:4px; background:#fff5f5; margin-bottom:10px;">
+                    <div style="white-space:pre-wrap; color:#d00; font-size:1.9em; font-weight:800; line-height:1.25; border:2px dashed #d00; border-radius:5px; padding:8px 12px;">{{ order.extra_note }}</div>
+                </div>
+                {% endif %}
                 {% if order.extra_name_rows.all %}
                 <table style="border-collapse:collapse; width:100%; font-size:14px;">
                     <thead><tr>
