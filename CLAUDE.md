@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.3 · อัปเดตล่าสุด 2026-05-31 · migration ล่าสุด `0015_alter_order_production_place` (เพิ่ม "ร้านตูน" ใน production_place choices) · feature ล่าสุด: หน้า list 2 tab (ด่วน / เรียงตามวันปกติ)
+> **Version:** V2.4 · อัปเดตล่าสุด 2026-06-21 · migration ล่าสุด `0016_order_extra_note_extraimage_extranamerow` (ช่อง "เพิ่มเติม": extra_note + ExtraImage + ExtraNameRow) · feature ล่าสุด: ช่อง "เพิ่มเติม" ในใบออร์เดอร์ (note กรอบแดง 2 ชั้น + รูป multi-paste + ตารางรันชื่อ + export CSV) · **หมายเหตุ:** หน้า list ถอด 2 tab ออกแล้ว กลับเป็น list เดียว urgent-first
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -70,6 +70,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | **created_by** | FK→auth.User | SET_NULL, คนสร้างใบ (ใบเก่า=null แสดง "-") |
 | **printed_at** | DateTimeField | nullable, เวลาที่กดปุ่ม "พิมพ์ใบงานแล้ว" (ใบเก่า backfill=created_date) |
 | **signed_image** | ImageField | รูปที่เซ็นแล้ว (upload signed/YYYY/MM/), 1 รูป/ใบ, nullable, ย่อรูปอัตโนมัติ ≤1600px (หลักฐานทุกฝ่ายเซ็นตรวจ) |
+| **extra_note** | TextField | โน้ตในช่อง "เพิ่มเติม" (blank ได้) — แสดงเด่นกรอบแดง 2 ชั้น ตัวใหญ่ใน print/detail (เตือนคนพิมพ์). *แอดมินเลือกพิมพ์เน้นย้ำเองในช่องนี้ — ไม่มี checklist สำเร็จรูป (เคยทำแล้วถอนออก ดู Lessons/Decisions)* |
 
 > นอกจากนี้ Order ยังมี field สาย production-floor (Phase 1.6–1.8): `print_done_at / roll_done_at / cut_done_at / sort_done_at / sent_to_tailors_at / packed_at / shipped_at / awaiting_pickup_at`, `needs_repair / repair_done_at`, และ M2M `tailors` — ใช้กับ dept dashboard + QR update stage + StageLog
 
@@ -102,8 +103,25 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | order_index | int | ลำดับ |
 - ใช้พิมพ์ **"ใบมาสเตอร์"** ให้ทีมเซ็นตรวจ (ก่อนเซ็น) — แยกจาก `OrderItem.design_image` (รูปดีไซน์) และ `Order.signed_image` (หลังเซ็น) โดยสิ้นเชิง
 
+### ExtraImage (รูปในช่อง "เพิ่มเติม" — 1 Order มีได้หลายรูป)
+| Field | Type | หมายเหตุ |
+|---|---|---|
+| order | FK → Order | related_name='extra_images' |
+| image | ImageField | รูปเพิ่มเติม (upload extras/YYYY/MM/), ย่อรูปอัตโนมัติ ≤1600px |
+| order_index | int | ลำดับ |
+- เลียนแบบ `MasterImage` ทุกอย่าง (multi-slot uploader + วางคลิปบอร์ดได้, save() เรียก `downscale_image_field`). save ผ่าน `_save_extra_images()` (name="extra_images", delete_extra) — ไม่ใช่ formset
+
+### ExtraNameRow (ตารางรันชื่อ-เบอร์ ในช่อง "เพิ่มเติม" — export CSV เข้าโปรแกรม nesting)
+| Field | Type | หมายเหตุ |
+|---|---|---|
+| order | FK → Order | related_name='extra_name_rows' |
+| size / number / name | CharField | ไซส์ / เบอร์ / ชื่อ (blank ได้) |
+| order_index | int | ลำดับ |
+- save ผ่าน `_save_extra_name_rows()` — **wipe-and-recreate** จาก parallel POST arrays (`extra_size[] / extra_number[] / extra_name[]`); แถวที่ทั้ง 3 ช่องว่างหมด → ข้าม
+- export CSV ที่ `/order/<id>/extra-csv/` (view `order_extra_csv`) — ดู CSV charset ใน Lessons ข้อ 13
+
 ### Image downscale helper (ใช้ร่วม)
-- `downscale_image_field(field, max_side=1600, quality=85)` — **module-level helper ใน models.py** เรียกใน `save()` ของทั้ง `MasterImage.image` และ `Order.signed_image` (ไม่เขียนซ้ำ)
+- `downscale_image_field(field, max_side=1600, quality=85)` — **module-level helper ใน models.py** เรียกใน `save()` ของ `MasterImage.image`, `ExtraImage.image`, และ `Order.signed_image` (ไม่เขียนซ้ำ)
 - ย่อด้านยาวสุด ≤1600px (รูปเล็กกว่าปล่อยไว้ ไม่ re-encode), JPEG q85 / PNG optimize, EXIF transpose, แก้ในไฟล์เดิม (local fs)
 - มี try/except กันพังทุกชั้น: ไม่มี PIL / `field.path` ใช้ไม่ได้ / เปิดไฟล์ไม่ได้ → return เงียบ ไม่ block การ save
 
@@ -122,11 +140,9 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - แนบรูปดีไซน์, fabric_spec เฉพาะเพจเสื้อคนงาน
 - **custom_search** — ค้นหา (หน้าแยก)
 - **user-management** — จัดการ user (admin)
-- หน้า list: filter status + **2 tab (ด่วน / เรียงตามวันปกติ)**
-- **Tab หน้า list (`?tab=`)** — แก้ปัญหาใบด่วนถูกยกไปกองบนสุดจน "หลุด" ลำดับวันปกติ คนพิมพ์มองข้าม:
-  - **ด่วน** (default, `tab=urgent`) — เฉพาะ `is_urgent=True`, เรียง `-created_date, -id`
-  - **เรียงตามวันปกติ** (`tab=normal`) — **ทุกใบ** inline by date (`-created_date, -id` เท่านั้น ไม่มี `-is_urgent`) ใบด่วนคงลำดับวัน + badge "ด่วน"
-  - ค่าแปลก/ว่าง → fallback `urgent`. status filter + search `q` คง tab (hidden input `tab` ในฟอร์มค้นหา + ต่อ `&tab=` ทุก status link รวมปุ่ม "ทั้งหมด")
+- หน้า list: filter status + ค้นหา (**list เดียว ไม่มี tab**)
+- **เรียงหน้า list** — `order_by('-is_urgent', '-created_date', '-id')` ใบด่วนเด้งบนสุดเสมอ แล้วเรียงตามวันที่. template `{% regroup orders by created_date %}` (วันที่ซ้ำที่โผล่ทั้งใน bucket ด่วน + ปกติ จะแยกเป็น 2 กลุ่มติดกัน = behavior ที่ตั้งใจ). status filter + search `q` ผ่าน query string ปกติ
+  - ⚠️ *เคยลองทำ 2 tab (ด่วน / เรียงตามวันปกติ, commit 2163f75) เพื่อกันใบด่วนหลุดลำดับวัน แต่แอดมินไม่เอา → **revert ออก** (commit 498f358) กลับเป็น list เดียว urgent-first. **อย่าทำ tab ซ้ำ***
 - **คอลัมน์หน้า list (เรียงซ้าย→ขวา):** วันที่ | เวลา | เลข Order | สถานะ(badge) | ชื่อเสื้อ | แหล่ง | คำสั่งพิเศษ(แดง) | จำนวน | คนลงข้อมูล | [แก้ไข]
 - **Badge สถานะ (Bootstrap, ใส่หลายอันพร้อมกันได้):**
   - ด่วน (bg-danger แดง) ← is_urgent
@@ -151,7 +167,18 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **ใบคัด (order_pick) layout 80:20** — 1 item/หน้า A4 (รูปดีไซน์ 80% + variant) เหมือน print view
 - **หน้า list** — ชื่อเสื้อยาว truncate (ellipsis + hover tooltip)
 
+**เพิ่มล่าสุด (V2.4 · 2026-06-21):**
+- **ช่อง "เพิ่มเติม" (1 บล็อก/ใบ)** — ต่อจากรายการเสื้อ ก่อน "รวมทั้งหมด X ตัว" ทั้ง order_form / detail / print:
+  - **extra_note** — โน้ตอิสระ แสดงเด่นมาก: **กรอบแดง 2 ชั้น** (outer solid 3px #d00 + inner dashed 2px) พื้น `#fff5f5` ตัวแดง `#d00` หนา ตัวใหญ่ (print 1.9em / detail 1.4em) เตือนคนพิมพ์ให้ระวัง. แสดงเฉพาะเมื่อมีค่า. **แอดมินพิมพ์เน้นย้ำเองในช่องนี้** (เลือกแนวนี้แทน checklist สำเร็จรูป)
+  - **ExtraImage** (หลายรูป/ใบ) — multi-slot uploader + วางคลิปบอร์ด (reuse `.paste-image-btn` delegate + pattern เดียวกับรูปมาสเตอร์), ย่ออัตโนมัติ
+  - **ExtraNameRow** — ตารางรันชื่อ-เบอร์ (add/remove แถว client-side) + **export CSV** ปุ่มในใบ print → `/order/<id>/extra-csv/` (เข้าโปรแกรม nesting; charset ดู Lessons ข้อ 13)
+  - **detail + print แสดง 2 คอลัมน์** (รูปซ้าย / text ขวา; print ใช้ flex-wrap, detail ใช้ Bootstrap row). gate บล็อก = `extra_note OR extra_images OR extra_name_rows`
+- **order_form: 3 card ท้ายแยกสีพื้น** (เพิ่มเติม=ฟ้า `#eef5ff` / รูปมาสเตอร์=เขียว `#eefaf0` / รูปที่เซ็นแล้ว=เหลือง `#fdf6e3`) + border-left 4px ให้แยกด้วยตาทันที
+- ⚠️ **checklist สำเร็จรูป — เคยทำแล้วถอนออก (อย่าทำซ้ำ):** เคยเพิ่ม `extra_checklist` JSONField + UI 4 ข้อ default ติ๊กได้ แต่แอดมินไม่เอา ขอพิมพ์เน้นใน note เองแทน → ลบทั้งหมด (migration 0017 add แล้ว unapply+ลบไฟล์ → history จบที่ 0016 ตรง prod)
+
 ### 🔜 ค้าง / อนาคต
+- [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
+- [ ] **Fabric.js canvas editor ในช่อง "เพิ่มเติม"** — วาด annotate บนรูป (วงกลม / ลูกศร / กล่องข้อความ) + paste รูปลง canvas → **flatten เป็น PNG** เก็บเป็น `ExtraImage` (ต่อยอดจากช่องเพิ่มเติมที่มีอยู่)
 - [ ] **เปลี่ยน VPS deploy เป็น git pull** (เลิก scp) — กันปัญหา branch ไม่ตรง
 - [ ] ลบ db.sqlite3 ขยะบน VPS (`rm -f /opt/order/db.sqlite3`)
 - [ ] ตั้ง git ที่บ้าน (clone main)
@@ -237,7 +264,9 @@ ssh root@dr89.cloud "rm -f /tmp/order_db_dump.sql"
 
 11. **PowerShell ≠ Bash — `&&` ใช้ไม่ได้ ห้าม batch คำสั่ง deploy** — เครื่อง dev เป็น Windows (PowerShell). ใน PowerShell 5.1 ตัว `&&`/`||` เป็น parser error และถ้าส่งหลายคำสั่งพร้อมกันใน turn เดียวแล้วอันใดอันหนึ่ง syntax พัง → **ทั้งชุดถูก cancel** (เคยทำ scp+migrate หาย เพราะ git diff ตัวก่อนหน้า quoting พังเลยยกเลิกหมด). **deploy ต้องรันทีละคำสั่ง sequential** + verify ผลแต่ละขั้นก่อนไปต่อ. ระวัง nested quoting ลึก (PowerShell→ssh→bash→python) — เลี่ยงโดยเขียนไฟล์ `.sql`/`.py` บน VPS แล้วรันด้วย `-f`/pipe แทนการยัด quote ซ้อน
 
-12. **`git hash-object` MISMATCH หลัง scp บน Windows = false alarm** — Windows checkout เป็น CRLF + บางไฟล์มี BOM, แต่ VPS เก็บดิบ → `git hash-object` ฝั่ง Windows ทำ CRLF→LF normalization เลยได้ hash ต่างจาก VPS **ทั้งที่เนื้อไฟล์เหมือนกัน** (scp คัดลอก byte-exact). อย่าด่วนสรุปว่า "VPS ถูกแก้มือ/scp พัง" — ยืนยันด้วย `git diff --no-index --ignore-all-space` (ดูเนื้อจริง) หรือ semantic check (grep โค้ดที่เพิ่ม / `makemigrations --check`) ก่อนตัดสิน. **อย่าใช้ PowerShell `Out-File`/pipe สร้างไฟล์ที่ python จะ exec** — มันเติม BOM (U+FEFF) ทำ SyntaxError
+12. **`git hash-object` MISMATCH หลัง scp บน Windows = false alarm** — Windows checkout เป็น CRLF + บางไฟล์มี BOM, แต่ VPS เก็บดิบ → `git hash-object` ฝั่ง Windows ทำ CRLF→LF normalization เลยได้ hash ต่างจาก VPS **ทั้งที่เนื้อไฟล์เหมือนกัน** (scp คัดลอก byte-exact). อย่าด่วนสรุปว่า "VPS ถูกแก้มือ/scp พัง" — ยืนยันด้วย `git diff --no-index --ignore-all-space` (ดูเนื้อจริง) หรือ semantic check (grep โค้ดที่เพิ่ม / `makemigrations --check`) ก่อนตัดสิน. **อย่าใช้ PowerShell `Out-File`/pipe สร้างไฟล์ที่ python จะ exec** — มันเติม BOM (U+FEFF) ทำ SyntaxError. *(เทียบ hash VPS↔local ให้ `tr -d '\r'` ก่อน sha256sum ทั้งสองฝั่ง = ตัด false alarm CRLF)*
+
+13. **CSV ภาษาไทยใน Django: ใช้ `charset=utf-8` + เขียน `﻿` เอง 1 ครั้ง — ห้าม `utf-8-sig`** — `HttpResponse` re-encode **ทุก** `resp.write()` ด้วย charset ของ response. ถ้าตั้ง `content_type='text/csv; charset=utf-8-sig'` → codec แปะ BOM หน้า **ทุก** chunk (BOM หน้าทุกแถว CSV) → ไฟล์เสีย เปิด Excel เพี้ยน. วิธีถูก: `content_type='text/csv; charset=utf-8'` แล้ว `resp.write('﻿')` เองครั้งเดียวก่อนเขียน header (BOM ตัวเดียวต้นไฟล์ ให้ Excel/โปรแกรม nesting อ่านไทยถูก). ใช้ใน `order_extra_csv`
 
 ---
 
@@ -253,6 +282,9 @@ ssh root@dr89.cloud "rm -f /tmp/order_db_dump.sql"
 - รูปอัปโหลด (มาสเตอร์/เซ็น) ย่ออัตโนมัติ ≤1600px ตอน save ผ่าน helper ร่วม — ลดขนาดรูปถ่ายมือถือ
 - แยก 3 บทบาทของรูป: `OrderItem.design_image` (ดีไซน์) · `MasterImage` (ใบมาสเตอร์ ก่อนเซ็น, หลายรูป) · `Order.signed_image` (หลังเซ็น, 1 รูป)
 - รูปมาสเตอร์อัปโหลดแบบหลายช่อง (ช่องละ 1 รูป ชื่อ field เดียวกัน → `getlist`) เพราะ workflow หลักคือวางจาก clipboard
+- ช่อง "เพิ่มเติม" reuse pattern เดิม: `ExtraImage` เลียนแบบ `MasterImage` (multi-slot + paste + downscale), `ExtraNameRow` save แบบ wipe-and-recreate จาก parallel arrays (เหมือนไม่มี formset)
+- **เน้นย้ำคนพิมพ์ใช้ note อิสระ (กรอบแดง 2 ชั้น) ไม่ใช่ checklist สำเร็จรูป** — เคยทำ checklist (4 ข้อ default ติ๊กได้) แล้วแอดมินไม่เอา เพราะงานจริงหลากหลายเกินจะ fix เป็นข้อๆ พิมพ์เองยืดหยุ่นกว่า → ถอดออก (history จบที่ migration 0016)
+- list เดียว urgent-first (ไม่มี tab) — เคยลอง 2 tab แล้ว revert (แอดมินไม่เอา)
 
 ---
 
