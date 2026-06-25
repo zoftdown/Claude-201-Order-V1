@@ -40,12 +40,15 @@ def _is_admin(user):
 
 @viewer_or_login_required
 def order_list(request):
-    # Urgent flag wins over date — flagged orders always sit at the top of
-    # the list (then by date desc, then -id for stable tiebreak).
+    # Pure date order (urgent NOT pulled to the very top here). The template
+    # shows urgent orders twice: in a bordered "งานด่วน" zone at the top AND
+    # in their natural date slot below (so they're not missed when working
+    # through the list by date). prefetch items__variants kills the N+1 that
+    # Order.total_qty / OrderItem.total_qty would otherwise trigger per row.
     orders = (
-        Order.objects.prefetch_related('items')
+        Order.objects.prefetch_related('items', 'items__variants')
         .select_related('created_by')
-        .order_by('-is_urgent', '-created_date', '-id')
+        .order_by('-created_date', '-id')
     )
 
     # Filter by status
@@ -62,8 +65,14 @@ def order_list(request):
             Q(order_number__icontains=q)
         )
 
+    # Evaluate once; derive the urgent subset in Python so the urgent zone
+    # costs no extra DB query (and reuses the same prefetched objects).
+    orders = list(orders)
+    urgent_orders = [o for o in orders if o.is_urgent]
+
     return render(request, 'orders/order_list.html', {
         'orders': orders,
+        'urgent_orders': urgent_orders,
         'current_status': status,
         'search_query': q or '',
         'status_choices': Order.STATUS_CHOICES,

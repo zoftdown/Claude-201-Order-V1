@@ -1,0 +1,16 @@
+{# Shared header row for both the urgent zone and the normal date list.    #}
+{# Columns are ordered by mobile priority (left = most important) so the    #}
+{# leftmost ones stay visible and the rest reveal via table-responsive      #}
+{# horizontal scroll on small screens. Keep in sync with _order_row_cells.  #}
+<tr>
+    <th>วันที่</th>
+    <th>เลข Order</th>
+    <th>ชื่อเสื้อ</th>
+    <th>สถานะ</th>
+    <th>แหล่ง</th>
+    <th>เวลา</th>
+    <th class="text-end">จำนวน</th>
+    <th>คนลงข้อมูล</th>
+    <th>คำสั่งพิเศษ</th>
+    {% if not request.is_viewer %}<th></th>{% endif %}
+</tr>

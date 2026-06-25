@@ -21,71 +21,83 @@
 </div>
 
 <style>
-    /* Zebra striping by date group (template assigns .date-group-alt below).
-       Pastel lavender — has a hue so it reads distinct against white even
-       though its lightness is similar to a near-white gray. */
-    .order-list-table tbody tr.date-group-alt > td {
-        background-color: #FAF5FF;
+    /* ===== Date-group zebra: alternating green shades, clearly visible ===== */
+    .order-list-table tbody tr.date-group-a > td { background-color: #d4efd9; } /* darker green */
+    .order-list-table tbody tr.date-group-b > td { background-color: #eef9f0; } /* lighter green */
+    /* Bold divider line at the start of each new date group → day boundaries
+       read at a glance even when two same-tone groups would otherwise touch. */
+    .order-list-table tbody tr.group-start > td { border-top: 2px solid #2e7d32; }
+    /* Urgent rows pop regardless of their date-group color (and the ด่วน badge
+       still shows in the status cell). */
+    .order-list-table tbody tr.urgent-row > td { background-color: #ffe2e2 !important; }
+    /* Keep hover visible on top of any row background. */
+    .order-list-table.table-hover tbody tr:hover > td { background-color: #c8e6c9 !important; }
+
+    /* ===== Urgent zone (bordered, top of page) ===== */
+    .urgent-zone {
+        border: 3px solid #d32f2f;
+        border-radius: 8px;
+        background: #fff5f5;
+        overflow: hidden;
     }
-    /* Keep hover visible on top of the date-group background. */
-    .order-list-table.table-hover tbody tr:hover > td {
-        background-color: #dee2e6 !important;
+    .urgent-zone-header {
+        background: #d32f2f;
+        color: #fff;
+        font-weight: 800;
+        font-size: 1.1rem;
+        padding: 8px 14px;
     }
-    /* Truncate long shirt names to a fixed width with "…"; full name on hover
-       via the title attribute (~25-30 chars at this table font size). */
+    .urgent-table tbody tr > td { background-color: #fff0f0; }
+    .urgent-table.table-hover tbody tr:hover > td { background-color: #ffd6d6 !important; }
+
+    /* Truncate long shirt names to "…"; full name on hover via title attr. */
     .order-list-table td.shirt-name-cell {
         max-width: 240px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
+    /* Small screens: tighter shirt-name cap + nowrap dates so the priority
+       columns fit before the table-responsive horizontal scroll kicks in. */
+    @media (max-width: 576px) {
+        .order-list-table td.shirt-name-cell { max-width: 120px; }
+        .order-list-table td.date-cell { white-space: nowrap; }
+    }
 </style>
 
 {% if orders %}
+
+{# ===== Urgent zone: every urgent order, framed. Same orders also appear in #}
+{#       the normal date list below (intentional duplicate so they're never  #}
+{#       missed when working through the list by date). ===== #}
+{% if urgent_orders %}
+<div class="urgent-zone mb-4">
+    <div class="urgent-zone-header">⚠️ งานด่วน ({{ urgent_orders|length }})</div>
+    <div class="table-responsive">
+        <table class="table table-hover table-sm order-list-table urgent-table align-middle mb-0">
+            <thead class="table-dark">{% include "orders/_order_list_head.html" %}</thead>
+            <tbody>
+                {% for order in urgent_orders %}
+                <tr class="urgent-row">{% include "orders/_order_row_cells.html" %}</tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<h6 class="text-muted mb-2">📋 ทั้งหมด (เรียงตามวันที่)</h6>
 <div class="table-responsive">
     <table class="table table-hover table-sm order-list-table align-middle">
-        <thead class="table-dark">
-            <tr>
-                <th>วันที่</th>
-                <th>เวลา</th>
-                <th>เลข Order</th>
-                <th>สถานะ</th>
-                <th class="d-none d-md-table-cell">ชื่อเสื้อ</th>
-                <th class="d-none d-md-table-cell">แหล่ง</th>
-                <th>คำสั่งพิเศษ</th>
-                <th class="text-end">จำนวน</th>
-                <th>คนลงข้อมูล</th>
-                {% if not request.is_viewer %}<th></th>{% endif %}
-            </tr>
-        </thead>
+        <thead class="table-dark">{% include "orders/_order_list_head.html" %}</thead>
         <tbody>
-            {# View already sorts by ('-is_urgent', '-created_date', '-id'). #}
-            {# Urgent rows surface at the top of their own date groups. Same #}
-            {# date appearing in both urgent + non-urgent buckets simply #}
-            {# splits into two adjacent groups, which is the desired visual. #}
+            {# Pure date order from the view. regroup by date → alternating green #}
+            {# bands + a divider at each group's first row. Urgent orders stay in #}
+            {# their natural date slot here, highlighted via .urgent-row. #}
             {% regroup orders by created_date as date_groups %}
             {% for group in date_groups %}
                 {% for order in group.list %}
-                <tr{% if forloop.parentloop.counter|divisibleby:2 %} class="date-group-alt"{% endif %}>
-                    <td>{{ order.created_date|date:"d/m/Y" }}</td>
-                    <td>{{ order.created_time_display|default:"—" }}</td>
-                    <td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
-                    <td>
-                        {% if order.is_urgent %}<span class="badge bg-danger me-1">ด่วน</span>{% endif %}
-                        {% if order.not_printed %}<span class="badge bg-secondary me-1">ยังไม่พิมพ์ใบงาน</span>{% endif %}
-                        {% if order.recently_edited %}<span class="badge bg-warning text-dark me-1">แก้ใบงาน</span>{% endif %}
-                        {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
-                        {% if not order.is_urgent and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
-                    </td>
-                    <td class="d-none d-md-table-cell shirt-name-cell" title="{{ order.shirt_name }}">{{ order.shirt_name }}</td>
-                    <td class="d-none d-md-table-cell"><small>{{ order.source }}</small></td>
-                    <td class="special-note" style="color:red; font-weight:bold; white-space:normal; word-break:break-word; max-width:220px;">{{ order.special_note }}</td>
-                    <td class="text-end"><strong>{{ order.total_qty }}</strong></td>
-                    <td>{{ order.created_by.username|default:"-" }}</td>
-                    {% if not request.is_viewer %}
-                    <td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
-                    {% endif %}
-                </tr>
+                <tr class="{% if forloop.parentloop.counter|divisibleby:2 %}date-group-a{% else %}date-group-b{% endif %}{% if forloop.first %} group-start{% endif %}{% if order.is_urgent %} urgent-row{% endif %}">{% include "orders/_order_row_cells.html" %}</tr>
                 {% endfor %}
             {% endfor %}
         </tbody>

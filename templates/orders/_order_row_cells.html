@@ -1,0 +1,26 @@
+{# Shared <td> cells for one order row, used by both the urgent zone and the #}
+{# normal date list. The wrapping <tr> (with its zebra / divider / urgent   #}
+{# classes) is supplied by the caller. Needs `order` + `request` in context #}
+{# (passed automatically by {% include %}). Column order mirrors            #}
+{# _order_list_head.html. #}
+<td class="date-cell">
+    <span class="d-md-none">{{ order.created_date|date:"j M" }}</span>
+    <span class="d-none d-md-inline">{{ order.created_date|date:"d/m/Y" }}</span>
+</td>
+<td><a href="{% url 'order_detail' order.pk %}"><strong>{{ order.order_number }}</strong></a></td>
+<td class="shirt-name-cell" title="{{ order.shirt_name }}">{{ order.shirt_name }}</td>
+<td>
+    {% if order.is_urgent %}<span class="badge bg-danger me-1">ด่วน</span>{% endif %}
+    {% if order.not_printed %}<span class="badge bg-secondary me-1">ยังไม่พิมพ์ใบงาน</span>{% endif %}
+    {% if order.recently_edited %}<span class="badge bg-warning text-dark me-1">แก้ใบงาน</span>{% endif %}
+    {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
+    {% if not order.is_urgent and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
+</td>
+<td><small>{{ order.source }}</small></td>
+<td>{{ order.created_time_display|default:"—" }}</td>
+<td class="text-end"><strong>{{ order.total_qty }}</strong></td>
+<td>{{ order.created_by.username|default:"-" }}</td>
+<td class="special-note" style="color:red; font-weight:bold; white-space:normal; word-break:break-word; max-width:220px;">{{ order.special_note }}</td>
+{% if not request.is_viewer %}
+<td class="text-end"><a href="{% url 'order_edit' order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+{% endif %}
