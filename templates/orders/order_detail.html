@@ -35,32 +35,127 @@
 </div>
 {% endif %}
 
+<style>
+    /* ===== Order-info zone: info panel (left) + money box (right) ===== */
+    .order-info-panel {
+        background: #f1f5fb;
+        border: 1px solid #d9e2ef;
+        border-left: 4px solid #4a79c9;
+        border-radius: 10px;
+        padding: 12px 16px;
+        height: 100%;
+    }
+    .order-info-panel .oi-row {
+        display: flex;
+        gap: 10px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #d3deee;
+        font-size: 15px;
+    }
+    .order-info-panel .oi-row:last-child { border-bottom: none; }
+    .order-info-panel .oi-label { flex: 0 0 140px; color: #5a6b86; font-weight: 700; }
+    .order-info-panel .oi-val { flex: 1 1 auto; min-width: 0; font-weight: 600; color: #1f2d3d; word-break: break-word; }
+
+    /* Money box — prominent amber card on the right. */
+    .order-money-box {
+        background: linear-gradient(180deg, #fffaf0 0%, #fff1cf 100%);
+        border: 2px solid #e0a800;
+        border-radius: 12px;
+        padding: 14px 18px;
+        height: 100%;
+        box-shadow: 0 2px 6px rgba(224,168,0,0.15);
+    }
+    .order-money-box .mbx-title {
+        font-weight: 800;
+        font-size: 16px;
+        color: #876200;
+        border-bottom: 2px solid #f0d585;
+        padding-bottom: 6px;
+        margin-bottom: 10px;
+    }
+    .order-money-box .mbx-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 3px 0;
+        font-size: 16px;
+    }
+    .order-money-box .mbx-line .mbx-k { color: #6b5d2a; font-weight: 600; }
+    .order-money-box .mbx-line .mbx-v { font-weight: 800; color: #2b2b2b; }
+    .order-money-box .mbx-remaining {
+        margin-top: 8px;
+        padding-top: 9px;
+        border-top: 2px dashed #e0a800;
+        font-size: 21px;
+    }
+    .order-money-box .mbx-remaining .mbx-k { font-weight: 800; color: #6b4e00; }
+</style>
 <div class="card mb-3">
     <div class="card-body">
-        <div class="row">
-            <div class="col-md-3"><strong>วันที่สร้าง:</strong> {{ order.created_date|date:"d/m/Y" }}</div>
-            <div class="col-md-3"><strong>แหล่ง:</strong> {{ order.source }}</div>
-            <div class="col-md-3"><strong>ผลิตที่:</strong> <span{% if order.production_place != 'ผลิตเอง' %} class="text-success fw-bold"{% endif %}>{{ order.production_place }}</span></div>
-            <div class="col-md-3"><strong>ชื่อลูกค้า:</strong> {{ order.customer_name|default:"-" }}</div>
-        </div>
-        <div class="row mt-2">
-            <div class="col-md-3"><strong>ชื่อเสื้อ:</strong> {{ order.shirt_name }}</div>
-            <div class="col-md-3"><strong>ลิงก์ลูกค้า:</strong> {% if order.customer_link %}<a href="{{ order.customer_link }}" target="_blank" rel="noopener" style="color:#0d6efd;">เปิดลิงก์</a>{% else %}-{% endif %}</div>
+        <div class="row g-3">
+            <div class="{% if not request.is_viewer %}col-lg-8{% else %}col-12{% endif %}">
+                <div class="order-info-panel">
+                    <div class="oi-row">
+                        <span class="oi-label">แหล่ง</span>
+                        <span class="oi-val">{{ order.source }}</span>
+                    </div>
+                    <div class="oi-row">
+                        <span class="oi-label">ผลิตที่</span>
+                        <span class="oi-val"><span{% if order.production_place != 'ผลิตเอง' %} class="text-success fw-bold"{% endif %}>{{ order.production_place }}</span></span>
+                    </div>
+                    <div class="oi-row">
+                        <span class="oi-label">ชื่อลูกค้า</span>
+                        <span class="oi-val">{{ order.customer_name|default:"-" }}</span>
+                    </div>
+                    <div class="oi-row">
+                        <span class="oi-label">ลิงก์ลูกค้า</span>
+                        <span class="oi-val">{% if order.customer_link %}<a href="{{ order.customer_link }}" target="_blank" rel="noopener" style="color:#0d6efd;">เปิดลิงก์</a>{% else %}-{% endif %}</span>
+                    </div>
+                    <div class="oi-row">
+                        <span class="oi-label">ชื่องาน/เสื้อ</span>
+                        <span class="oi-val">{{ order.shirt_name }}</span>
+                    </div>
+                    {% if order.designer_name %}
+                    <div class="oi-row">
+                        <span class="oi-label">🎨 คนออกแบบ</span>
+                        <span class="oi-val">{{ order.designer_name }}</span>
+                    </div>
+                    {% endif %}
+                    {% if order.design_doc_number %}
+                    <div class="oi-row">
+                        <span class="oi-label">เลขใบงานออกแบบ</span>
+                        <span class="oi-val">{{ order.design_doc_number }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="oi-row">
+                        <span class="oi-label">วันที่สร้าง</span>
+                        <span class="oi-val">{{ order.created_date|date:"d/m/Y" }}</span>
+                    </div>
+                </div>
+            </div>
             {% if not request.is_viewer %}
-            <div class="col-md-6">
-                <strong>ยอดรวม:</strong> {{ order.total_price|floatformat:0|intcomma }} |
-                <strong>มัดจำ:</strong> {{ order.deposit|floatformat:0|intcomma }} |
-                <strong>คงเหลือ:</strong> <span class="{% if order.remaining > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">{{ order.remaining|floatformat:0|intcomma }}</span>
+            <div class="col-lg-4">
+                <div class="order-money-box">
+                    <div class="mbx-title">💰 การเงิน</div>
+                    <div class="mbx-line"><span class="mbx-k">ยอดรวม</span><span class="mbx-v">{{ order.total_price|floatformat:0|intcomma }} ฿</span></div>
+                    <div class="mbx-line"><span class="mbx-k">มัดจำ</span><span class="mbx-v">{{ order.deposit|floatformat:0|intcomma }} ฿</span></div>
+                    <div class="mbx-line mbx-remaining">
+                        <span class="mbx-k">คงเหลือ</span>
+                        <span class="mbx-v {% if order.remaining > 0 %}text-danger{% else %}text-success{% endif %}">{{ order.remaining|floatformat:0|intcomma }} ฿</span>
+                    </div>
+                </div>
             </div>
             {% endif %}
         </div>
+
+        {# Conditional detail rows — full width below the 2-column zone. #}
         {% if order.source == 'เพจเสื้อคนงาน' and order.fabric_spec %}
-        <div class="row mt-2">
+        <div class="row mt-3">
             <div class="col-12"><strong>Spec ผ้า:</strong> <span style="border:2px solid red;padding:2px 6px;border-radius:4px;">{{ order.fabric_spec }}</span></div>
         </div>
         {% endif %}
         {% if order.special_note %}
-        <div class="row mt-2">
+        <div class="row mt-3">
             <div class="col-12"><strong>คำสั่งพิเศษ:</strong> <span class="special-note-box">{{ order.special_note }}</span></div>
         </div>
         {% endif %}
