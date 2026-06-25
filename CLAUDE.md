@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.4 · อัปเดตล่าสุด 2026-06-21 · migration ล่าสุด `0016_order_extra_note_extraimage_extranamerow` (ช่อง "เพิ่มเติม": extra_note + ExtraImage + ExtraNameRow) · feature ล่าสุด: ช่อง "เพิ่มเติม" ในใบออร์เดอร์ (note กรอบแดง 2 ชั้น + รูป multi-paste + ตารางรันชื่อ + export CSV) · **หมายเหตุ:** หน้า list ถอด 2 tab ออกแล้ว กลับเป็น list เดียว urgent-first
+> **Version:** V2.5 · อัปเดตล่าสุด 2026-06-25 · migration ล่าสุด `0017_order_design_doc_number_order_designer_name` (field คนออกแบบ + เลขใบงานออกแบบ) · feature ล่าสุด: field คนออกแบบ/เลขใบงานออกแบบ · order_list redesign (โซนด่วนตีกรอบ + ด่วนโชว์ซ้ำ + zebra เขียว + responsive) · detail/form layout 2 ฝั่ง + กล่องเงิน · **หน้าใหม่ "สรุปใบงานรายวัน"** (grid 2 คอลัมน์ + พิมพ์ A4) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -58,6 +58,8 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | customer_name | CharField | ชื่อลูกค้า (ไม่แสดงในหน้า list แล้ว) |
 | customer_link | CharField | Facebook URL หรือเบอร์โทร |
 | shirt_name | CharField | ชื่องาน/ชื่อเสื้อ |
+| **designer_name** | CharField | คนออกแบบ (กราฟิกที่ทำดีไซน์ — คนละคนกับ created_by; blank ได้) แสดง detail/print/form |
+| **design_doc_number** | CharField | เลขใบงานออกแบบ (อ้างอิงงานออกแบบ; blank ได้) แสดง detail/print/form |
 | fabric_spec | TextField | spec ผ้า (แสดงเฉพาะ source=เพจเสื้อคนงาน) |
 | special_note | TextField | คำสั่งพิเศษ (แสดงสีแดง) |
 | total_price / deposit | DecimalField | ยอดรวม / มัดจำ |
@@ -141,9 +143,13 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **custom_search** — ค้นหา (หน้าแยก)
 - **user-management** — จัดการ user (admin)
 - หน้า list: filter status + ค้นหา (**list เดียว ไม่มี tab**)
-- **เรียงหน้า list** — `order_by('-is_urgent', '-created_date', '-id')` ใบด่วนเด้งบนสุดเสมอ แล้วเรียงตามวันที่. template `{% regroup orders by created_date %}` (วันที่ซ้ำที่โผล่ทั้งใน bucket ด่วน + ปกติ จะแยกเป็น 2 กลุ่มติดกัน = behavior ที่ตั้งใจ). status filter + search `q` ผ่าน query string ปกติ
-  - ⚠️ *เคยลองทำ 2 tab (ด่วน / เรียงตามวันปกติ, commit 2163f75) เพื่อกันใบด่วนหลุดลำดับวัน แต่แอดมินไม่เอา → **revert ออก** (commit 498f358) กลับเป็น list เดียว urgent-first. **อย่าทำ tab ซ้ำ***
-- **คอลัมน์หน้า list (เรียงซ้าย→ขวา):** วันที่ | เวลา | เลข Order | สถานะ(badge) | ชื่อเสื้อ | แหล่ง | คำสั่งพิเศษ(แดง) | จำนวน | คนลงข้อมูล | [แก้ไข]
+- **หน้า list = 2 โซน (V2.5):** view เรียง `order_by('-created_date', '-id')` (วันปกติ) แล้ว `list(orders)` + แยก `urgent_orders` ใน Python (query เดียว) + `prefetch_related('items','items__variants')` ตัด N+1 ของ `total_qty`
+  - **โซน "⚠️ งานด่วน"** กรอบแดง 3px บนสุด — แสดงใบด่วนทั้งหมด
+  - **โซน "ทั้งหมด (เรียงตามวันที่)"** — ใบด่วน**โชว์ซ้ำ**ในวันของมันด้วย (ไฮไลต์ `urgent-row` ชมพู) เพื่อกันตกหล่นตอนไล่ทำตามวัน
+  - `{% regroup orders by created_date %}` → zebra เขียวสลับเข้ม/อ่อน (`date-group-a/b`) + เส้นคั่นเขียวทุกขอบวัน (`group-start`)
+  - **2 partial ใช้ร่วมทั้ง 2 โซน:** `_order_list_head.html` (หัวตาราง) + `_order_row_cells.html` (cells)
+  - ⚠️ **ไม่ใช่ tab** — โซนด่วน = card กรอบ (เคยลอง 2 tab commit 2163f75 แล้ว revert 498f358 → **อย่าทำ tab ซ้ำ**)
+- **คอลัมน์หน้า list (reorder priority ซ้าย→ขวา):** วันที่(ย่อ `j M` บนมือถือ) | เลข Order | ชื่อเสื้อ | สถานะ(badge) | แหล่ง | เวลา | จำนวน | คนลงข้อมูล | คำสั่งพิเศษ(แดง) | [แก้ไข] — `table-responsive` เลื่อนแนวนอนบนมือถือ (priority อยู่ซ้าย)
 - **Badge สถานะ (Bootstrap, ใส่หลายอันพร้อมกันได้):**
   - ด่วน (bg-danger แดง) ← is_urgent
   - แก้ใบงาน (bg-warning text-dark ส้ม) ← recently_edited
@@ -176,9 +182,20 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **order_form: 3 card ท้ายแยกสีพื้น** (เพิ่มเติม=ฟ้า `#eef5ff` / รูปมาสเตอร์=เขียว `#eefaf0` / รูปที่เซ็นแล้ว=เหลือง `#fdf6e3`) + border-left 4px ให้แยกด้วยตาทันที
 - ⚠️ **checklist สำเร็จรูป — เคยทำแล้วถอนออก (อย่าทำซ้ำ):** เคยเพิ่ม `extra_checklist` JSONField + UI 4 ข้อ default ติ๊กได้ แต่แอดมินไม่เอา ขอพิมพ์เน้นใน note เองแทน → ลบทั้งหมด (migration 0017 add แล้ว unapply+ลบไฟล์ → history จบที่ 0016 ตรง prod)
 
+**เพิ่มล่าสุด (V2.5 · 2026-06-25):**
+- **field คนออกแบบ + เลขใบงานออกแบบ** (`designer_name` / `design_doc_number`, blank ได้) — คนละคนกับ `created_by`; แสดงใน order_form (ฟิลด์กรอก), detail (panel ซ้าย), print (หัวใบงานเล็กๆ). migration 0017
+- **order_list redesign** — โซนด่วนตีกรอบ + ด่วนโชว์ซ้ำ + zebra เขียว + responsive (ดูหัวข้อ list ด้านบน)
+- **order_detail layout 2 ฝั่ง** — panel ข้อมูลฟ้า (ซ้าย) + กล่องเงินทองเด่น (ขวา) + แถวเงื่อนไขเต็มกว้างล่าง; gate `is_viewer` เดิม (viewer ไม่เห็นเงิน)
+- **order_form polish** — การ์ด "ข้อมูลออร์เดอร์" accent ฟ้า / "รายการเสื้อ" เขียวมิ้นต์ + กล่องเงินทอง (เข้าชุด detail) + โซนข้อมูลจัด 2 ฝั่ง (ฟิลด์ซ้าย/เงิน+คำสั่งพิเศษขวา). **เก็บ id เดิมครบ** (`id_total_price`/`id_deposit`/`remaining-display`/toggle) JS ไม่กระทบ
+- **หน้าใหม่ "สรุปใบงานรายวัน"** (`/order/daily-summary/`, view `daily_summary`, `@viewer_or_login_required`) — หัวหน้างานดูออร์เดอร์รวมแต่ละวัน กันตกหล่น:
+  - `?date=YYYY-MM-DD` (default วันนี้) + ปุ่มเลื่อนวัน (◀ date-picker ▶ วันนี้) + นับใบ/ตัวของวัน
+  - **grid 2 คอลัมน์/ใบ:** รูป thumbnail (รูปแรกของ item แรก) + ข้อมูล (เลข order ลิงก์ detail · ชื่อเสื้อ · total_qty · แหล่ง · คำสั่งพิเศษแดง · ด่วน/ผลิตที่ outsource)
+  - badge แหล่ง = กรอบดำพื้นขาว (ประหยัดหมึกตอนพิมพ์)
+  - **ปุ่มพิมพ์ A4** + `@media print` (ซ่อน navbar/controls ด้วย `d-print-none`, ไม่ตัด card ข้ามหน้า)
+  - navbar เพิ่มปุ่ม "📋 สรุปรายวัน" (staff + viewer)
+
 ### 🔜 ค้าง / อนาคต
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
-- [ ] **Fabric.js canvas editor ในช่อง "เพิ่มเติม"** — วาด annotate บนรูป (วงกลม / ลูกศร / กล่องข้อความ) + paste รูปลง canvas → **flatten เป็น PNG** เก็บเป็น `ExtraImage` (ต่อยอดจากช่องเพิ่มเติมที่มีอยู่)
 - [ ] **เปลี่ยน VPS deploy เป็น git pull** (เลิก scp) — กันปัญหา branch ไม่ตรง
 - [ ] ลบ db.sqlite3 ขยะบน VPS (`rm -f /opt/order/db.sqlite3`)
 - [ ] ตั้ง git ที่บ้าน (clone main)
