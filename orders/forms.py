@@ -34,7 +34,8 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
         fields = [
             'is_urgent',
             'source', 'production_place', 'created_date', 'customer_name',
-            'customer_link', 'shirt_name', 'fabric_spec', 'special_note', 'extra_note',
+            'customer_link', 'shirt_name', 'designer_name', 'design_doc_number',
+            'fabric_spec', 'special_note', 'extra_note',
             'total_price', 'deposit', 'delivery_method', 'shipping_address', 'status',
         ]
         widgets = {

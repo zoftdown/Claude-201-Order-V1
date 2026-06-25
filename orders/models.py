@@ -140,6 +140,10 @@ class Order(models.Model):
     customer_name = models.CharField('ชื่อลูกค้า', max_length=200)
     customer_link = models.CharField('Facebook/เบอร์โทร', max_length=500, blank=True)
     shirt_name = models.CharField('ชื่องาน/ชื่อเสื้อ', max_length=200)
+    # คนออกแบบ + เลขใบงานออกแบบ — คนละคนกับ created_by (คนคีย์ออร์เดอร์).
+    # designer_name = กราฟิกที่ทำดีไซน์ (มีหลายคน), design_doc_number = อ้างอิงงานออกแบบ.
+    designer_name = models.CharField('คนออกแบบ', max_length=100, blank=True)
+    design_doc_number = models.CharField('เลขใบงานออกแบบ', max_length=50, blank=True)
     fabric_spec = models.TextField('spec ผ้า', blank=True, help_text='แสดงเฉพาะ source=เพจเสื้อคนงาน')
     special_note = models.TextField('คำสั่งพิเศษ', blank=True)
     total_price = models.DecimalField('ยอดรวม', max_digits=10, decimal_places=2, default=0)

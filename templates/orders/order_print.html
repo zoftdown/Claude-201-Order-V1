@@ -550,6 +550,12 @@
                 {% endif %}
                 <span class="customer-name">{{ order.customer_name }}</span>
             </div>
+            {% if order.designer_name or order.design_doc_number %}
+            <div class="designer-line" style="font-size:9pt; color:#555; font-weight:600; margin-top:3px;">
+                {% if order.designer_name %}🎨 ออกแบบ: {{ order.designer_name }}{% endif %}
+                {% if order.design_doc_number %}{% if order.designer_name %} · {% endif %}เลขใบงานออกแบบ {{ order.design_doc_number }}{% endif %}
+            </div>
+            {% endif %}
         </div>
         <div class="header-center">
             {% if qr_svg %}
