@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.5 · อัปเดตล่าสุด 2026-06-25 · migration ล่าสุด `0017_order_design_doc_number_order_designer_name` (field คนออกแบบ + เลขใบงานออกแบบ) · feature ล่าสุด: field คนออกแบบ/เลขใบงานออกแบบ · order_list redesign (โซนด่วนตีกรอบ + ด่วนโชว์ซ้ำ + zebra เขียว + responsive) · detail/form layout 2 ฝั่ง + กล่องเงิน · **หน้าใหม่ "สรุปใบงานรายวัน"** (grid 2 คอลัมน์ + พิมพ์ A4) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V2.5 · อัปเดตล่าสุด 2026-06-26 · migration ล่าสุด `0017_order_design_doc_number_order_designer_name` (field คนออกแบบ + เลขใบงานออกแบบ) · feature ล่าสุด: print polish (โน้ตในแบบกรอบแดง + คนออกแบบกรอบน้ำเงิน + หัวใบงานจัดกลาง + ตัด icon 🎨/📝) · field คนออกแบบ/เลขใบงานออกแบบ · order_list redesign (โซนด่วนตีกรอบ + ด่วนโชว์ซ้ำ + zebra เขียว + responsive) · detail/form layout 2 ฝั่ง + กล่องเงิน · **หน้าใหม่ "สรุปใบงานรายวัน"** (grid 2 คอลัมน์ + พิมพ์ A4) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -193,6 +193,11 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
   - badge แหล่ง = กรอบดำพื้นขาว (ประหยัดหมึกตอนพิมพ์)
   - **ปุ่มพิมพ์ A4** + `@media print` (ซ่อน navbar/controls ด้วย `d-print-none`, ไม่ตัด card ข้ามหน้า)
   - navbar เพิ่มปุ่ม "📋 สรุปรายวัน" (staff + viewer)
+- **print/detail polish (2026-06-26):**
+  - **โน้ตในแบบ (ShirtVariant.note) เด่นขึ้น** — กรอบแดง + พื้น `#fff5f5` + ตัวใหญ่: print/pick ที่ `.variant-note` CSS (ใช้ partial `_variant_block.html` ร่วม), detail ที่กล่อง inline. แสดงเฉพาะมี note
+  - **คนออกแบบเด่นใน print** — `.designer-box` กรอบน้ำเงิน ชื่อ 14pt หนา (`#0d47a1`) + เลขใบงานออกแบบในกรอบเดียวกัน
+  - **หัวใบงาน print จัดกลาง** — QR + เลขออร์เดอร์ + วันที่ + แหล่ง + คนออกแบบ เป็นกลุ่มกลางหน้า (`.header-spacer`/`.header-main`/`.header-price`) กัน**แม็กมุมซ้ายบังเลขใบงาน**
+  - **ตัด icon 🎨 (ออกแบบ) + 📝 (โน้ต) ออกทุกที่** (แอดมินว่าไม่สวย)
 
 ### 🔜 ค้าง / อนาคต
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
