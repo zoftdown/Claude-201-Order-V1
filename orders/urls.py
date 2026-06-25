@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path('', views.order_list, name='order_list'),
     path('create/', views.order_create, name='order_create'),
+    path('daily-summary/', views.daily_summary, name='daily_summary'),
     path('search/', views.custom_search, name='custom_search'),
 
     # Production-channel (cookie-based, public — see CLAUDE-V1.6.md §1)

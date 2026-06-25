@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.contrib import messages
@@ -76,6 +76,32 @@ def order_list(request):
         'current_status': status,
         'search_query': q or '',
         'status_choices': Order.STATUS_CHOICES,
+    })
+
+
+@viewer_or_login_required
+def daily_summary(request):
+    """สรุปใบงานรายวัน — หัวหน้างานเปิดดูออร์เดอร์ของวันหนึ่งๆ รวมกัน เพื่อกัน
+    ออร์เดอร์ตกหล่น. ?date=YYYY-MM-DD (ไม่ระบุ/ค่าผิด = วันนี้). prefetch
+    items__variants ตัด N+1 ของ total_qty (เหมือน order_list)."""
+    today = timezone.localdate()
+    day = parse_date(request.GET.get('date', '') or '') or today
+
+    orders = list(
+        Order.objects.filter(created_date=day)
+        .prefetch_related('items', 'items__variants')
+        .order_by('-is_urgent', '-id')
+    )
+    total_qty = sum(o.total_qty for o in orders)
+
+    return render(request, 'orders/daily_summary.html', {
+        'day': day,
+        'today': today,
+        'orders': orders,
+        'order_count': len(orders),
+        'total_qty': total_qty,
+        'prev_date': day - timedelta(days=1),
+        'next_date': day + timedelta(days=1),
     })
 
 

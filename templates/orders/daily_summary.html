@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}สรุปใบงานรายวัน{% endblock %}
+
+{% block content %}
+<style>
+    /* Thumbnail = first item's design image (one image per order). */
+    .ds-thumb {
+        width: 96px;
+        height: 96px;
+        object-fit: cover;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        background: #f8f9fa;
+        display: block;
+    }
+    .ds-no-img {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #aaa;
+        font-size: 12px;
+        text-align: center;
+    }
+    /* 2-column grid of order cards (collapses to 1 column on phones). Plain
+       grid (not Bootstrap breakpoints) so it stays 2-up on the A4 printout. */
+    .ds-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        align-items: stretch;
+    }
+    @media (max-width: 575.98px) {
+        .ds-grid { grid-template-columns: 1fr; }
+    }
+    .ds-card .ds-ordernum { font-size: 1.25rem; font-weight: 800; text-decoration: none; }
+    .ds-card .ds-shirt { font-size: 1.05rem; font-weight: 700; color: #1f2d3d; }
+
+    /* ===== Print (A4 portrait) — ซ่อน navbar + ปุ่มควบคุม, เก็บเฉพาะเนื้อสรุป ===== */
+    @media print {
+        @page { size: A4 portrait; margin: 12mm; }
+        .navbar { display: none !important; }
+        body { background: #fff !important; }
+        /* คงสีพื้น/badge/ไฮไลต์เวลาพิมพ์ */
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .ds-card {
+            page-break-inside: avoid;
+            break-inside: avoid;
+            box-shadow: none !important;
+        }
+        a.ds-ordernum { color: #000 !important; }
+    }
+</style>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h4 class="mb-0">📋 สรุปใบงานรายวัน</h4>
+    <div class="d-flex align-items-center gap-1 flex-wrap d-print-none">
+        <form method="get" class="d-flex align-items-center gap-1 flex-wrap m-0">
+            <a href="?date={{ prev_date|date:'Y-m-d' }}" class="btn btn-outline-secondary btn-sm" title="วันก่อนหน้า">◀</a>
+            <input type="date" name="date" value="{{ day|date:'Y-m-d' }}" class="form-control form-control-sm" style="width:auto;" onchange="this.form.submit()">
+            <a href="?date={{ next_date|date:'Y-m-d' }}" class="btn btn-outline-secondary btn-sm" title="วันถัดไป">▶</a>
+            <a href="{% url 'daily_summary' %}" class="btn btn-outline-primary btn-sm">วันนี้</a>
+        </form>
+        <button type="button" class="btn btn-success btn-sm" onclick="window.print()">🖨️ พิมพ์ A4</button>
+    </div>
+</div>
+
+<div class="alert {% if day == today %}alert-primary{% else %}alert-secondary{% endif %} py-2 d-flex justify-content-between align-items-center flex-wrap">
+    <strong>{{ day|date:"l j F Y" }}</strong>
+    <span>รวม <strong>{{ order_count }}</strong> ใบ · <strong>{{ total_qty }}</strong> ตัว</span>
+</div>
+
+{% if orders %}
+<div class="ds-grid">
+    {% for order in orders %}
+    <div class="card ds-card">
+        <div class="card-body py-2">
+            <div class="row g-3 align-items-center">
+                <div class="col-auto">
+                    {% with first_item=order.items.all|first %}
+                    {% if first_item and first_item.design_image %}
+                        <img src="{{ first_item.design_image.url }}" class="ds-thumb" alt="ดีไซน์" loading="lazy">
+                    {% else %}
+                        <div class="ds-thumb ds-no-img">ไม่มีรูป</div>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                <div class="col">
+                    <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                        <a href="{% url 'order_detail' order.pk %}" class="ds-ordernum">{{ order.order_number }}</a>
+                        {% if order.is_urgent %}<span class="badge bg-danger">ด่วน</span>{% endif %}
+                        <span class="badge bg-white text-dark border border-dark">{{ order.source }}</span>
+                        {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
+                    </div>
+                    <div class="ds-shirt">{{ order.shirt_name }}</div>
+                    <div class="text-muted">รวม <strong>{{ order.total_qty }}</strong> ตัว</div>
+                    {% if order.special_note %}
+                    <div class="special-note mt-1">⚠️ {{ order.special_note }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+    <p class="text-muted text-center mt-5">ไม่มีออร์เดอร์ในวันนี้</p>
+{% endif %}
+{% endblock %}
