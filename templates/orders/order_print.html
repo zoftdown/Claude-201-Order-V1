@@ -84,7 +84,11 @@
             border-bottom: 3px solid #222;
             gap: 12px;
         }
-        .header-left { flex: 1; min-width: 0; }
+        .header-left { min-width: 0; text-align: center; }
+        /* QR + order-info เป็นกลุ่มเดียว วางกลางหน้า (spacer ซ้าย/ขวาเท่ากัน), price ชิดขวา */
+        .header-spacer { flex: 1 1 0; }
+        .header-main { flex: 0 1 auto; display: flex; align-items: center; gap: 16px; }
+        .header-price { flex: 1 1 0; display: flex; justify-content: flex-end; }
         .header-left .order-num {
             display: inline-block;
             font-size: 28pt;
@@ -105,6 +109,7 @@
         .source-customer-row {
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
             flex-wrap: wrap;
             margin-bottom: 4px;
@@ -132,6 +137,26 @@
             font-weight: 800;
             line-height: 1.2;
             word-break: break-word;
+        }
+        /* คนออกแบบ — กรอบน้ำเงิน เด่น ให้คนผลิตเห็นว่าใครออกแบบ */
+        .designer-box {
+            display: inline-block;
+            border: 2px solid #1565c0;
+            border-radius: 6px;
+            padding: 3px 14px;
+            margin-top: 6px;
+            background: #eef5ff;
+        }
+        .designer-box .designer-name-big {
+            font-size: 14pt;
+            font-weight: 900;
+            color: #0d47a1;
+        }
+        .designer-box .designer-doc {
+            font-size: 10pt;
+            font-weight: 700;
+            color: #1565c0;
+            margin-left: 10px;
         }
         .header-center {
             flex: 0 0 auto;
@@ -299,10 +324,14 @@
             margin-bottom: 1px;
         }
         .variant-note {
-            font-size: 10pt;
+            font-size: 12pt;
             color: #d32f2f;
-            font-weight: 700;
-            margin-bottom: 2px;
+            font-weight: 800;
+            margin: 2px 0 4px;
+            border: 2px solid #d32f2f;
+            border-radius: 5px;
+            padding: 2px 7px;
+            background: #fff5f5;
         }
         .variant-sep {
             border: none;
@@ -538,34 +567,35 @@
 <div class="page-a4{% if items|length >= 2 %} multi-items{% endif %}">
     <!-- Order header (once at the top of the doc) -->
     <div class="header">
-        <div class="header-left">
-            <h1 class="order-num">{{ order.order_number }}</h1>
-            <div class="print-date">
-                วันที่สร้าง {{ order.created_date|date:"d/n/y" }}
-            </div>
-            <div class="source-customer-row">
-                <span class="source-badge">{{ order.source }}</span>
-                {% if order.production_place != 'ผลิตเอง' %}
-                    <span class="production-badge">ผลิตที่ {{ order.production_place }}</span>
-                {% endif %}
-                <span class="customer-name">{{ order.customer_name }}</span>
-            </div>
-            {% if order.designer_name or order.design_doc_number %}
-            <div class="designer-line" style="font-size:9pt; color:#555; font-weight:600; margin-top:3px;">
-                {% if order.designer_name %}🎨 ออกแบบ: {{ order.designer_name }}{% endif %}
-                {% if order.design_doc_number %}{% if order.designer_name %} · {% endif %}เลขใบงานออกแบบ {{ order.design_doc_number }}{% endif %}
-            </div>
-            {% endif %}
-        </div>
-        <div class="header-center">
+        <div class="header-spacer"></div>
+        <div class="header-main">
             {% if qr_svg %}
             <div class="qr-block" aria-label="QR สแกนเพื่ออัปเดทสถานะ">
                 {{ qr_svg|safe }}
                 <div class="qr-label">สแกนเพื่ออัปเดทสถานะ</div>
             </div>
             {% endif %}
+            <div class="header-left">
+                <h1 class="order-num">{{ order.order_number }}</h1>
+                <div class="print-date">
+                    วันที่สร้าง {{ order.created_date|date:"d/n/y" }}
+                </div>
+                <div class="source-customer-row">
+                    <span class="source-badge">{{ order.source }}</span>
+                    {% if order.production_place != 'ผลิตเอง' %}
+                        <span class="production-badge">ผลิตที่ {{ order.production_place }}</span>
+                    {% endif %}
+                    <span class="customer-name">{{ order.customer_name }}</span>
+                </div>
+                {% if order.designer_name or order.design_doc_number %}
+                <div class="designer-box">
+                    {% if order.designer_name %}<span class="designer-name-big">ออกแบบ: {{ order.designer_name }}</span>{% endif %}
+                    {% if order.design_doc_number %}<span class="designer-doc">ใบงานออกแบบ {{ order.design_doc_number }}</span>{% endif %}
+                </div>
+                {% endif %}
+            </div>
         </div>
-        <div class="header-right">
+        <div class="header-price">
             {% if not request.is_viewer %}
             <div class="price-box">
                 <div class="price-line">ยอด {{ order.total_price|floatformat:0|intcomma }} บาท</div>
