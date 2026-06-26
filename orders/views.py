@@ -79,11 +79,20 @@ def order_list(request):
     })
 
 
-@viewer_or_login_required
-def daily_summary(request):
-    """สรุปใบงานรายวัน — หัวหน้างานเปิดดูออร์เดอร์ของวันหนึ่งๆ รวมกัน เพื่อกัน
-    ออร์เดอร์ตกหล่น. ?date=YYYY-MM-DD (ไม่ระบุ/ค่าผิด = วันนี้). prefetch
-    items__variants ตัด N+1 ของ total_qty (เหมือน order_list)."""
+# Stage-timestamp fields (null = ยังไม่ถึง stage นั้น). Used by the "ค้างเกิน
+# 7 วัน" report to detect orders with zero production progress. Mirrors the
+# fields on Order (Phase 1.6) — keep in sync if stages change.
+STAGE_TIMESTAMP_FIELDS = (
+    'print_done_at', 'roll_done_at', 'cut_done_at', 'sort_done_at',
+    'sent_to_tailors_at', 'packed_at', 'shipped_at', 'awaiting_pickup_at',
+)
+
+
+def _daily_summary_context(request):
+    """Build the สรุปใบงานรายวัน context for a given ?date=. Shared by the
+    standalone daily_summary page and the reports dashboard's first tab, so the
+    summary logic lives in exactly one place. prefetch items__variants ตัด N+1
+    ของ total_qty (เหมือน order_list)."""
     today = timezone.localdate()
     day = parse_date(request.GET.get('date', '') or '') or today
 
@@ -94,7 +103,7 @@ def daily_summary(request):
     )
     total_qty = sum(o.total_qty for o in orders)
 
-    return render(request, 'orders/daily_summary.html', {
+    return {
         'day': day,
         'today': today,
         'orders': orders,
@@ -102,7 +111,71 @@ def daily_summary(request):
         'total_qty': total_qty,
         'prev_date': day - timedelta(days=1),
         'next_date': day + timedelta(days=1),
-    })
+    }
+
+
+@viewer_or_login_required
+def daily_summary(request):
+    """สรุปใบงานรายวัน — หัวหน้างานเปิดดูออร์เดอร์ของวันหนึ่งๆ รวมกัน เพื่อกัน
+    ออร์เดอร์ตกหล่น. ?date=YYYY-MM-DD (ไม่ระบุ/ค่าผิด = วันนี้)."""
+    return render(request, 'orders/daily_summary.html', _daily_summary_context(request))
+
+
+# ---------------------------------------------------------------------------
+# Reports dashboard (admin-only) — sidebar เลือกรายงาน, เนื้อหาฝั่งขวา.
+# Tab แรก = สรุปรายวัน (reuse daily_summary content). Mounted at /order/reports/.
+# ---------------------------------------------------------------------------
+
+REPORT_TABS = [
+    ('daily', '📋 สรุปรายวัน'),
+    ('stuck', '⏳ ค้างเกิน 7 วัน'),
+    ('over200', '📦 เกิน 200 ตัว'),
+]
+
+
+def _report_stuck_rows():
+    """ออร์เดอร์ที่ created_date เกิน 7 วันแล้ว แต่ทุก stage timestamp ยังเป็น null
+    (ไม่มีความคืบหน้าการผลิตเลย). เก่าสุดขึ้นก่อน + จำนวนวันที่ค้าง."""
+    today = timezone.localdate()
+    cutoff = today - timedelta(days=7)
+    qs = Order.objects.filter(created_date__lte=cutoff)
+    for field in STAGE_TIMESTAMP_FIELDS:
+        qs = qs.filter(**{f'{field}__isnull': True})
+    qs = qs.order_by('created_date', 'id')  # oldest first
+    return [{'order': o, 'days_stuck': (today - o.created_date).days} for o in qs]
+
+
+def _report_over200_rows():
+    """ออร์เดอร์ที่ผลรวมจำนวนเสื้อ (รวม qty ทุก ShirtVariant.sizes) > 200.
+    total_qty เป็น Python property → ต้องนับใน app layer (prefetch items__variants
+    ตัด N+1). มากสุดขึ้นก่อน."""
+    orders = (
+        Order.objects.prefetch_related('items', 'items__variants')
+        .order_by('-created_date', '-id')
+    )
+    rows = [{'order': o, 'qty': o.total_qty} for o in orders]
+    rows = [r for r in rows if r['qty'] > 200]
+    rows.sort(key=lambda r: r['qty'], reverse=True)
+    return rows
+
+
+@login_required
+def reports(request):
+    _require_admin(request.user)
+
+    report = request.GET.get('report', 'daily')
+    if report not in dict(REPORT_TABS):
+        report = 'daily'
+
+    ctx = {'report_tabs': REPORT_TABS, 'current_report': report}
+    if report == 'daily':
+        ctx.update(_daily_summary_context(request))
+    elif report == 'stuck':
+        ctx['stuck_rows'] = _report_stuck_rows()
+    elif report == 'over200':
+        ctx['over200_rows'] = _report_over200_rows()
+
+    return render(request, 'orders/reports.html', ctx)
 
 
 def _copy_images_from_first(request, formset):

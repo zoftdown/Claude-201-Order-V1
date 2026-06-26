@@ -20,10 +20,8 @@
                 {% if not request.is_viewer %}
                 <a href="{% url 'order_create' %}" class="btn btn-success btn-sm">+ สร้างออร์เดอร์</a>
                 {% endif %}
-                {% if user.is_authenticated or request.is_viewer %}
-                <a href="{% url 'daily_summary' %}" class="btn btn-outline-light btn-sm">📋 สรุปรายวัน</a>
-                {% endif %}
                 {% if user|is_admin %}
+                <a href="{% url 'reports' %}" class="btn btn-outline-light btn-sm">📊 รายงาน</a>
                 <a href="{% url 'custom_search' %}" class="btn btn-outline-light btn-sm">ค้นหา</a>
                 <a href="{% url 'user_list' %}" class="btn btn-outline-light btn-sm">จัดการ user</a>
                 {% endif %}

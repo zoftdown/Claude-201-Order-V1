@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}รายงาน{% endblock %}
+
+{% block content %}
+<style>
+    .reports-menu .list-group-item.active {
+        background-color: #2c3e50;
+        border-color: #2c3e50;
+    }
+    /* Mobile (<768px): sidebar กลายเป็นแถวปุ่มบนสุด (wrap ได้) */
+    @media (max-width: 767.98px) {
+        .reports-menu {
+            flex-direction: row !important;
+            flex-wrap: wrap;
+            gap: .4rem;
+        }
+        .reports-menu .list-group-item {
+            border-radius: .375rem !important;
+            flex: 1 1 auto;
+            text-align: center;
+        }
+    }
+    /* ตารางรายงานยาวๆ: ตัวเลขชิดขวาอ่านง่าย */
+    .report-table td.num, .report-table th.num { text-align: right; }
+</style>
+
+<h4 class="mb-3 reports-title">📊 รายงาน</h4>
+
+<div class="row g-3">
+    <!-- ===== ซ้าย: เมนูเลือกรายงาน (มือถือ = แถวบนสุด) ===== -->
+    <div class="col-md-3">
+        <div class="list-group reports-menu">
+            {% for key, label in report_tabs %}
+            <a href="?report={{ key }}"
+               class="list-group-item list-group-item-action {% if current_report == key %}active{% endif %}">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- ===== ขวา: เนื้อหารายงาน ===== -->
+    <div class="col-md-9">
+        {% if current_report == 'daily' %}
+            {% include "orders/_daily_summary_content.html" with report_mode=True %}
+
+        {% elif current_report == 'stuck' %}
+            <h4 class="mb-1">⏳ ค้างเกิน 7 วัน</h4>
+            <p class="text-muted small mb-3">
+                ออร์เดอร์ที่สร้างมาเกิน 7 วันแล้ว แต่ยังไม่เริ่มผลิตเลย (ทุก stage ยังว่าง)
+                — พบ {{ stuck_rows|length }} ใบ
+            </p>
+            {% if stuck_rows %}
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm align-middle report-table">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>เลข Order</th>
+                            <th>วันที่</th>
+                            <th>ลูกค้า</th>
+                            <th class="num">ค้างกี่วัน</th>
+                            <th>แหล่ง</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in stuck_rows %}
+                        <tr{% if row.order.is_urgent %} style="background-color:#ffebee; border-left:5px solid #d32f2f;"{% endif %}>
+                            <td>
+                                {% if row.order.is_urgent %}🚨 {% endif %}
+                                <a href="{% url 'order_detail' row.order.pk %}"><strong>{{ row.order.order_number }}</strong></a>
+                            </td>
+                            <td>{{ row.order.created_date|date:"d/m/Y" }}</td>
+                            <td>{{ row.order.customer_name }}</td>
+                            <td class="num"><span class="badge bg-danger">{{ row.days_stuck }} วัน</span></td>
+                            <td><small>{{ row.order.source }}</small></td>
+                            <td><a href="{% url 'order_edit' row.order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+                <p class="text-success">🎉 ไม่มีออร์เดอร์ค้างเกิน 7 วัน</p>
+            {% endif %}
+
+        {% elif current_report == 'over200' %}
+            <h4 class="mb-1">📦 เกิน 200 ตัว</h4>
+            <p class="text-muted small mb-3">
+                ออร์เดอร์ที่รวมจำนวนเสื้อทั้งใบมากกว่า 200 ตัว — พบ {{ over200_rows|length }} ใบ
+            </p>
+            {% if over200_rows %}
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm align-middle report-table">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>เลข Order</th>
+                            <th>วันที่</th>
+                            <th>ลูกค้า</th>
+                            <th class="num">จำนวนรวม</th>
+                            <th>สถานะ</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in over200_rows %}
+                        <tr{% if row.order.is_urgent %} style="background-color:#ffebee; border-left:5px solid #d32f2f;"{% endif %}>
+                            <td>
+                                {% if row.order.is_urgent %}🚨 {% endif %}
+                                <a href="{% url 'order_detail' row.order.pk %}"><strong>{{ row.order.order_number }}</strong></a>
+                            </td>
+                            <td>{{ row.order.created_date|date:"d/m/Y" }}</td>
+                            <td>{{ row.order.customer_name }}</td>
+                            <td class="num"><span class="badge bg-primary">{{ row.qty }} ตัว</span></td>
+                            <td><small>{{ row.order.status }}</small></td>
+                            <td><a href="{% url 'order_edit' row.order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+                <p class="text-muted">ไม่มีออร์เดอร์ที่เกิน 200 ตัว</p>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
