@@ -56,9 +56,15 @@
                     <thead class="table-dark">
                         <tr>
                             <th>เลข Order</th>
-                            <th>วันที่</th>
+                            <th>
+                                <a href="?report=stuck&amp;sort={% if stuck_sort == 'date_desc' %}date_asc{% else %}date_desc{% endif %}"
+                                   class="text-white text-decoration-none">
+                                    วันที่ {% if stuck_sort == 'date_desc' %}▼{% else %}▲{% endif %}
+                                </a>
+                            </th>
                             <th>ลูกค้า</th>
                             <th class="num">ค้างกี่วัน</th>
+                            <th>สถานะ</th>
                             <th>แหล่ง</th>
                             <th></th>
                         </tr>
@@ -73,6 +79,15 @@
                             <td>{{ row.order.created_date|date:"d/m/Y" }}</td>
                             <td>{{ row.order.customer_name }}</td>
                             <td class="num"><span class="badge bg-danger">{{ row.days_stuck }} วัน</span></td>
+                            <td>
+                                {% if row.order.status == 'เสร็จแล้ว' or row.order.status == 'ส่งแล้ว' %}
+                                    <span class="badge bg-success">{{ row.order.status }}</span>
+                                {% elif row.order.status == 'กำลังผลิต' %}
+                                    <span class="badge bg-info text-dark">{{ row.order.status }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ row.order.status }}</span>
+                                {% endif %}
+                            </td>
                             <td><small>{{ row.order.source }}</small></td>
                             <td><a href="{% url 'order_edit' row.order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
                         </tr>

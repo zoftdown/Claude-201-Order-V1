@@ -133,15 +133,17 @@ REPORT_TABS = [
 ]
 
 
-def _report_stuck_rows():
+def _report_stuck_rows(sort='date_desc'):
     """ออร์เดอร์ที่ created_date เกิน 7 วันแล้ว แต่ทุก stage timestamp ยังเป็น null
-    (ไม่มีความคืบหน้าการผลิตเลย). เก่าสุดขึ้นก่อน + จำนวนวันที่ค้าง."""
+    (ไม่มีความคืบหน้าการผลิตเลย). sort='date_desc' (ใหม่สุดก่อน, default) หรือ
+    'date_asc' (เก่าสุดก่อน). + จำนวนวันที่ค้าง."""
     today = timezone.localdate()
     cutoff = today - timedelta(days=7)
     qs = Order.objects.filter(created_date__lte=cutoff)
     for field in STAGE_TIMESTAMP_FIELDS:
         qs = qs.filter(**{f'{field}__isnull': True})
-    qs = qs.order_by('created_date', 'id')  # oldest first
+    date_order = 'created_date' if sort == 'date_asc' else '-created_date'
+    qs = qs.order_by(date_order, '-id')
     return [{'order': o, 'days_stuck': (today - o.created_date).days} for o in qs]
 
 
@@ -171,7 +173,9 @@ def reports(request):
     if report == 'daily':
         ctx.update(_daily_summary_context(request))
     elif report == 'stuck':
-        ctx['stuck_rows'] = _report_stuck_rows()
+        stuck_sort = 'date_asc' if request.GET.get('sort') == 'date_asc' else 'date_desc'
+        ctx['stuck_sort'] = stuck_sort
+        ctx['stuck_rows'] = _report_stuck_rows(stuck_sort)
     elif report == 'over200':
         ctx['over200_rows'] = _report_over200_rows()
 
