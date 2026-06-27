@@ -236,6 +236,33 @@ class Order(models.Model):
             return None
         return local.strftime('%H:%M')
 
+    @property
+    def progress_label(self):
+        """ป้ายความคืบหน้า = stage ที่เสร็จล่าสุด (เช่น "พิมพ์แล้ว"). คืน "ยังไม่เริ่ม"
+        ถ้ายังไม่มี stage ใดเสร็จ. ใช้ในการ์ดสรุปรายวัน."""
+        if self.shipped_at:
+            return 'ส่งแล้ว'
+        if self.awaiting_pickup_at:
+            return 'รอลูกค้ารับ'
+        if self.packed_at:
+            return 'รีด+แพ็คแล้ว'
+        if self.sent_to_tailors_at:
+            return 'ส่งเย็บแล้ว'
+        if self.sort_done_at:
+            return 'คัดแล้ว'
+        if self.cut_done_at:
+            return 'ตัดแล้ว'
+        if self.roll_done_at:
+            return 'โรลแล้ว'
+        if self.print_done_at:
+            return 'พิมพ์แล้ว'
+        return 'ยังไม่เริ่ม'
+
+    @property
+    def progress_done(self):
+        """งานออกจากร้านแล้ว (ส่ง/รอลูกค้ารับ) → ใช้ทำ badge สีเขียว."""
+        return bool(self.shipped_at or self.awaiting_pickup_at)
+
     def save(self, *args, **kwargs):
         if not self.order_number:
             self.order_number = self._generate_order_number()

@@ -62,7 +62,7 @@
                                     วันที่ {% if stuck_sort == 'date_desc' %}▼{% else %}▲{% endif %}
                                 </a>
                             </th>
-                            <th>ลูกค้า</th>
+                            <th>ชื่องาน</th>
                             <th class="num">ค้างกี่วัน</th>
                             <th>แหล่ง</th>
                             <th></th>
@@ -76,7 +76,7 @@
                                 <a href="{% url 'order_detail' row.order.pk %}"><strong>{{ row.order.order_number }}</strong></a>
                             </td>
                             <td>{{ row.order.created_date|date:"d/m/Y" }}</td>
-                            <td>{{ row.order.customer_name }}</td>
+                            <td>{{ row.order.shirt_name }}</td>
                             <td class="num"><span class="badge bg-danger">{{ row.days_stuck }} วัน</span></td>
                             <td><small>{{ row.order.source }}</small></td>
                             <td><a href="{% url 'order_edit' row.order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
@@ -101,7 +101,7 @@
                         <tr>
                             <th>เลข Order</th>
                             <th>วันที่</th>
-                            <th>ลูกค้า</th>
+                            <th>ชื่องาน</th>
                             <th class="num">จำนวนรวม</th>
                             <th>สถานะ</th>
                             <th></th>
@@ -115,7 +115,7 @@
                                 <a href="{% url 'order_detail' row.order.pk %}"><strong>{{ row.order.order_number }}</strong></a>
                             </td>
                             <td>{{ row.order.created_date|date:"d/m/Y" }}</td>
-                            <td>{{ row.order.customer_name }}</td>
+                            <td>{{ row.order.shirt_name }}</td>
                             <td class="num"><span class="badge bg-primary">{{ row.qty }} ตัว</span></td>
                             <td><small>{{ row.order.status }}</small></td>
                             <td><a href="{% url 'order_edit' row.order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
