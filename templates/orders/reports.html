@@ -47,8 +47,8 @@
         {% elif current_report == 'stuck' %}
             <h4 class="mb-1">⏳ ค้างเกิน 7 วัน</h4>
             <p class="text-muted small mb-3">
-                ออร์เดอร์ที่สร้างมาเกิน 7 วันแล้ว แต่ยังไม่เริ่มผลิตเลย (ทุก stage ยังว่าง)
-                — พบ {{ stuck_rows|length }} ใบ
+                ออร์เดอร์ที่สร้างมาเกิน 7 วันแล้ว แต่ยังไม่เริ่มผลิตเลย (ยังไม่พิมพ์ +
+                status ยัง "รอดำเนินการ") — พบ {{ stuck_rows|length }} ใบ
             </p>
             {% if stuck_rows %}
             <div class="table-responsive">
@@ -64,7 +64,6 @@
                             </th>
                             <th>ลูกค้า</th>
                             <th class="num">ค้างกี่วัน</th>
-                            <th>สถานะ</th>
                             <th>แหล่ง</th>
                             <th></th>
                         </tr>
@@ -79,15 +78,6 @@
                             <td>{{ row.order.created_date|date:"d/m/Y" }}</td>
                             <td>{{ row.order.customer_name }}</td>
                             <td class="num"><span class="badge bg-danger">{{ row.days_stuck }} วัน</span></td>
-                            <td>
-                                {% if row.order.status == 'เสร็จแล้ว' or row.order.status == 'ส่งแล้ว' %}
-                                    <span class="badge bg-success">{{ row.order.status }}</span>
-                                {% elif row.order.status == 'กำลังผลิต' %}
-                                    <span class="badge bg-info text-dark">{{ row.order.status }}</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">{{ row.order.status }}</span>
-                                {% endif %}
-                            </td>
                             <td><small>{{ row.order.source }}</small></td>
                             <td><a href="{% url 'order_edit' row.order.pk %}" class="btn btn-outline-primary btn-sm">แก้ไข</a></td>
                         </tr>

@@ -133,13 +133,18 @@ REPORT_TABS = [
 ]
 
 
+# Statuses ที่ถือว่า "ขยับแล้ว" → ตัดออกจากรายงานค้าง แม้ stage timestamp จะ null
+# (ใบที่ตั้ง status เองโดยไม่ได้กดผ่านระบบ stage QR). เหลือเฉพาะ "รอดำเนินการ".
+STUCK_EXCLUDE_STATUSES = ('กำลังผลิต', 'เสร็จแล้ว', 'ส่งแล้ว')
+
+
 def _report_stuck_rows(sort='date_desc'):
-    """ออร์เดอร์ที่ created_date เกิน 7 วันแล้ว แต่ทุก stage timestamp ยังเป็น null
-    (ไม่มีความคืบหน้าการผลิตเลย). sort='date_desc' (ใหม่สุดก่อน, default) หรือ
-    'date_asc' (เก่าสุดก่อน). + จำนวนวันที่ค้าง."""
+    """ออร์เดอร์ที่ค้างจริง: created_date เกิน 7 วัน + ทุก stage timestamp ยัง null
+    (ยังไม่เริ่มแม้แต่พิมพ์) + status ยังไม่ขยับ (ตัด กำลังผลิต/เสร็จแล้ว/ส่งแล้ว ออก).
+    sort='date_desc' (ใหม่สุดก่อน, default) หรือ 'date_asc'. + จำนวนวันที่ค้าง."""
     today = timezone.localdate()
     cutoff = today - timedelta(days=7)
-    qs = Order.objects.filter(created_date__lte=cutoff)
+    qs = Order.objects.filter(created_date__lte=cutoff).exclude(status__in=STUCK_EXCLUDE_STATUSES)
     for field in STAGE_TIMESTAMP_FIELDS:
         qs = qs.filter(**{f'{field}__isnull': True})
     date_order = 'created_date' if sort == 'date_asc' else '-created_date'
