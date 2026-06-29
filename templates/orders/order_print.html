@@ -508,7 +508,7 @@
                 max-width: none;
                 min-height: 297mm;
                 margin: 0;
-                padding: 8mm;
+                padding: 6mm;   /* was 8mm — reclaim ~4mm vertical to help one-page fit */
                 box-shadow: none;
                 box-sizing: border-box;
             }
@@ -531,12 +531,15 @@
             .extra-block {
                 page-break-inside: avoid;
                 break-inside: avoid;
+                margin-top: 4px !important;   /* reclaim space (override inline 16px) */
             }
             .order-grand-total {
                 page-break-inside: avoid;
                 break-inside: avoid;
                 page-break-before: avoid;
                 break-before: avoid;
+                margin-top: 3mm;              /* was 10mm — claw back vertical space */
+                padding-top: 2mm;             /* was 5mm */
             }
 
             /* Cap the design image so a tall portrait can't push items past
