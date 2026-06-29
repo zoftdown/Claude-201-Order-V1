@@ -525,6 +525,20 @@
             }
             .item-block:last-child { margin-bottom: 0 !important; }
 
+            /* Keep the "เพิ่มเติม" block intact, and tie the grand-total line to
+               whatever precedes it so "รวมทั้งหมด X ตัว" never drops alone to a
+               new page when the item table + extra block fill page 1. */
+            .extra-block {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+            .order-grand-total {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                page-break-before: avoid;
+                break-before: avoid;
+            }
+
             /* Cap the design image so a tall portrait can't push items past
                the page bottom. */
             .item-image-block { max-height: 120mm; }
