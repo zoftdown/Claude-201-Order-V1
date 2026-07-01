@@ -132,15 +132,20 @@
             margin-top: 8px;
         }
 
-        /* ===== Item Layout: design image 80% + first variant ~20% =====
-           Mirrors order_print.html single-item layout. */
+        /* ===== Item Layout (mirrors order_print.html) =====
+           ≤2 variants → design image ~72% (the hero) + variants stacked in a
+           narrow right column (~28%).
+           3+ variants → image alone centered, wide (~78% of the page), ALL
+           variants in a 4-per-row grid below (.solo-image on the top row). */
         .item-top-row {
             display: flex;
             gap: 14px;
             align-items: flex-start;
         }
+        .item-top-row.solo-image { justify-content: center; }
+        .item-top-row.solo-image .item-image-block { flex: 0 0 78%; }
         .item-image-block {
-            flex: 0 0 80%;
+            flex: 0 0 72%;
             border: 1px solid #ddd;
             border-radius: 6px;
             background: #fafafa;
@@ -168,11 +173,12 @@
             gap: 8px;
             align-items: start;
         }
-        /* Variants #2 onward: auto-fit grid that fills the width below. */
+        /* Bottom-row variants (multi-variant items): fixed 4 per row,
+           overflow wraps to the next row. */
         .item-bottom-grid {
             margin-top: 8px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 8px;
             align-items: start;
         }
@@ -300,6 +306,9 @@
             .ph-title { font-size: 15pt; }
             .item-top-row { flex-direction: column; }
             .item-image-block { flex: none; width: 100%; }
+            /* Solo image too: full width on mobile (beats the base 78% rule). */
+            .item-top-row.solo-image .item-image-block { flex: none; width: 100%; }
+            .item-bottom-grid { grid-template-columns: repeat(2, 1fr); }
             .print-controls {
                 position: sticky;
                 top: 0;
@@ -381,7 +390,8 @@
         {% endif %}
     </div>
 
-    <div class="item-top-row">
+    {% with variant_count=item.variants.all|length %}
+    <div class="item-top-row{% if variant_count > 2 %} solo-image{% endif %}">
         <div class="item-image-block">
             {% if item.design_image %}
                 <img src="{{ item.design_image.url }}" alt="ดีไซน์">
@@ -389,18 +399,19 @@
                 <span class="no-img-placeholder">ยังไม่มี mockup</span>
             {% endif %}
         </div>
+        {% if variant_count <= 2 %}
         <div class="top-variants">
-            {% for v in item.variants.all|slice:":1" %}
+            {% for v in item.variants.all|slice:":2" %}
                 {% include "orders/_variant_block.html" with v=v %}
             {% empty %}
                 <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
             {% endfor %}
         </div>
+        {% endif %}
     </div>
-    {% with extra_variants=item.variants.all|slice:"1:" %}
-    {% if extra_variants %}
+    {% if variant_count > 2 %}
     <div class="item-bottom-grid">
-        {% for v in extra_variants %}
+        {% for v in item.variants.all %}
             {% include "orders/_variant_block.html" with v=v %}
         {% endfor %}
     </div>

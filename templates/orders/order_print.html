@@ -265,16 +265,21 @@
         }
 
         /* ===== Item Layout =====
-           Top row: design image (80%) + first variant (~20%).
-           Bottom row: variant #2 onward in an auto-fit grid that fills width.
+           ≤2 variants → top row: design image (~72%, the hero — production
+           needs the design details readable) + variants stacked in a narrow
+           right column (~28%).
+           3+ variants → image alone centered, wide (~78% of the page), ALL
+           variants move to a 4-per-row grid below (.solo-image on top row).
            Same on screen, in @media print, and in the html2canvas PNG. */
         .item-top-row {
             display: flex;
             gap: 14px;
             align-items: flex-start;
         }
+        .item-top-row.solo-image { justify-content: center; }
+        .item-top-row.solo-image .item-image-block { flex: 0 0 78%; }
         .item-image-block {
-            flex: 0 0 80%;
+            flex: 0 0 72%;
             border: 1px solid #ddd;
             border-radius: 6px;
             background: #fafafa;
@@ -290,9 +295,8 @@
             display: block;
         }
 
-        /* Smart layout: ≥2 items → smaller image column so they pack on the
-           same A4 sheet. */
-        .multi-items .item-image-block { flex: 0 0 50%; }
+        /* Multi-item orders keep the same 72% image width — the print-only
+           max-height caps below are what pack 2 items per A4 sheet. */
 
         /* Top-row variant: just the first variant (~20% of item width),
            filling the narrow column next to the 80% image. */
@@ -305,12 +309,12 @@
             align-items: start;
         }
 
-        /* Bottom-row variants (#2 onward): auto-fit grid that fills the width
-           and wraps on its own (1→full width, 3→3 cols, 5-6 wrap, no white). */
+        /* Bottom-row variants (multi-variant items): fixed 4 per row,
+           overflow wraps to the next row. */
         .item-bottom-grid {
             margin-top: 8px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 8px;
             align-items: start;
         }
@@ -496,6 +500,9 @@
             .shirt-info.with-special-note .shirt-name { text-align: center; }
             .item-top-row { flex-direction: column; }
             .item-image-block { flex: none; width: 100%; }
+            /* Solo image too: full width on mobile (beats the base 78% rule). */
+            .item-top-row.solo-image .item-image-block { flex: none; width: 100%; }
+            .item-bottom-grid { grid-template-columns: repeat(2, 1fr); }
             .print-controls {
                 position: sticky;
                 top: 0;
@@ -573,11 +580,10 @@
             .multi-items .item-image-block { max-height: 80mm; }
             .multi-items .item-image-block img { max-height: 80mm; }
 
-            /* Single-item prints: narrow the design image (80% -> 60% width) so a
-               tall mockup leaves room for variants + extra block + grand total on
-               one page. Image scales down proportionally (no white gutters);
-               variant column gets the freed width. Screen view stays 80%. */
-            .page-a4:not(.multi-items) .item-image-block { flex: 0 0 60%; }
+            /* Image width stays 72% (side-by-side) / 78% (solo) in print —
+               the max-height caps above are what bound page height, so a tall
+               mockup letterboxes inside the cap instead of spilling over. */
+            .item-top-row.solo-image .item-image-block { flex: 0 0 78%; }
 
             /* Waiting-confirm dark overlay must survive on paper too. */
             .waiting-confirm-overlay {
@@ -679,7 +685,8 @@
         <div class="item-block-header">
             <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
         </div>
-        <div class="item-top-row">
+        {% with variant_count=item.variants.all|length %}
+        <div class="item-top-row{% if variant_count > 2 %} solo-image{% endif %}">
             <div class="item-image-block">
                 {% if item.design_image %}
                     <img src="{{ item.design_image.url }}" alt="ดีไซน์">
@@ -687,18 +694,19 @@
                     <span class="no-img-placeholder">ยังไม่มี mockup</span>
                 {% endif %}
             </div>
+            {% if variant_count <= 2 %}
             <div class="top-variants">
-                {% for v in item.variants.all|slice:":1" %}
+                {% for v in item.variants.all|slice:":2" %}
                     {% include "orders/_variant_block.html" with v=v %}
                 {% empty %}
                     <div class="variant-no-sizes">— ยังไม่มีแบบ —</div>
                 {% endfor %}
             </div>
+            {% endif %}
         </div>
-        {% with extra_variants=item.variants.all|slice:"1:" %}
-        {% if extra_variants %}
+        {% if variant_count > 2 %}
         <div class="item-bottom-grid">
-            {% for v in extra_variants %}
+            {% for v in item.variants.all %}
                 {% include "orders/_variant_block.html" with v=v %}
             {% endfor %}
         </div>
