@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.5 · อัปเดตล่าสุด 2026-06-26 · migration ล่าสุด `0017_order_design_doc_number_order_designer_name` (field คนออกแบบ + เลขใบงานออกแบบ) · feature ล่าสุด: print polish (โน้ตในแบบกรอบแดง + คนออกแบบกรอบน้ำเงิน + หัวใบงานจัดกลาง + ตัด icon 🎨/📝) · field คนออกแบบ/เลขใบงานออกแบบ · order_list redesign (โซนด่วนตีกรอบ + ด่วนโชว์ซ้ำ + zebra เขียว + responsive) · detail/form layout 2 ฝั่ง + กล่องเงิน · **หน้าใหม่ "สรุปใบงานรายวัน"** (grid 2 คอลัมน์ + พิมพ์ A4) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V2.6 · อัปเดตล่าสุด 2026-07-02 · migration ล่าสุด `0018_order_waiting_confirm` (สถานะรอคอนเฟิร์ม) · feature ล่าสุด: **รอคอนเฟิร์ม** (checkbox ในฟอร์ม + overlay ดำคลุม print/pick + ซ่อนปุ่ม action + badge ม่วงใน list) · **layout ใบงานตามจำนวนกรอบ** (≤2 กรอบ = รูป 72:28 / 3+ กรอบ = รูปกลาง 78% + grid 4 ช่อง/แถว) · กรอบรวมต่อ variant โชว์เลขล้วน 11pt · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -67,6 +67,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | shipping_address | TextField | ที่อยู่จัดส่ง |
 | status | CharField | รอดำเนินการ / กำลังผลิต / เสร็จแล้ว / ส่งแล้ว |
 | **is_urgent** | BooleanField | ใบงานด่วน → badge แดง + เรียงขึ้นบน |
+| **waiting_confirm** | BooleanField | รอลูกค้าคอนเฟิร์ม (default False, migration 0018) → print/pick โดน overlay ดำ `rgba(0,0,0,0.45)` + ตัวขาว "รอคอนเฟิร์ม" กลางหน้า (ทั้งจอ+`@media print`) + ซ่อนปุ่ม action (เหลือปุ่มกลับ) กันพิมพ์/ผลิตก่อนยืนยัน + badge ม่วง `#6a1b9a` ใน list |
 | **created_at** | DateTimeField | auto_now_add, nullable (ใบเก่า backfill = เที่ยงคืนของ created_date) |
 | **updated_at** | DateTimeField | auto_now, nullable |
 | **created_by** | FK→auth.User | SET_NULL, คนสร้างใบ (ใบเก่า=null แสดง "-") |
@@ -152,12 +153,13 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **คอลัมน์หน้า list (reorder priority ซ้าย→ขวา):** วันที่(ย่อ `j M` บนมือถือ) | เลข Order | ชื่อเสื้อ | สถานะ(badge) | แหล่ง | เวลา | จำนวน | คนลงข้อมูล | คำสั่งพิเศษ(แดง) | [แก้ไข] — `table-responsive` เลื่อนแนวนอนบนมือถือ (priority อยู่ซ้าย)
 - **Badge สถานะ (Bootstrap, ใส่หลายอันพร้อมกันได้):**
   - ด่วน (bg-danger แดง) ← is_urgent
+  - รอคอนเฟิร์ม (ม่วง `#6a1b9a` inline style) ← waiting_confirm
   - แก้ใบงาน (bg-warning text-dark ส้ม) ← recently_edited
   - ยังไม่พิมพ์ใบงาน (bg-secondary เทา) ← not_printed
   - ไม่มี → แสดง "—" / *หมายเหตุ: "มาใหม่" เคยมีแต่ถอดออกแล้ว (รกเกินไป)*
 - **คอลัมน์เวลา** — เวลาสร้าง HH:MM (เวลาไทย); ใบเก่า (00:00) ซ่อนเป็น "—"
 - **Print view (order_print.html):**
-  - layout ต่อ item = **80:20** — รูปดีไซน์ 80% + variant แบบแรก 20% (แถวบน); variant ที่เหลือลงแถวล่าง CSS Grid auto-fit (`repeat(auto-fit, minmax(140px,1fr))`)
+  - layout ต่อ item **ตามจำนวน variant (V2.6, ใช้ทั้ง print+pick):** ≤2 กรอบ → รูปดีไซน์ ~72% + กรอบเรียงแนวตั้ง column ขวา ~28% (รูปเป็นพระเอก ฝ่ายผลิตต้องเห็นดีไซน์ชัด) / 3+ กรอบ → รูปเดี่ยวจัดกลาง 78% (`.solo-image`) + กรอบทั้งหมดลง grid ล่าง **4 ช่อง/แถว** (มือถือ 2 ช่อง). ตอนพิมพ์ รูปโดนเพดานสูง (single 120mm / multi-items 80mm / pick 150mm) กันล้นหน้า — ไม่มี rule บีบความกว้างรูปแล้ว (rule 50% multi-items + 60% print เดิมถูกตัดทิ้ง)
   - **ปุ่ม "บันทึกภาพ"** — html2canvas 1.4.1 ถ่าย div.page-a4 เป็น PNG, auto-crop ขอบขาวทุกด้าน (~20px padding). *หมายเหตุ: .price-box ต้องเป็น display:table (ไม่ใช่ inline-block) ไม่งั้น html2canvas ไม่ render ตัวเลขแดง*
   - **ปุ่ม "พิมพ์ใบงานแล้ว"** — POST mark printed_at, ซ่อนตอนพิมพ์จริง (อยู่ใน .print-controls ไม่ใช่ .page-a4)
 - Production deployment (nginx, gunicorn, systemd)
@@ -198,6 +200,15 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
   - **คนออกแบบเด่นใน print** — `.designer-box` กรอบน้ำเงิน ชื่อ 14pt หนา (`#0d47a1`) + เลขใบงานออกแบบในกรอบเดียวกัน
   - **หัวใบงาน print จัดกลาง** — QR + เลขออร์เดอร์ + วันที่ + แหล่ง + คนออกแบบ เป็นกลุ่มกลางหน้า (`.header-spacer`/`.header-main`/`.header-price`) กัน**แม็กมุมซ้ายบังเลขใบงาน**
   - **ตัด icon 🎨 (ออกแบบ) + 📝 (โน้ต) ออกทุกที่** (แอดมินว่าไม่สวย)
+
+**เพิ่มล่าสุด (V2.6 · 2026-07-02):**
+- **กรอบรวมต่อ variant (`.variant-total`)** — โชว์เลขล้วน (ตัด "รวม = " ออก) + ลดเหลือ 11pt (จาก 16pt); กรอบ per-box total มาจาก commit 91576a7 (2026-07-01)
+- **สถานะ "รอคอนเฟิร์ม" (`waiting_confirm`, migration 0018)** — pattern เดียวกับใบงานด่วน:
+  - order_form: checkbox กรอบม่วงวางคู่กรอบแดงใบงานด่วน (flex 2 ช่อง บนสุดของฟอร์ม)
+  - print + pick: **overlay ดำโปร่งแสง `rgba(0,0,0,0.45)` คลุมเต็มหน้า** + "รอคอนเฟิร์ม" ขาว 44pt กลางหน้า (flex center, ทั้งจอ + `@media print`) — เคยลองแบบจางทั้งหน้า opacity 0.6 + แถบเทา แล้วเปลี่ยนเป็นโทนดำ
+  - print + pick: **ซ่อนปุ่ม action ทั้งหมด** (พิมพ์ใบงาน/บันทึกภาพ/พิมพ์ใบมาสเตอร์/CSV/พิมพ์ใบงานแล้ว/พิมพ์ใบคัด) เหลือแค่ปุ่มกลับ — กันพิมพ์/ผลิตก่อนลูกค้ายืนยัน
+  - list: badge ม่วง `#6a1b9a` ผ่าน `_order_row_cells.html` (โชว์ทั้ง 2 โซน)
+- **layout ใบงานตามจำนวนกรอบ (print + pick):** ≤2 กรอบ = รูปซ้าย 72:28 / 3+ กรอบ = รูปกลาง 78% + grid 4 ช่อง/แถว (ดูรายละเอียดหัวข้อ Print view ด้านบน) — เช็คแล้วการแบ่งหน้าถูก (`break-inside: avoid` ยกทั้งรายการขึ้นหน้าใหม่ ไม่ตัดกลางกรอบ)
 
 ### 🔜 ค้าง / อนาคต
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
