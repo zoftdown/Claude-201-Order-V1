@@ -29,6 +29,28 @@
             position: relative;
         }
 
+        /* ===== Waiting-confirm state: dark overlay over the sheet =====
+           Same pattern as order_print.html — translucent black film covering
+           the entire page + big white "รอคอนเฟิร์ม" centered, screen and paper. */
+        .waiting-confirm-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 5;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            font-size: 44pt;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+        }
+
         /* ===== Per-page header (identical on every sheet) ===== */
         .pick-header {
             border-bottom: 3px solid #222;
@@ -316,6 +338,13 @@
             .item-image-block { max-height: 150mm; }
             .item-image-block img { max-height: 150mm; }
 
+            /* Waiting-confirm dark overlay must survive on paper too. */
+            .waiting-confirm-overlay {
+                display: flex !important;
+                background: rgba(0, 0, 0, 0.45) !important;
+                color: #fff !important;
+            }
+
             .variant-block { page-break-inside: avoid; break-inside: avoid; }
         }
         @page {
@@ -327,12 +356,16 @@
 <body>
 
 <div class="print-controls">
+    {# waiting_confirm: ยังไม่คอนเฟิร์ม — ซ่อนปุ่มพิมพ์ กันพิมพ์/ผลิตก่อนลูกค้ายืนยัน #}
+    {% if not order.waiting_confirm %}
     <button class="btn-print" onclick="window.print()">พิมพ์ใบคัด</button>
+    {% endif %}
     <button class="btn-back" onclick="window.location.href='{% url 'order_print' order.pk %}'">กลับใบงาน</button>
 </div>
 
 {% for item in items %}
-<div class="page-a4">
+<div class="page-a4{% if order.waiting_confirm %} waiting-confirm{% endif %}">
+    {% if order.waiting_confirm %}<div class="waiting-confirm-overlay">รอคอนเฟิร์ม</div>{% endif %}
     <div class="pick-header">
         <div class="ph-top">
             <span class="order-num">{{ order.order_number }}</span>

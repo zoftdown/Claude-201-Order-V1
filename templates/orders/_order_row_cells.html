@@ -11,10 +11,11 @@
 <td class="shirt-name-cell" title="{{ order.shirt_name }}">{{ order.shirt_name }}</td>
 <td>
     {% if order.is_urgent %}<span class="badge bg-danger me-1">ด่วน</span>{% endif %}
+    {% if order.waiting_confirm %}<span class="badge me-1" style="background-color:#6a1b9a;">รอคอนเฟิร์ม</span>{% endif %}
     {% if order.not_printed %}<span class="badge bg-secondary me-1">ยังไม่พิมพ์ใบงาน</span>{% endif %}
     {% if order.recently_edited %}<span class="badge bg-warning text-dark me-1">แก้ใบงาน</span>{% endif %}
     {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
-    {% if not order.is_urgent and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
+    {% if not order.is_urgent and not order.waiting_confirm and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
 </td>
 <td><small>{{ order.source }}</small></td>
 <td>{{ order.created_time_display|default:"—" }}</td>

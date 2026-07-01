@@ -29,6 +29,29 @@
             position: relative;
         }
 
+        /* ===== Waiting-confirm state: dark overlay over the whole sheet =====
+           Translucent black film covering the entire page (content shows
+           through, darkened) + big white "รอคอนเฟิร์ม" centered. Applies on
+           screen AND in print (print-color-adjust already forces backgrounds). */
+        .waiting-confirm-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 5;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            font-size: 44pt;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+        }
+
         /* Per-item container: stays intact when paginating, packs onto the
            same sheet as siblings if they all fit. */
         .item-block {
@@ -556,6 +579,13 @@
                variant column gets the freed width. Screen view stays 80%. */
             .page-a4:not(.multi-items) .item-image-block { flex: 0 0 60%; }
 
+            /* Waiting-confirm dark overlay must survive on paper too. */
+            .waiting-confirm-overlay {
+                display: flex !important;
+                background: rgba(0, 0, 0, 0.45) !important;
+                color: #fff !important;
+            }
+
             /* Trim header rhythm to claw back vertical space. */
             .header { margin-bottom: 6px; padding-bottom: 4px; }
             .shirt-info { margin-bottom: 6px; padding-bottom: 4px; }
@@ -570,6 +600,8 @@
 <body>
 
 <div class="print-controls">
+    {# waiting_confirm: ยังไม่คอนเฟิร์ม — ซ่อนปุ่ม action ทั้งหมด กันพิมพ์/ผลิตก่อนลูกค้ายืนยัน #}
+    {% if not order.waiting_confirm %}
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
     <button class="btn-save" onclick="saveWorkOrderImage(this)">📷 บันทึกภาพ</button>
     <button class="btn-pick" onclick="window.location.href='{% url 'order_master' order.pk %}'">📋 พิมพ์ใบมาสเตอร์</button>
@@ -584,10 +616,12 @@
     {% else %}
         <span class="printed-note">✓ พิมพ์แล้ว {{ order.printed_at|date:"d/m/Y H:i" }}</span>
     {% endif %}
+    {% endif %}
     <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
 </div>
 
-<div class="page-a4{% if items|length >= 2 %} multi-items{% endif %}">
+<div class="page-a4{% if items|length >= 2 %} multi-items{% endif %}{% if order.waiting_confirm %} waiting-confirm{% endif %}">
+    {% if order.waiting_confirm %}<div class="waiting-confirm-overlay">รอคอนเฟิร์ม</div>{% endif %}
     <!-- Order header (once at the top of the doc) -->
     <div class="header">
         <div class="header-spacer"></div>

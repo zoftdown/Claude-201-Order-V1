@@ -32,7 +32,7 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'is_urgent',
+            'is_urgent', 'waiting_confirm',
             'source', 'production_place', 'created_date', 'customer_name',
             'customer_link', 'shirt_name', 'designer_name', 'design_doc_number',
             'fabric_spec', 'special_note', 'extra_note',

@@ -155,6 +155,10 @@ class Order(models.Model):
     # Production-urgent flag: highlights the order red across list/detail/form.
     is_urgent = models.BooleanField('ด่วน!', default=False)
 
+    # Waiting-for-customer-confirm flag: fades print/pick pages with a big
+    # "รอคอนเฟิร์ม" overlay so nobody prints/produces an unconfirmed order.
+    waiting_confirm = models.BooleanField('รอคอนเฟิร์ม', default=False)
+
     # Phase 1.6: stage timestamps (null = ยังไม่เสร็จ stage นั้น)
     print_done_at = models.DateTimeField('พิมพ์เสร็จเมื่อ', null=True, blank=True)
     roll_done_at = models.DateTimeField('โรลเสร็จเมื่อ', null=True, blank=True)

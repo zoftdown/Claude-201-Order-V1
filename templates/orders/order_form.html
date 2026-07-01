@@ -54,12 +54,20 @@
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
 
-    <!-- ===== Urgent flag (top of form) ===== -->
-    <div style="margin-bottom:15px; padding:10px; border:2px solid #d32f2f; border-radius:6px;">
-        <label style="font-size:18px; font-weight:bold; color:#d32f2f; cursor:pointer; margin:0;">
-            <input type="checkbox" name="is_urgent" {% if form.is_urgent.value %}checked{% endif %} style="transform:scale(1.5); margin-right:8px; vertical-align:middle;">
-            🚨 ใบงานด่วน!
-        </label>
+    <!-- ===== Urgent + waiting-confirm flags (top of form) ===== -->
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:15px;">
+        <div style="flex:1 1 240px; padding:10px; border:2px solid #d32f2f; border-radius:6px;">
+            <label style="font-size:18px; font-weight:bold; color:#d32f2f; cursor:pointer; margin:0;">
+                <input type="checkbox" name="is_urgent" {% if form.is_urgent.value %}checked{% endif %} style="transform:scale(1.5); margin-right:8px; vertical-align:middle;">
+                🚨 ใบงานด่วน!
+            </label>
+        </div>
+        <div style="flex:1 1 240px; padding:10px; border:2px solid #6a1b9a; border-radius:6px;">
+            <label style="font-size:18px; font-weight:bold; color:#6a1b9a; cursor:pointer; margin:0;">
+                <input type="checkbox" name="waiting_confirm" {% if form.waiting_confirm.value %}checked{% endif %} style="transform:scale(1.5); margin-right:8px; vertical-align:middle;">
+                รอคอนเฟิร์ม
+            </label>
+        </div>
     </div>
 
     <!-- ===== Order header ===== -->
