@@ -23,4 +23,7 @@
             <li class="variant-no-sizes">— ยังไม่ระบุไซส์ —</li>
         {% endfor %}
     </ul>
+    {% if v.total_qty %}
+    <div class="variant-total">รวม = {{ v.total_qty }}</div>
+    {% endif %}
 </div>
