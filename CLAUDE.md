@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.6 · อัปเดตล่าสุด 2026-07-02 · migration ล่าสุด `0018_order_waiting_confirm` (สถานะรอคอนเฟิร์ม) · feature ล่าสุด: **รอคอนเฟิร์ม** (checkbox ในฟอร์ม + overlay ดำคลุม print/pick + ซ่อนปุ่ม action + badge ม่วงใน list) · **layout ใบงานตามจำนวนกรอบ** (≤2 กรอบ = รูป 72:28 / 3+ กรอบ = รูปกลาง 78% + grid 4 ช่อง/แถว) · กรอบรวมต่อ variant โชว์เลขล้วน 11pt · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V2.7 · อัปเดตล่าสุด 2026-07-15 · migration ล่าสุด `0019_customer_order_customer_customerprice` (โปรไฟล์ลูกค้า) · feature ล่าสุด: **โปรไฟล์ลูกค้า เฟส 1+1.5** (model `Customer`+`CustomerPrice` + FK `Order.customer` + หน้า `/customers/` + autocomplete ในฟอร์ม + ปุ่มคำนวณยอดจากราคาประจำตัว) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -55,8 +55,9 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | print_date | DateField | วันที่พิมพ์เสื้อ (nullable) |
 | source | CharField | เพจเสื้อเนินสูง / เพจเสื้อคนงาน / เฮีย&เจ๊ / หน้าร้าน / เพจปักผ้า / LINE OA / เพจร้าน Yada / เพจเสื้อทุเรียน / Shopee / Tiktok |
 | **production_place** | CharField | ผลิตที่: ผลิตเอง / ร้านแอม / ร้านแบ้งค์ (default ผลิตเอง) — outsource (≠ผลิตเอง) แสดงสีเขียวใน list/detail/print/ใบมาสเตอร์ |
-| customer_name | CharField | ชื่อลูกค้า (ไม่แสดงในหน้า list แล้ว) |
+| customer_name | CharField | ชื่อลูกค้า (ไม่แสดงในหน้า list แล้ว) — ยังเป็น source of truth ของข้อความบนใบงาน |
 | customer_link | CharField | Facebook URL หรือเบอร์โทร |
+| **customer** | FK→Customer | โปรไฟล์ลูกค้า (SET_NULL, migration 0019) — ใบเก่า=null ปล่อยไว้ (ไม่ backfill), ใบใหม่ผูกอัตโนมัติตอน save ผ่าน `_resolve_customer` |
 | shirt_name | CharField | ชื่องาน/ชื่อเสื้อ |
 | **designer_name** | CharField | คนออกแบบ (กราฟิกที่ทำดีไซน์ — คนละคนกับ created_by; blank ได้) แสดง detail/print/form |
 | **design_doc_number** | CharField | เลขใบงานออกแบบ (อ้างอิงงานออกแบบ; blank ได้) แสดง detail/print/form |
@@ -127,6 +128,28 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - `downscale_image_field(field, max_side=1600, quality=85)` — **module-level helper ใน models.py** เรียกใน `save()` ของ `MasterImage.image`, `ExtraImage.image`, และ `Order.signed_image` (ไม่เขียนซ้ำ)
 - ย่อด้านยาวสุด ≤1600px (รูปเล็กกว่าปล่อยไว้ ไม่ re-encode), JPEG q85 / PNG optimize, EXIF transpose, แก้ในไฟล์เดิม (local fs)
 - มี try/except กันพังทุกชั้น: ไม่มี PIL / `field.path` ใช้ไม่ได้ / เปิดไฟล์ไม่ได้ → return เงียบ ไม่ block การ save
+
+### Customer (โปรไฟล์ลูกค้า — เฟส 1 CRM, migration 0019)
+| Field | Type | หมายเหตุ |
+|---|---|---|
+| name | CharField | ชื่อลูกค้า |
+| facebook_link | CharField | ลิงก์ FB (blank ได้) |
+| phone | CharField | เบอร์โทร (blank ได้) |
+| note | TextField | โน้ต (blank ได้) |
+| created_at / updated_at | DateTimeField | auto |
+- **เกิดอัตโนมัติตอน save ใบงาน** ผ่าน `_resolve_customer(request, order)`: customer_id จาก autocomplete → match ชื่อ+ลิงก์ตรงเป๊ะ → สร้างใหม่. สร้างมือได้จากปุ่ม "+ เพิ่มลูกค้า" หน้า `/customers/`
+- หน้า: `/customers/` (list+ค้นหา+เพิ่ม, `customer_list`) · `/customers/<id>/` (โปรไฟล์: แก้ข้อมูล+ตารางราคา+ประวัติใบงาน, `customer_detail`) · API `/api/customers/?q=` (`customer_search_api`, JSON 10 คนแรก พร้อม prices — ใช้ทำ autocomplete) — ทั้งหมด `@login_required` (viewer cookie เข้าไม่ได้ เพราะเห็นราคา)
+- navbar ปุ่ม "👥 ลูกค้า" (เฉพาะ user login)
+
+### CustomerPrice (ราคาประจำตัวลูกค้า — หลายแถว/คน)
+| Field | Type | หมายเหตุ |
+|---|---|---|
+| customer | FK → Customer | related_name='prices' |
+| label / price | CharField / Decimal | เช่น "คอกลมแขนสั้น" 120 |
+| order_index | int | ลำดับ |
+- save แบบ **wipe-and-recreate** จาก parallel arrays (`price_label[]/price_value[]`) ใน `_save_customer_prices` — pattern เดียวกับ ExtraNameRow. แถวราคาไม่ใช่ตัวเลข → ข้าม
+- **ฟอร์มใบงาน:** เลือกลูกค้าจาก autocomplete → ปุ่มราคาใต้กล่องเงิน (`#customer-price-panel`) กด = `total_price := จำนวนตัวรวม × ราคา` (client-side, แก้มือทับได้). หน้าแก้ไข inject ราคาผ่าน `{{ customer_prices|json_script }}` (view ส่ง `_customer_prices_payload`)
+- **hidden `customer_id`** ในฟอร์ม: JS เซ็ตเมื่อเลือกจาก dropdown, เคลียร์เมื่อพิมพ์ชื่อเอง (server จะ match/สร้างใหม่)
 
 ### อื่นๆ
 - **Tailor** — ช่างเย็บ (M2M กับ Order)
@@ -210,7 +233,19 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
   - list: badge ม่วง `#6a1b9a` ผ่าน `_order_row_cells.html` (โชว์ทั้ง 2 โซน)
 - **layout ใบงานตามจำนวนกรอบ (print + pick):** ≤2 กรอบ = รูปซ้าย 72:28 / 3+ กรอบ = รูปกลาง 78% + grid 4 ช่อง/แถว (ดูรายละเอียดหัวข้อ Print view ด้านบน) — เช็คแล้วการแบ่งหน้าถูก (`break-inside: avoid` ยกทั้งรายการขึ้นหน้าใหม่ ไม่ตัดกลางกรอบ)
 
+**เพิ่มล่าสุด (V2.7 · 2026-07-15): โปรไฟล์ลูกค้า เฟส 1+1.5**
+- **Customer + CustomerPrice + Order.customer FK** (ดู Data Models) — additive ล้วน ใบเก่า 1,257 ใบไม่ถูกแตะ (customer=null)
+- **หน้า /customers/** — รายชื่อ+ค้นหา (ชื่อ/ลิงก์/เบอร์) + จำนวนใบ + สั่งล่าสุด + badge ราคา + ปุ่ม "+ เพิ่มลูกค้า" (POST ชื่ออย่างเดียว → เข้าโปรไฟล์ไปเติมต่อ)
+- **หน้าโปรไฟล์ /customers/<id>/** — แก้ข้อมูล + ตารางราคา add/remove แถว (wipe-and-recreate) + ประวัติใบงานของลูกค้าคนนั้น (ลิงก์เข้า detail)
+- **ฟอร์มใบงาน:** พิมพ์ชื่อลูกค้า → dropdown แนะนำลูกค้าเดิม (แสดงลิงก์/เบอร์/จำนวนราคา) เลือกแล้วเติมชื่อ+ลิงก์+ผูกโปรไฟล์ · ไม่เลือก = server match ชื่อ+ลิงก์เป๊ะ หรือสร้างโปรไฟล์ใหม่ให้เอง (ฐานลูกค้าโตเองจากการใช้งานปกติ)
+- **ปุ่มคำนวณราคา:** ลูกค้ามีราคาประจำตัว → ปุ่มราคาโผล่ใต้กล่องเงิน กด = ยอดรวม := จำนวนตัวรวม × ราคา (ไม่บังคับ แก้มือทับได้)
+- **แผนเฟสถัดไป (คุยไว้ 2026-07-15):** เฟส 2 = ใบงานชุดเดียวกัน reference กัน (`parent_order` self-FK + ปุ่ม "สร้างใบเพิ่มจากใบนี้" + แบนเนอร์เตือนใน detail/print) · เฟส 3 = เชื่อมระบบ Brief (dr89.cloud/brief — Job.order_ref มีอยู่แล้วรอ UI, ทำ endpoint JSON ฝั่ง Brief + proxy ผ่าน 127.0.0.1:8600 + autocomplete ที่ช่อง design_doc_number) · เฟส 4 = tag/กลุ่มลูกค้า + export CSV · เฟส 5 = dashboard สถิติ
+
 ### 🔜 ค้าง / อนาคต
+- [ ] **เฟส 2:** ใบงานชุดเดียวกัน reference กัน (parent_order) — ดูแผนใน V2.7 ด้านบน
+- [ ] **เฟส 3:** เชื่อมระบบ Brief (autocomplete เลขใบงานออกแบบ + ลิงก์สองทาง)
+- [ ] **เฟส 4:** tag/กลุ่มลูกค้า + export รายชื่อ (CRM) · **เฟส 5:** dashboard สถิติ
+- [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
 - [ ] **เปลี่ยน VPS deploy เป็น git pull** (เลิก scp) — กันปัญหา branch ไม่ตรง
 - [ ] ลบ db.sqlite3 ขยะบน VPS (`rm -f /opt/order/db.sqlite3`)
