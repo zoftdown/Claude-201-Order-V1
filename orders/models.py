@@ -99,6 +99,45 @@ def downscale_image_field(field, max_side=1600, quality=85):
         img.save(path)
 
 
+class Customer(models.Model):
+    """โปรไฟล์ลูกค้า — ฐานลูกค้าของร้าน (1 คน = 1 โปรไฟล์).
+
+    Orders ที่สร้างใหม่จะผูกมาที่นี่ผ่าน Order.customer; ใบเก่าก่อนมี model นี้
+    มีแค่ customer_name/customer_link (free text) และไม่ถูกผูก — ปล่อยไว้
+    (ผูกมือทีหลังได้จากหน้าโปรไฟล์)."""
+    name = models.CharField('ชื่อลูกค้า', max_length=200)
+    facebook_link = models.CharField('Facebook/ลิงก์', max_length=500, blank=True)
+    phone = models.CharField('เบอร์โทร', max_length=50, blank=True)
+    note = models.TextField('โน้ต', blank=True)
+    created_at = models.DateTimeField('สร้างเมื่อ', auto_now_add=True)
+    updated_at = models.DateTimeField('แก้ไขล่าสุด', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'ลูกค้า'
+        verbose_name_plural = 'ลูกค้า'
+
+    def __str__(self):
+        return self.name
+
+
+class CustomerPrice(models.Model):
+    """ราคาประจำตัวลูกค้า — หลายรายการต่อคน (เช่น "คอกลมแขนสั้น" 120 / "โปโล" 185).
+    ใช้เป็นตัวช่วยคำนวณยอดรวมในฟอร์มใบงาน (จำนวนตัว × ราคา) — ไม่บังคับ."""
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='prices')
+    label = models.CharField('รายการ', max_length=100)
+    price = models.DecimalField('ราคา/ตัว', max_digits=10, decimal_places=2)
+    order_index = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order_index', 'id']
+        verbose_name = 'ราคาลูกค้า'
+        verbose_name_plural = 'ราคาลูกค้า'
+
+    def __str__(self):
+        return f'{self.customer.name} - {self.label} {self.price}'
+
+
 class Order(models.Model):
     SOURCE_CHOICES = [
         ('เพจเสื้อเนินสูง', 'เพจเสื้อเนินสูง'),
@@ -139,6 +178,12 @@ class Order(models.Model):
     production_place = models.CharField('ผลิตที่', max_length=20, choices=PRODUCTION_CHOICES, default='ผลิตเอง')
     customer_name = models.CharField('ชื่อลูกค้า', max_length=200)
     customer_link = models.CharField('Facebook/เบอร์โทร', max_length=500, blank=True)
+    # โปรไฟล์ลูกค้า (เฟส 1 CRM) — nullable: ใบเก่าไม่ถูกผูก, ใบใหม่ผูกอัตโนมัติ
+    # ตอน save (เลือกจาก autocomplete หรือ match/สร้างจากชื่อ+ลิงก์).
+    # customer_name/customer_link ยังเป็น source of truth ของ "ข้อความบนใบงาน" เสมอ.
+    customer = models.ForeignKey('Customer', on_delete=models.SET_NULL,
+                                 null=True, blank=True, related_name='orders',
+                                 verbose_name='โปรไฟล์ลูกค้า')
     shirt_name = models.CharField('ชื่องาน/ชื่อเสื้อ', max_length=200)
     # คนออกแบบ + เลขใบงานออกแบบ — คนละคนกับ created_by (คนคีย์ออร์เดอร์).
     # designer_name = กราฟิกที่ทำดีไซน์ (มีหลายคน), design_doc_number = อ้างอิงงานออกแบบ.

@@ -1,5 +1,21 @@
 from django.contrib import admin
-from .models import Order, OrderItem, MasterImage, ShirtVariant, Tailor, StageLog, DepartmentPIN
+from .models import (
+    Order, OrderItem, MasterImage, ShirtVariant, Tailor, StageLog,
+    DepartmentPIN, Customer, CustomerPrice,
+)
+
+
+class CustomerPriceInline(admin.TabularInline):
+    model = CustomerPrice
+    extra = 1
+    fields = ['order_index', 'label', 'price']
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ['name', 'facebook_link', 'phone', 'created_at']
+    search_fields = ['name', 'facebook_link', 'phone']
+    inlines = [CustomerPriceInline]
 
 
 class OrderItemInline(admin.TabularInline):
