@@ -110,9 +110,17 @@
                         {% endif %}
                     </div>
                     <div class="row g-2 mt-1">
-                        <div class="col-md-6">
+                        <div class="col-md-6 position-relative">
                             <label class="form-label">ชื่อลูกค้า <span class="text-danger">*</span></label>
                             {{ form.customer_name }}
+                            {# โปรไฟล์ลูกค้าที่เลือกจาก autocomplete — JS เคลียร์เมื่อพิมพ์ชื่อใหม่เอง #}
+                            <input type="hidden" name="customer_id" id="customer-id-field"
+                                   value="{% if order and order.customer_id %}{{ order.customer_id }}{% endif %}">
+                            <div id="customer-suggest" class="list-group position-absolute shadow"
+                                 style="z-index:1050; display:none; top:100%; left:0; right:0; max-height:260px; overflow-y:auto;"></div>
+                            <div id="customer-linked" class="small mt-1" style="display:none; color:#198754;">
+                                🔗 ผูกโปรไฟล์: <a href="#" id="customer-linked-view" target="_blank" rel="noopener">ดูโปรไฟล์ลูกค้า</a>
+                            </div>
                             {% if form.customer_name.errors %}<div class="text-danger small">{{ form.customer_name.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-md-6">
@@ -160,6 +168,12 @@
                                 <label class="form-label mb-1">คงเหลือ</label>
                                 <div class="form-control form-control-sm bg-white fw-bold" id="remaining-display">0</div>
                             </div>
+                        </div>
+                        {# ราคาประจำตัวลูกค้า (จากโปรไฟล์) — โชว์เมื่อเลือกลูกค้าที่มีราคา,
+                           กดราคา = ยอดรวม := จำนวนตัวรวม × ราคา (แก้มือทับได้เสมอ) #}
+                        <div id="customer-price-panel" class="mt-2 pt-2" style="display:none; border-top:1px dashed #adb5bd;">
+                            <div class="small fw-bold mb-1">💡 ราคาประจำตัวลูกค้า <span class="text-muted fw-normal">(กดเพื่อคำนวณยอดรวม)</span></div>
+                            <div id="customer-price-list" class="d-flex flex-wrap gap-1"></div>
                         </div>
                     </div>
                     <div class="mt-3">
@@ -594,6 +608,8 @@
 {% endblock %}
 
 {% block scripts %}
+{# ราคาประจำตัวของลูกค้าที่ผูกกับใบงานนี้ (หน้าแก้ไข) — [] เมื่อไม่มี #}
+{{ customer_prices|json_script:"customer-prices-data" }}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 <script>
 (function () {
@@ -639,6 +655,126 @@ function calcRemaining() {
 totalPriceField.addEventListener('input', calcRemaining);
 depositField.addEventListener('input', calcRemaining);
 calcRemaining();
+
+// =================== Customer profile: autocomplete + price calc ===================
+// พิมพ์ชื่อ → แนะนำลูกค้าเดิม (เลือกแล้วเติมชื่อ+ลิงก์ + ผูก customer_id) /
+// พิมพ์เองไม่เลือก → เคลียร์ id ให้ server match/สร้างโปรไฟล์ใหม่จากชื่อ+ลิงก์.
+// ลูกค้าที่มีราคาประจำตัว → ปุ่มราคาใต้กล่องเงิน กด = ยอดรวม := จำนวนตัวรวม × ราคา
+const customerNameField = document.getElementById('id_customer_name');
+const customerLinkField = document.getElementById('id_customer_link');
+const customerIdField = document.getElementById('customer-id-field');
+const suggestBox = document.getElementById('customer-suggest');
+const linkedNote = document.getElementById('customer-linked');
+const linkedView = document.getElementById('customer-linked-view');
+const pricePanel = document.getElementById('customer-price-panel');
+const priceList = document.getElementById('customer-price-list');
+const CUSTOMER_API = '{% url "customer_search_api" %}';
+const CUSTOMER_DETAIL_URL = '{% url "customer_detail" 0 %}';
+
+function customerDetailUrl(id) {
+    return CUSTOMER_DETAIL_URL.replace('/0/', '/' + id + '/');
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+}
+
+function grandTotalQty() {
+    let grand = 0;
+    document.querySelectorAll('.item-form').forEach(item => {
+        item.querySelectorAll('.variant-form').forEach(v => { grand += variantTotal(v); });
+    });
+    return grand;
+}
+
+function renderCustomerPrices(prices) {
+    priceList.innerHTML = '';
+    if (!prices || !prices.length) { pricePanel.style.display = 'none'; return; }
+    prices.forEach(p => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary btn-sm';
+        btn.textContent = `${p.label} ${p.price}`;
+        btn.addEventListener('click', function () {
+            const qty = grandTotalQty();
+            if (!qty) { alert('ยังไม่ได้ใส่จำนวนเสื้อ — ใส่ไซส์/จำนวนก่อน แล้วค่อยกดคำนวณ'); return; }
+            const total = qty * p.price;
+            totalPriceField.value = Number.isInteger(total) ? total : total.toFixed(2);
+            calcRemaining();
+            totalPriceField.style.background = '#d1e7dd';
+            setTimeout(() => { totalPriceField.style.background = ''; }, 800);
+        });
+        priceList.appendChild(btn);
+    });
+    pricePanel.style.display = '';
+}
+
+function setLinkedCustomer(c) {
+    customerIdField.value = c.id;
+    linkedView.href = customerDetailUrl(c.id);
+    linkedNote.style.display = '';
+    renderCustomerPrices(c.prices);
+}
+
+function clearLinkedCustomer() {
+    customerIdField.value = '';
+    linkedNote.style.display = 'none';
+    renderCustomerPrices([]);
+}
+
+let suggestTimer = null;
+customerNameField.addEventListener('input', function () {
+    clearLinkedCustomer();
+    const q = customerNameField.value.trim();
+    clearTimeout(suggestTimer);
+    if (!q) { suggestBox.style.display = 'none'; return; }
+    suggestTimer = setTimeout(async function () {
+        try {
+            const resp = await fetch(CUSTOMER_API + '?q=' + encodeURIComponent(q));
+            const data = await resp.json();
+            suggestBox.innerHTML = '';
+            if (!data.results.length) { suggestBox.style.display = 'none'; return; }
+            data.results.forEach(c => {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.className = 'list-group-item list-group-item-action py-1 px-2';
+                const sub = [c.facebook_link, c.phone].filter(Boolean).join(' · ');
+                const priceHint = c.prices.length ? ` <span class="badge text-bg-light border">฿ ${c.prices.length} ราคา</span>` : '';
+                a.innerHTML = `<div class="fw-bold small">${escapeHtml(c.name)}${priceHint}</div>` +
+                    (sub ? `<div class="text-muted" style="font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(sub)}</div>` : '');
+                a.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    customerNameField.value = c.name;
+                    if (c.facebook_link) customerLinkField.value = c.facebook_link;
+                    setLinkedCustomer(c);
+                    suggestBox.style.display = 'none';
+                });
+                suggestBox.appendChild(a);
+            });
+            suggestBox.style.display = '';
+        } catch (err) {
+            suggestBox.style.display = 'none';
+        }
+    }, 250);
+});
+
+document.addEventListener('click', function (e) {
+    if (!suggestBox.contains(e.target) && e.target !== customerNameField) {
+        suggestBox.style.display = 'none';
+    }
+});
+
+// หน้าแก้ไข: ใบงานผูกโปรไฟล์อยู่แล้ว → โชว์ลิงก์โปรไฟล์ + ราคา (inject จาก view) ทันที
+if (customerIdField.value) {
+    linkedView.href = customerDetailUrl(customerIdField.value);
+    linkedNote.style.display = '';
+    const initPrices = document.getElementById('customer-prices-data');
+    if (initPrices) {
+        try { renderCustomerPrices(JSON.parse(initPrices.textContent)); } catch (err) {}
+    }
+}
 
 // =================== Sizes (per variant) ===================
 function getSizesField(variantEl) {
