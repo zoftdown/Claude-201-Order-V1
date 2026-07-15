@@ -1,12 +1,13 @@
 from datetime import datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import PermissionDenied
-from django.db.models import Max, OuterRef, Q, Subquery
-from django.http import HttpResponse
+from django.db.models import Count, Max, OuterRef, Q, Subquery
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -27,7 +28,8 @@ from .forms import (
     SLEEVE_SUGGESTIONS,
 )
 from .models import (
-    DepartmentPIN, ExtraImage, ExtraNameRow, MasterImage, Order, StageLog, Tailor,
+    Customer, CustomerPrice, DepartmentPIN, ExtraImage, ExtraNameRow,
+    MasterImage, Order, StageLog, Tailor,
 )
 from .qr_utils import generate_qr_svg
 
@@ -362,9 +364,33 @@ def _save_extra_name_rows(request, order):
         ExtraNameRow.objects.bulk_create(rows)
 
 
+def _resolve_customer(request, order):
+    """หาโปรไฟล์ Customer ให้ใบงานนี้ (เฟส 1 CRM).
+
+    ลำดับ: customer_id ที่เลือกจาก autocomplete → match ชื่อ+ลิงก์ตรงเป๊ะกับ
+    โปรไฟล์เดิม → สร้างโปรไฟล์ใหม่. customer_name/customer_link บนใบงาน
+    ยังเป็นข้อความอิสระเหมือนเดิม — โปรไฟล์เป็นแค่ตัวเชื่อม."""
+    cid = (request.POST.get('customer_id') or '').strip()
+    if cid.isdigit():
+        picked = Customer.objects.filter(pk=int(cid)).first()
+        if picked:
+            return picked
+    name = (order.customer_name or '').strip()
+    if not name:
+        return None
+    link = (order.customer_link or '').strip()
+    existing = (Customer.objects
+                .filter(name=name, facebook_link=link)
+                .order_by('id').first())
+    if existing:
+        return existing
+    return Customer.objects.create(name=name, facebook_link=link)
+
+
 def _save_with_variants(form, item_formset, variant_formsets, request, *, set_created_date):
     """Persist Order + items + variants. Caller has confirmed everything is valid."""
     order = form.save(commit=False)
+    order.customer = _resolve_customer(request, order)
     if set_created_date and not order.created_date:
         order.created_date = timezone.now().date()
     # Record who created the order — only on create, never overwrite on edit.
@@ -393,6 +419,13 @@ def _save_with_variants(form, item_formset, variant_formsets, request, *, set_cr
     return order
 
 
+def _customer_prices_payload(customer):
+    """ตารางราคาของลูกค้าเป็น list ที่ json_script ใช้ได้ — [] เมื่อไม่ผูกลูกค้า."""
+    if not customer:
+        return []
+    return [{'label': p.label, 'price': float(p.price)} for p in customer.prices.all()]
+
+
 def _form_render_context(form, item_formset, variant_formsets, **extra):
     """Common template context — pairs items with their variant formsets."""
     items_with_variants = list(zip(item_formset.forms, variant_formsets))
@@ -404,6 +437,7 @@ def _form_render_context(form, item_formset, variant_formsets, **extra):
         'empty_variant_formset': _empty_variant_formset(),
         'collar_suggestions': COLLAR_SUGGESTIONS,
         'sleeve_suggestions': SLEEVE_SUGGESTIONS,
+        'customer_prices': [],
     }
     ctx.update(extra)
     return ctx
@@ -474,6 +508,7 @@ def order_edit(request, pk):
         title=f'แก้ไขออร์เดอร์ {order.order_number}',
         variant_errors=variant_errors,
         is_admin=is_admin,
+        customer_prices=_customer_prices_payload(order.customer),
     ))
 
 
@@ -1284,3 +1319,131 @@ def custom_search(request):
         'date_to': date_to,
         'has_filter': has_filter,
     })
+
+
+# ---------------------------------------------------------------------------
+# Customer profiles (เฟส 1 CRM): list / detail+edit / autocomplete API
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def customer_list(request):
+    """รายชื่อลูกค้าทั้งหมด + ค้นหา (ชื่อ/ลิงก์/เบอร์) + สรุปจำนวนใบต่อคน."""
+    q = (request.GET.get('q') or '').strip()
+    customers = (
+        Customer.objects
+        .annotate(order_count=Count('orders', distinct=True),
+                  last_order=Max('orders__created_date'))
+        .prefetch_related('prices')
+        .order_by('name')
+    )
+    if q:
+        customers = customers.filter(
+            Q(name__icontains=q) |
+            Q(facebook_link__icontains=q) |
+            Q(phone__icontains=q)
+        )
+    return render(request, 'orders/customer_list.html', {
+        'customers': customers,
+        'q': q,
+    })
+
+
+def _save_customer_prices(request, customer):
+    """Rebuild ตารางราคาของลูกค้าจาก parallel POST arrays
+    (price_label[] / price_value[]) — wipe-and-recreate pattern เดียวกับ
+    ExtraNameRow. แถวที่ label+ราคาว่างหมด หรือราคาไม่ใช่ตัวเลข → ข้าม."""
+    labels = request.POST.getlist('price_label')
+    values = request.POST.getlist('price_value')
+    customer.prices.all().delete()
+    rows = []
+    for i in range(max(len(labels), len(values))):
+        label = (labels[i] if i < len(labels) else '').strip()
+        raw = (values[i] if i < len(values) else '').strip()
+        if not label and not raw:
+            continue
+        try:
+            price = Decimal(raw)
+        except (InvalidOperation, ValueError):
+            continue
+        rows.append(CustomerPrice(
+            customer=customer,
+            label=label or 'ราคาต่อตัว',
+            price=price,
+            order_index=i,
+        ))
+    if rows:
+        CustomerPrice.objects.bulk_create(rows)
+
+
+@login_required
+def customer_detail(request, pk):
+    """โปรไฟล์ลูกค้า: แก้ข้อมูล + ตารางราคา + ประวัติใบงานทั้งหมดของคนนั้น."""
+    customer = get_object_or_404(Customer, pk=pk)
+
+    if request.method == 'POST':
+        name = (request.POST.get('name') or '').strip()
+        if name:
+            customer.name = name
+            customer.facebook_link = (request.POST.get('facebook_link') or '').strip()
+            customer.phone = (request.POST.get('phone') or '').strip()
+            customer.note = (request.POST.get('note') or '').strip()
+            customer.save()
+            _save_customer_prices(request, customer)
+            messages.success(request, 'บันทึกข้อมูลลูกค้าแล้ว')
+            return redirect('customer_detail', pk=customer.pk)
+        messages.error(request, 'กรุณาระบุชื่อลูกค้า')
+
+    orders = (
+        customer.orders
+        .prefetch_related('items', 'items__variants')
+        .order_by('-created_date', '-id')
+    )
+    return render(request, 'orders/customer_detail.html', {
+        'customer': customer,
+        'orders': orders,
+        'prices': list(customer.prices.all()),
+    })
+
+
+@login_required
+def customer_search_api(request):
+    """Autocomplete ในฟอร์มใบงาน: ?q=... → JSON ลูกค้า 10 คนแรกที่ match
+    (ชื่อ/ลิงก์/เบอร์) พร้อมตารางราคาของแต่ละคน (ใช้ทำปุ่มคำนวณยอดรวม)."""
+    q = (request.GET.get('q') or '').strip()
+    results = []
+    if q:
+        customers = (
+            Customer.objects
+            .filter(Q(name__icontains=q) |
+                    Q(facebook_link__icontains=q) |
+                    Q(phone__icontains=q))
+            .prefetch_related('prices')
+            .order_by('name')[:10]
+        )
+        for c in customers:
+            results.append({
+                'id': c.pk,
+                'name': c.name,
+                'facebook_link': c.facebook_link,
+                'phone': c.phone,
+                'prices': [
+                    {'label': p.label, 'price': float(p.price)}
+                    for p in c.prices.all()
+                ],
+            })
+    return JsonResponse({'results': results})
+
+
+@login_required
+@require_POST
+def customer_create(request):
+    """สร้างโปรไฟล์ลูกค้ามือ (ปุ่มบนหน้ารายชื่อ) — กรอกแค่ชื่อ แล้วพาไป
+    หน้าโปรไฟล์เพื่อเติมลิงก์/เบอร์/ราคา. ปกติโปรไฟล์เกิดอัตโนมัติจากใบงาน
+    — ปุ่มนี้ไว้เคสตั้งราคาล่วงหน้าก่อนมีใบแรก."""
+    name = (request.POST.get('name') or '').strip()
+    if not name:
+        messages.error(request, 'กรุณาระบุชื่อลูกค้า')
+        return redirect('customer_list')
+    customer = Customer.objects.create(name=name)
+    return redirect('customer_detail', pk=customer.pk)

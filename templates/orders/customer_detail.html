@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}ลูกค้า - {{ customer.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="m-0">👤 {{ customer.name }}</h4>
+    <a href="{% url 'customer_list' %}" class="btn btn-outline-secondary btn-sm">← รายชื่อลูกค้า</a>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+<div class="row g-3">
+    <!-- ฝั่งซ้าย: ข้อมูล + ตารางราคา (ฟอร์มเดียว save พร้อมกัน) -->
+    <div class="col-lg-5">
+        <form method="post">
+            {% csrf_token %}
+            <div class="card mb-3" style="border-left:4px solid #4a79c9;">
+                <div class="card-header fw-bold" style="background:#eef2fb;">ข้อมูลลูกค้า</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label">ชื่อลูกค้า <span class="text-danger">*</span></label>
+                        <input type="text" name="name" value="{{ customer.name }}" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Facebook/ลิงก์</label>
+                        <input type="text" name="facebook_link" value="{{ customer.facebook_link }}" class="form-control form-control-sm">
+                        {% if customer.facebook_link %}
+                        <a href="{{ customer.facebook_link }}" target="_blank" rel="noopener" class="small">เปิดลิงก์ ↗</a>
+                        {% endif %}
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">เบอร์โทร</label>
+                        <input type="text" name="phone" value="{{ customer.phone }}" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">โน้ต</label>
+                        <textarea name="note" rows="2" class="form-control form-control-sm">{{ customer.note }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3" style="border-left:4px solid #12b886;">
+                <div class="card-header d-flex justify-content-between align-items-center" style="background:#e6f7f1;">
+                    <span class="fw-bold">💰 ราคาประจำตัว <small class="text-muted fw-normal">(บาท/ตัว)</small></span>
+                    <button type="button" class="btn btn-success btn-sm" id="add-price-row">+ เพิ่มราคา</button>
+                </div>
+                <div class="card-body p-2">
+                    <table class="table table-sm m-0" id="price-table">
+                        <thead>
+                            <tr><th>รายการ (เช่น คอกลมแขนสั้น)</th><th style="width:120px;">ราคา/ตัว</th><th style="width:40px;"></th></tr>
+                        </thead>
+                        <tbody>
+                            {% for p in prices %}
+                            <tr>
+                                <td><input type="text" name="price_label" value="{{ p.label }}" class="form-control form-control-sm"></td>
+                                <td><input type="number" name="price_value" value="{{ p.price|floatformat:'-2' }}" step="0.01" min="0" class="form-control form-control-sm"></td>
+                                <td><button type="button" class="btn btn-outline-danger btn-sm btn-del-price">✕</button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if not prices %}<div class="text-muted small p-2" id="no-price-hint">ยังไม่มีราคา — กด "+ เพิ่มราคา"</div>{% endif %}
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">💾 บันทึกข้อมูลลูกค้า</button>
+        </form>
+    </div>
+
+    <!-- ฝั่งขวา: ประวัติใบงาน -->
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header fw-bold" style="background:#f8f9fa;">
+                📋 ประวัติใบงาน <span class="badge bg-primary">{{ orders|length }} ใบ</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle m-0">
+                    <thead class="table-light">
+                        <tr><th>วันที่</th><th>เลข Order</th><th>ชื่อเสื้อ</th><th class="text-center">จำนวน</th><th>สถานะ</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for o in orders %}
+                        <tr>
+                            <td>{{ o.created_date|date:"j M Y" }}</td>
+                            <td><a href="{% url 'order_detail' o.pk %}" class="text-decoration-none fw-bold">{{ o.order_number }}</a></td>
+                            <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ o.shirt_name }}">{{ o.shirt_name }}</td>
+                            <td class="text-center">{{ o.total_qty }}</td>
+                            <td><span class="badge {% if o.status == 'ส่งแล้ว' %}bg-success{% elif o.status == 'เสร็จแล้ว' %}bg-info text-dark{% elif o.status == 'กำลังผลิต' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ o.status }}</span></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">ยังไม่มีใบงานที่ผูกกับลูกค้าคนนี้</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const tbody = document.querySelector('#price-table tbody');
+
+    document.getElementById('add-price-row').addEventListener('click', function () {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" name="price_label" class="form-control form-control-sm" placeholder="เช่น คอกลมแขนสั้น"></td>
+            <td><input type="number" name="price_value" step="0.01" min="0" class="form-control form-control-sm"></td>
+            <td><button type="button" class="btn btn-outline-danger btn-sm btn-del-price">✕</button></td>`;
+        tbody.appendChild(tr);
+        const hint = document.getElementById('no-price-hint');
+        if (hint) hint.remove();
+        tr.querySelector('input').focus();
+    });
+
+    document.addEventListener('click', function (e) {
+        if (e.target.classList.contains('btn-del-price')) {
+            e.target.closest('tr').remove();
+        }
+    });
+})();
+</script>
+{% endblock %}

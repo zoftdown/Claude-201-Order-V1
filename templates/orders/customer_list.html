@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}ลูกค้า{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="m-0">👥 ลูกค้า <span class="badge bg-secondary">{{ customers|length }} คน</span></h4>
+    <div class="d-flex gap-2 flex-wrap">
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
+                   style="min-width:220px;" placeholder="ค้นหา ชื่อ / ลิงก์ FB / เบอร์โทร">
+            <button type="submit" class="btn btn-primary btn-sm">ค้นหา</button>
+            {% if q %}<a href="{% url 'customer_list' %}" class="btn btn-outline-secondary btn-sm">ล้าง</a>{% endif %}
+        </form>
+        <form method="post" action="{% url 'customer_create' %}" class="d-flex gap-2">
+            {% csrf_token %}
+            <input type="text" name="name" class="form-control form-control-sm" style="min-width:180px;"
+                   placeholder="ชื่อลูกค้าใหม่" required>
+            <button type="submit" class="btn btn-success btn-sm text-nowrap">+ เพิ่มลูกค้า</button>
+        </form>
+    </div>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+<div class="table-responsive">
+    <table class="table table-hover table-sm align-middle bg-white">
+        <thead class="table-light">
+            <tr>
+                <th>ชื่อลูกค้า</th>
+                <th>Facebook/ลิงก์</th>
+                <th>เบอร์โทร</th>
+                <th class="text-center">ใบงาน</th>
+                <th>สั่งล่าสุด</th>
+                <th>ราคาประจำตัว</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in customers %}
+            <tr>
+                <td class="fw-bold"><a href="{% url 'customer_detail' c.pk %}" class="text-decoration-none">{{ c.name }}</a></td>
+                <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    {% if c.facebook_link %}<a href="{{ c.facebook_link }}" target="_blank" rel="noopener" title="{{ c.facebook_link }}">{{ c.facebook_link }}</a>{% else %}—{% endif %}
+                </td>
+                <td>{{ c.phone|default:"—" }}</td>
+                <td class="text-center"><span class="badge bg-primary">{{ c.order_count }}</span></td>
+                <td>{{ c.last_order|date:"j M Y"|default:"—" }}</td>
+                <td>
+                    {% for p in c.prices.all %}
+                        <span class="badge text-bg-light border">{{ p.label }} {{ p.price|floatformat:"-2" }}</span>
+                    {% empty %}—{% endfor %}
+                </td>
+                <td class="text-end">
+                    <a href="{% url 'customer_detail' c.pk %}" class="btn btn-outline-primary btn-sm">โปรไฟล์</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center text-muted py-4">
+                {% if q %}ไม่พบลูกค้าที่ค้นหา{% else %}ยังไม่มีโปรไฟล์ลูกค้า — ระบบจะสร้างให้อัตโนมัติเมื่อสร้างใบงานใหม่{% endif %}
+            </td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
