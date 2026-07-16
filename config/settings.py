@@ -30,6 +30,10 @@ BRIEF_API_BASE = os.environ.get('BRIEF_API_BASE', 'http://127.0.0.1:8600')
 BRIEF_API_TOKEN = os.environ.get('BRIEF_API_TOKEN', '')
 BRIEF_PUBLIC_BASE = os.environ.get('BRIEF_PUBLIC_BASE', 'http://127.0.0.1:8600')
 
+# รหัสเข้าหน้า "สถิติร้าน" (tab stats ใน /reports/) — ชั้นเพิ่มจาก login/admin
+# เพราะเป็นข้อมูลยอดขายรวมของร้าน. ใส่ถูกครั้งเดียวจำใน session.
+STATS_PIN = os.environ.get('STATS_PIN', '265424')
+
 # --- Authentication redirects ---
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'order_list'

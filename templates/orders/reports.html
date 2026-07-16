@@ -130,6 +130,27 @@
             {% endif %}
 
         {% elif current_report == 'stats' %}
+            {% if stats_locked %}
+            {# ล็อกด้วยรหัสอีกชั้น — ใส่ถูกครั้งเดียวจำใน session #}
+            <div class="d-flex justify-content-center py-5">
+                <div class="card shadow-sm" style="max-width:360px; width:100%;">
+                    <div class="card-body text-center p-4">
+                        <div style="font-size:42px;">🔒</div>
+                        <h5 class="mb-1">สถิติร้าน</h5>
+                        <p class="text-muted small mb-3">หน้านี้ต้องใส่รหัสก่อนเข้าดู</p>
+                        <form method="post" action="?report=stats">
+                            {% csrf_token %}
+                            <input type="password" name="stats_pin" class="form-control text-center fs-4 mb-2"
+                                   inputmode="numeric" autocomplete="off" placeholder="••••••" autofocus required>
+                            {% if stats_pin_error %}
+                            <div class="text-danger small mb-2">รหัสไม่ถูกต้อง ลองใหม่อีกครั้ง</div>
+                            {% endif %}
+                            <button type="submit" class="btn btn-primary w-100">เข้าดูสถิติ</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% else %}
             <h4 class="mb-1">📈 สถิติร้าน</h4>
             <p class="text-muted small mb-3">12 เดือนล่าสุด (ตั้งแต่ {{ stats_start|date:"j M Y" }}) — นับจากวันที่สร้างใบงาน</p>
 
@@ -270,6 +291,7 @@
                 });
             })();
             </script>
+            {% endif %}{# stats_locked #}
         {% endif %}
     </div>
 </div>

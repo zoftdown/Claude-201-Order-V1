@@ -274,7 +274,20 @@ def reports(request):
     elif report == 'over200':
         ctx['over200_rows'] = _report_over200_rows()
     elif report == 'stats':
-        ctx.update(_report_stats_context())
+        # หน้าสถิติมีรหัสอีกชั้น (นอกจาก login+admin) เพราะเป็นยอดขายรวมของร้าน.
+        # ใส่ถูกครั้งเดียว → จำใน session (หมดเมื่อ logout/session หมดอายุ)
+        if not request.session.get('stats_unlocked'):
+            if request.method == 'POST':
+                from django.utils.crypto import constant_time_compare
+                pin = (request.POST.get('stats_pin') or '').strip()
+                if constant_time_compare(pin, settings.STATS_PIN):
+                    request.session['stats_unlocked'] = True
+                else:
+                    ctx['stats_pin_error'] = True
+        if request.session.get('stats_unlocked'):
+            ctx.update(_report_stats_context())
+        else:
+            ctx['stats_locked'] = True
 
     return render(request, 'orders/reports.html', ctx)
 

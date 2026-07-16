@@ -275,6 +275,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **tab "📈 สถิติร้าน"** ใน `/reports/` (admin-only เหมือน tab อื่น) — `_report_stats_context()` รวมยอด 12 เดือนล่าสุดใน app layer รอบเดียว (total_qty อยู่ใน JSON sizes นับใน DB ไม่ได้; prefetch ตัด N+1; group ลูกค้าด้วย `customer_name` ข้อความ ให้ครอบคลุมใบเก่าที่ไม่มีโปรไฟล์)
 - **เนื้อหา:** การ์ดสรุปเดือนนี้ (ใบ/ตัว/ยอดเงิน/เฉลี่ยต่อใบ) · กราฟแท่งรายเดือน 3 ตัว (ยอดเงิน teal / ใบงาน / จำนวนตัว น้ำเงิน — **คนละกราฟคนละแกน ไม่ทำ dual-axis**) · แหล่งที่มาแท่งแนวนอนเรียงมาก→น้อย · ตารางลูกค้า Top 10 · ตารางรายเดือน (มุมมองตัวเลขของกราฟ)
 - **Chart.js 4.4.1 ผ่าน jsdelivr CDN** (ชุดเดียวกับ Bootstrap) + ข้อมูล inject ผ่าน `json_script` — label เดือนแบบไทย "ก.ค. 69" (พ.ศ. 2 หลัก ชุดเดียวกับเลข order)
+- **ล็อกด้วยรหัสอีกชั้น (2026-07-17):** เปิด tab สถิติต้องใส่รหัสก่อน (นอกจาก login+admin เพราะเป็นยอดขายรวมร้าน) — `STATS_PIN` ใน .env (default `265424`), เทียบด้วย `constant_time_compare`, ใส่ถูกจำใน `request.session['stats_unlocked']` (หมดตอน logout/session หมดอายุ; แต่ละ browser ใส่ครั้งเดียว)
 
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
