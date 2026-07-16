@@ -21,6 +21,15 @@ CSRF_TRUSTED_ORIGINS = os.environ.get(
 # --- Sub-path deployment (dr89.cloud/order/) ---
 FORCE_SCRIPT_NAME = os.environ.get('FORCE_SCRIPT_NAME', '')  # '/order' in production
 
+# --- เฟส 3: เชื่อมระบบ Brief (dr89.cloud/brief) ---
+# BRIEF_API_BASE: ที่อยู่ internal ของ gunicorn ฝั่ง Brief (nginx ตัด /brief/ ให้
+#   แล้ว path ภายในจึงไม่มี prefix) — dev ใช้ runserver 8600 ได้เลย
+# BRIEF_API_TOKEN: shared token (ค่าเดียวกับ .env ฝั่ง Brief) — ว่าง = ปิดฟีเจอร์
+# BRIEF_PUBLIC_BASE: URL ที่ browser ใช้เปิดใบงานออกแบบ (prod = https://dr89.cloud/brief)
+BRIEF_API_BASE = os.environ.get('BRIEF_API_BASE', 'http://127.0.0.1:8600')
+BRIEF_API_TOKEN = os.environ.get('BRIEF_API_TOKEN', '')
+BRIEF_PUBLIC_BASE = os.environ.get('BRIEF_PUBLIC_BASE', 'http://127.0.0.1:8600')
+
 # --- Authentication redirects ---
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'order_list'

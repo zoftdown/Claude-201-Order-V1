@@ -152,9 +152,17 @@
                             {{ form.designer_name }}
                             {% if form.designer_name.errors %}<div class="text-danger small">{{ form.designer_name.errors.0 }}</div>{% endif %}
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-6 position-relative">
                             <label class="form-label">เลขใบงานออกแบบ</label>
                             {{ form.design_doc_number }}
+                            {# เฟส 3: ผูกกับ Job ฝั่งระบบ Brief — JS เซ็ตเมื่อเลือกจาก dropdown, เคลียร์เมื่อพิมพ์เอง #}
+                            <input type="hidden" name="brief_job_id" id="brief-job-id-field"
+                                   value="{% if order and order.brief_job_id %}{{ order.brief_job_id }}{% elif parent_order and parent_order.brief_job_id %}{{ parent_order.brief_job_id }}{% endif %}">
+                            <div id="brief-suggest" class="list-group position-absolute shadow"
+                                 style="z-index:1050; display:none; top:100%; left:0; right:0; max-height:260px; overflow-y:auto;"></div>
+                            <div id="brief-linked" class="small mt-1" style="display:none; color:#0d6efd;">
+                                🎨 <a href="#" id="brief-linked-view" target="_blank" rel="noopener">เปิดใบงานออกแบบ</a>
+                            </div>
                             {% if form.design_doc_number.errors %}<div class="text-danger small">{{ form.design_doc_number.errors.0 }}</div>{% endif %}
                         </div>
                     </div>
@@ -776,6 +784,78 @@ document.addEventListener('click', function (e) {
         suggestBox.style.display = 'none';
     }
 });
+
+// =================== Brief job autocomplete (เลขใบงานออกแบบ, เฟส 3) ===================
+// พิมพ์ D-xxx หรือชื่อลูกค้า → dropdown ใบงานออกแบบจากระบบ Brief (ผ่าน proxy ฝั่ง server).
+// เลือก = เติมเลข + ผูก brief_job_id (ได้ลิงก์เปิดใบงาน + ยิง order_ref กลับตอน save).
+// พิมพ์เอง = เคลียร์การผูก (ข้อความยังเก็บตามที่พิมพ์). Brief ล่ม → dropdown เงียบ ใช้ฟอร์มต่อได้.
+const briefField = document.getElementById('id_design_doc_number');
+const briefIdField = document.getElementById('brief-job-id-field');
+const briefSuggest = document.getElementById('brief-suggest');
+const briefLinked = document.getElementById('brief-linked');
+const briefLinkedView = document.getElementById('brief-linked-view');
+const BRIEF_API = '{% url "brief_jobs_api" %}';
+const BRIEF_PUBLIC = '{{ brief_public_base|escapejs }}';
+
+function briefJobUrl(id) {
+    return BRIEF_PUBLIC + '/job/' + id + '/';
+}
+
+function setLinkedBrief(id) {
+    briefIdField.value = id;
+    briefLinkedView.href = briefJobUrl(id);
+    briefLinked.style.display = '';
+}
+
+function clearLinkedBrief() {
+    briefIdField.value = '';
+    briefLinked.style.display = 'none';
+}
+
+let briefTimer = null;
+briefField.addEventListener('input', function () {
+    clearLinkedBrief();
+    const q = briefField.value.trim();
+    clearTimeout(briefTimer);
+    if (!q) { briefSuggest.style.display = 'none'; return; }
+    briefTimer = setTimeout(async function () {
+        try {
+            const resp = await fetch(BRIEF_API + '?q=' + encodeURIComponent(q));
+            const data = await resp.json();
+            briefSuggest.innerHTML = '';
+            if (!data.results || !data.results.length) { briefSuggest.style.display = 'none'; return; }
+            data.results.forEach(j => {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.className = 'list-group-item list-group-item-action py-1 px-2';
+                const refHint = j.order_ref ? ` <span class="badge text-bg-warning">มีออร์เดอร์ ${escapeHtml(j.order_ref)}</span>` : '';
+                a.innerHTML = `<div class="fw-bold small">${escapeHtml(j.job_number)} · ${escapeHtml(j.customer_name)}${refHint}</div>` +
+                    `<div class="text-muted" style="font-size:11px;">${escapeHtml(j.status)} · ${escapeHtml(j.round)}</div>`;
+                a.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    briefField.value = j.job_number;
+                    setLinkedBrief(j.id);
+                    briefSuggest.style.display = 'none';
+                });
+                briefSuggest.appendChild(a);
+            });
+            briefSuggest.style.display = '';
+        } catch (err) {
+            briefSuggest.style.display = 'none';
+        }
+    }, 250);
+});
+
+document.addEventListener('click', function (e) {
+    if (!briefSuggest.contains(e.target) && e.target !== briefField) {
+        briefSuggest.style.display = 'none';
+    }
+});
+
+// หน้าแก้ไข/ใบเพิ่ม: ผูก Brief job อยู่แล้ว → โชว์ลิงก์ทันที
+if (briefIdField.value) {
+    setLinkedBrief(briefIdField.value);
+}
 
 // หน้าแก้ไข: ใบงานผูกโปรไฟล์อยู่แล้ว → โชว์ลิงก์โปรไฟล์ + ราคา (inject จาก view) ทันที
 if (customerIdField.value) {

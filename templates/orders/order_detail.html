@@ -141,7 +141,13 @@
                     {% if order.design_doc_number %}
                     <div class="oi-row">
                         <span class="oi-label">เลขใบงานออกแบบ</span>
-                        <span class="oi-val">{{ order.design_doc_number }}</span>
+                        <span class="oi-val">
+                            {{ order.design_doc_number }}
+                            {% if order.brief_job_id %}
+                            <a href="{{ brief_public_base }}/job/{{ order.brief_job_id }}/" target="_blank"
+                               rel="noopener" style="color:#0d6efd;">🎨 เปิดใบงานออกแบบ ↗</a>
+                            {% endif %}
+                        </span>
                     </div>
                     {% endif %}
                     <div class="oi-row">

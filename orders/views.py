@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -389,10 +390,38 @@ def _resolve_customer(request, order):
     return Customer.objects.create(name=name, facebook_link=link)
 
 
+def _apply_brief_job(request, order):
+    """เซ็ต order.brief_job_id จาก hidden field (เฟส 3 เชื่อมระบบ Brief).
+    JS เซ็ตเมื่อเลือกจาก autocomplete / เคลียร์เมื่อพิมพ์เลขเอง — ค่าว่าง = ไม่ผูก."""
+    raw = (request.POST.get('brief_job_id') or '').strip()
+    order.brief_job_id = int(raw) if raw.isdigit() else None
+
+
+def _push_order_ref_to_brief(order):
+    """ยิงเลขออร์เดอร์กลับไปเซ็ต Job.order_ref ฝั่ง Brief (ลิงก์สองทาง).
+    best-effort: Brief ล่ม/ยังไม่ตั้ง token → ข้ามเงียบ ไม่ block การ save ใบงาน."""
+    if not (order.brief_job_id and order.design_doc_number):
+        return
+    import urllib.parse
+    import urllib.request
+
+    url = f'{settings.BRIEF_API_BASE}/api/jobs/{order.brief_job_id}/order-ref/'
+    data = urllib.parse.urlencode({'order_ref': order.order_number}).encode()
+    headers = {}
+    if settings.BRIEF_API_TOKEN:
+        headers['X-Api-Token'] = settings.BRIEF_API_TOKEN
+    try:
+        req = urllib.request.Request(url, data=data, headers=headers)
+        urllib.request.urlopen(req, timeout=3)
+    except OSError:
+        pass
+
+
 def _save_with_variants(form, item_formset, variant_formsets, request, *, set_created_date):
     """Persist Order + items + variants. Caller has confirmed everything is valid."""
     order = form.save(commit=False)
     order.customer = _resolve_customer(request, order)
+    _apply_brief_job(request, order)
     if set_created_date and not order.created_date:
         order.created_date = timezone.now().date()
     # Record who created the order — only on create, never overwrite on edit.
@@ -418,6 +447,7 @@ def _save_with_variants(form, item_formset, variant_formsets, request, *, set_cr
     _save_signed_image(request, order)
     _save_extra_images(request, order)
     _save_extra_name_rows(request, order)
+    _push_order_ref_to_brief(order)
     return order
 
 
@@ -440,6 +470,7 @@ def _form_render_context(form, item_formset, variant_formsets, **extra):
         'collar_suggestions': COLLAR_SUGGESTIONS,
         'sleeve_suggestions': SLEEVE_SUGGESTIONS,
         'customer_prices': [],
+        'brief_public_base': settings.BRIEF_PUBLIC_BASE,
     }
     ctx.update(extra)
     return ctx
@@ -593,6 +624,7 @@ def order_detail(request, pk):
         'order': order,
         'stage_timeline': _build_detail_timeline(order),
         'group_orders': order.group_orders(),
+        'brief_public_base': settings.BRIEF_PUBLIC_BASE,
     })
 
 
@@ -1488,3 +1520,27 @@ def customer_create(request):
         return redirect('customer_list')
     customer = Customer.objects.create(name=name)
     return redirect('customer_detail', pk=customer.pk)
+
+
+@login_required
+def brief_jobs_api(request):
+    """Proxy autocomplete "เลขใบงานออกแบบ" → internal API ฝั่ง Brief (เฟส 3).
+    เรียกฝั่ง server (localhost) เพื่อไม่ให้ token หลุดไป browser; Brief
+    ล่ม/ไม่ได้ตั้ง token = คืน results ว่าง ฟอร์มใช้งานต่อได้ปกติ."""
+    import urllib.parse
+    import urllib.request
+
+    q = (request.GET.get('q') or '').strip()
+    if not (settings.BRIEF_API_TOKEN or settings.DEBUG):
+        return JsonResponse({'results': [], 'disabled': True})
+    url = f'{settings.BRIEF_API_BASE}/api/jobs/?q={urllib.parse.quote(q)}'
+    headers = {}
+    if settings.BRIEF_API_TOKEN:
+        headers['X-Api-Token'] = settings.BRIEF_API_TOKEN
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+    except (OSError, ValueError):
+        return JsonResponse({'results': [], 'error': 'brief_unreachable'})
+    return JsonResponse({'results': payload.get('results', [])})

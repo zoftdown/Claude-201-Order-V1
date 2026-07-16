@@ -14,6 +14,9 @@ urlpatterns = [
     path('customers/<int:pk>/', views.customer_detail, name='customer_detail'),
     path('api/customers/', views.customer_search_api, name='customer_search_api'),
 
+    # เชื่อมระบบ Brief (เฟส 3) — proxy autocomplete เลขใบงานออกแบบ
+    path('api/brief-jobs/', views.brief_jobs_api, name='brief_jobs_api'),
+
     # Production-channel (cookie-based, public — see CLAUDE-V1.6.md §1)
     path('select-department/', views.select_department, name='select_department'),
     path('clear-department/', views.clear_department, name='clear_department'),
