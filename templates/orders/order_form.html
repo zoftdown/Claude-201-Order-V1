@@ -54,6 +54,17 @@
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
 
+    {# เฟส 2: โหมด "สร้างใบเพิ่ม" — ใบใหม่จะผูกเป็นชุดเดียวกับใบแรก #}
+    {% if parent_order and not order %}
+    <input type="hidden" name="parent_order_id" value="{{ parent_order.pk }}">
+    <div class="mb-3 p-2 px-3 rounded" style="background:#e6f7fa; border:2px solid #0c7c92; color:#0c7c92; font-weight:bold;">
+        🧩 กำลังสร้าง <u>ใบเพิ่ม</u> ของชุด
+        <span class="badge fs-6" style="background-color:#0c7c92;">{{ parent_order.order_number }}</span>
+        {{ parent_order.shirt_name }}
+        <span class="fw-normal text-muted">— เติมข้อมูลชุดเดิมให้แล้ว แก้ได้ตามจริง</span>
+    </div>
+    {% endif %}
+
     <!-- ===== Urgent + waiting-confirm flags (top of form) ===== -->
     <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:15px;">
         <div style="flex:1 1 240px; padding:10px; border:2px solid #d32f2f; border-radius:6px;">
@@ -115,7 +126,7 @@
                             {{ form.customer_name }}
                             {# โปรไฟล์ลูกค้าที่เลือกจาก autocomplete — JS เคลียร์เมื่อพิมพ์ชื่อใหม่เอง #}
                             <input type="hidden" name="customer_id" id="customer-id-field"
-                                   value="{% if order and order.customer_id %}{{ order.customer_id }}{% endif %}">
+                                   value="{% if order and order.customer_id %}{{ order.customer_id }}{% elif parent_order and parent_order.customer_id %}{{ parent_order.customer_id }}{% endif %}">
                             <div id="customer-suggest" class="list-group position-absolute shadow"
                                  style="z-index:1050; display:none; top:100%; left:0; right:0; max-height:260px; overflow-y:auto;"></div>
                             <div id="customer-linked" class="small mt-1" style="display:none; color:#198754;">

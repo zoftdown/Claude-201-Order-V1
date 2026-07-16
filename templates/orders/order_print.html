@@ -264,6 +264,32 @@
             margin-top: 6px;
         }
 
+        /* เฟส 2: แถบเตือนงานชุดเดียวกัน (มีใบพ่วง) — เด่นพอให้ฝ่ายผลิตไม่พลาด */
+        .group-orders-banner {
+            border: 2px solid #0c7c92;
+            background: #e6f7fa;
+            color: #0c7c92;
+            font-size: 13pt;
+            font-weight: 800;
+            padding: 5px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+        .group-orders-banner .group-order-num {
+            display: inline-block;
+            border: 1.5px solid #0c7c92;
+            border-radius: 4px;
+            padding: 0 8px;
+            margin: 0 3px;
+            background: #fff;
+        }
+        .group-orders-banner .group-order-num.current {
+            background: #0c7c92;
+            color: #fff;
+        }
+
         /* ===== Item Layout =====
            ≤2 variants → top row: design image (~72%, the hero — production
            needs the design details readable) + variants stacked in a narrow
@@ -668,6 +694,14 @@
             {% endif %}
         </div>
     </div>
+    {# เฟส 2: เตือนงานชุดเดียวกันบนใบงาน — ฝ่ายผลิตต้องเห็นว่ามีใบพ่วง #}
+    {% if group_orders %}
+    <div class="group-orders-banner">
+        🧩 งานชุดเดียวกัน {{ group_orders|length }} ใบ:
+        {% for g in group_orders %}<span class="group-order-num{% if g.pk == order.pk %} current{% endif %}">{{ g.order_number }}{% if g.pk == order.pk %} (ใบนี้){% endif %}</span>{% endfor %}
+        — ผลิต/ส่งให้ครบทุกใบ
+    </div>
+    {% endif %}
     <div class="shirt-info{% if order.special_note %} with-special-note{% endif %}">
         <div class="shirt-name">
             {{ order.shirt_name }}

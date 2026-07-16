@@ -50,6 +50,8 @@ def order_list(request):
     orders = (
         Order.objects.prefetch_related('items', 'items__variants')
         .select_related('created_by')
+        # child_count: badge "งานชุด" ในแถว (นับใบเพิ่มของใบนี้) โดยไม่ N+1
+        .annotate(child_count=Count('child_orders', distinct=True))
         .order_by('-created_date', '-id')
     )
 
@@ -443,9 +445,27 @@ def _form_render_context(form, item_formset, variant_formsets, **extra):
     return ctx
 
 
+def _resolve_parent_order(raw_pk):
+    """หา "ใบแรกของชุด" (root) จาก pk ที่ส่งมา — ใบเพิ่มชี้ root เสมอ:
+    สร้างใบเพิ่มจากใบที่เป็นใบเพิ่มอยู่แล้ว → flatten ไปชี้ root เดิม."""
+    raw_pk = str(raw_pk or '').strip()
+    if not raw_pk.isdigit():
+        return None
+    parent = Order.objects.filter(pk=int(raw_pk)).first()
+    if parent and parent.parent_order_id:
+        parent = parent.parent_order
+    return parent
+
+
 @login_required
 def order_create(request):
     is_admin = _is_admin(request.user)
+    # เฟส 2: "สร้างใบเพิ่มจากใบนี้" — GET ?from=<pk> เติมข้อมูลชุดเดิม +
+    # hidden parent_order_id ใน form พากลับมาตอน POST
+    parent_order = _resolve_parent_order(
+        request.POST.get('parent_order_id') if request.method == 'POST'
+        else request.GET.get('from')
+    )
     if request.method == 'POST':
         form = OrderForm(request.POST, is_admin=is_admin)
         item_formset = OrderItemFormSet(request.POST, request.FILES, prefix='items')
@@ -460,9 +480,26 @@ def order_create(request):
             order = _save_with_variants(
                 form, item_formset, variant_formsets, request, set_created_date=True,
             )
+            if parent_order and parent_order.pk != order.pk:
+                order.parent_order = parent_order
+                order.save(update_fields=['parent_order'])
             return redirect('order_detail', pk=order.pk)
     else:
-        form = OrderForm(is_admin=is_admin)
+        initial = {}
+        if parent_order:
+            # ข้อมูลที่ "ชุดเดียวกัน" ใช้ร่วม — ไม่ก๊อปเงิน/คำสั่งพิเศษ (ของใครของมัน)
+            initial = {
+                'source': parent_order.source,
+                'production_place': parent_order.production_place,
+                'customer_name': parent_order.customer_name,
+                'customer_link': parent_order.customer_link,
+                'shirt_name': parent_order.shirt_name,
+                'designer_name': parent_order.designer_name,
+                'design_doc_number': parent_order.design_doc_number,
+                'fabric_spec': parent_order.fabric_spec,
+                'delivery_method': parent_order.delivery_method,
+            }
+        form = OrderForm(is_admin=is_admin, initial=initial)
         item_formset = OrderItemFormSet(prefix='items')
         variant_formsets = _build_variant_formsets(item_formset)
         variant_errors = []
@@ -472,6 +509,8 @@ def order_create(request):
         title='สร้างออร์เดอร์ใหม่',
         variant_errors=variant_errors,
         is_admin=is_admin,
+        parent_order=parent_order,
+        customer_prices=_customer_prices_payload(parent_order.customer) if parent_order else [],
     ))
 
 
@@ -553,6 +592,7 @@ def order_detail(request, pk):
     return render(request, 'orders/order_detail.html', {
         'order': order,
         'stage_timeline': _build_detail_timeline(order),
+        'group_orders': order.group_orders(),
     })
 
 
@@ -576,6 +616,7 @@ def order_print(request, pk):
         'items': items,
         'qr_svg': qr_svg,
         'update_url': update_url,
+        'group_orders': order.group_orders(),
     })
 
 

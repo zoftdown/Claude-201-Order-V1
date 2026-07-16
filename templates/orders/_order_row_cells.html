@@ -15,7 +15,9 @@
     {% if order.not_printed %}<span class="badge bg-secondary me-1">ยังไม่พิมพ์ใบงาน</span>{% endif %}
     {% if order.recently_edited %}<span class="badge bg-warning text-dark me-1">แก้ใบงาน</span>{% endif %}
     {% if order.production_place != 'ผลิตเอง' %}<span class="badge bg-success">{{ order.production_place }}</span>{% endif %}
-    {% if not order.is_urgent and not order.waiting_confirm and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' %}—{% endif %}
+    {# งานชุด: ใบนี้เป็นใบเพิ่ม (parent_order_id) หรือมีใบเพิ่มพ่วง (child_count จาก annotate ใน order_list) #}
+    {% if order.parent_order_id or order.child_count %}<span class="badge me-1" style="background-color:#0c7c92;">งานชุด</span>{% endif %}
+    {% if not order.is_urgent and not order.waiting_confirm and not order.not_printed and not order.recently_edited and order.production_place == 'ผลิตเอง' and not order.parent_order_id and not order.child_count %}—{% endif %}
 </td>
 <td><small>{{ order.source }}</small></td>
 <td>{{ order.created_time_display|default:"—" }}</td>

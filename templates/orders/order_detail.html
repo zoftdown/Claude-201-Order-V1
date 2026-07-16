@@ -14,6 +14,7 @@
     <div class="d-flex gap-1">
         <a href="{% url 'order_print' order.pk %}" class="btn btn-success btn-sm" target="_blank">พิมพ์ใบงาน</a>
         {% if not request.is_viewer %}
+        <a href="{% url 'order_create' %}?from={{ order.pk }}" class="btn btn-sm text-white" style="background-color:#0c7c92;">➕ สร้างใบเพิ่มจากใบนี้</a>
         <a href="{% url 'order_edit' order.pk %}" class="btn btn-primary btn-sm">แก้ไข</a>
         {% if user|is_admin %}
         <form method="post" action="{% url 'order_delete' order.pk %}" class="m-0" onsubmit="return confirm('ยืนยันการลบออร์เดอร์ {{ order.order_number }}?');">
@@ -25,6 +26,22 @@
         <a href="{% url 'order_list' %}" class="btn btn-outline-secondary btn-sm">กลับ</a>
     </div>
 </div>
+
+{# เฟส 2: แบนเนอร์งานชุดเดียวกัน — โชว์ทุกใบในชุด (ใบนี้ตัวหนา ไม่เป็นลิงก์) #}
+{% if group_orders %}
+<div class="mb-3 p-2 px-3 rounded" style="background:#e6f7fa; border:2px solid #0c7c92;">
+    <span class="fw-bold" style="color:#0c7c92;">🧩 งานชุดเดียวกัน {{ group_orders|length }} ใบ:</span>
+    {% for g in group_orders %}
+        {% if g.pk == order.pk %}
+            <span class="badge fs-6" style="background-color:#0c7c92;">{{ g.order_number }} (ใบนี้)</span>
+        {% else %}
+            <a href="{% url 'order_detail' g.pk %}" class="badge fs-6 text-decoration-none"
+               style="background-color:#fff; color:#0c7c92; border:1px solid #0c7c92;">{{ g.order_number }}</a>
+        {% endif %}
+    {% endfor %}
+    <span class="text-muted small ms-1">อย่าลืมผลิต/ส่งให้ครบทุกใบ</span>
+</div>
+{% endif %}
 
 {% if order.is_urgent or order.not_printed or order.recently_edited %}
 <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
