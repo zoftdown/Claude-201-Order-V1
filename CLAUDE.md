@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.9 · อัปเดตล่าสุด 2026-07-16 · migration ล่าสุด `0021_order_brief_job_id` (เชื่อมระบบ Brief) · feature ล่าสุด: **เฟส 3 เชื่อมระบบ Brief** (autocomplete เลขใบงานออกแบบ + `brief_job_id` + ลิงก์สองทาง order_ref) ต่อจาก **เฟส 2 ใบงานชุดเดียวกัน** (0020) + **โปรไฟล์ลูกค้า เฟส 1+1.5** (0019) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V3.0 · อัปเดตล่าสุด 2026-07-16 · migration ล่าสุด `0022_customertag_customer_tags` (กลุ่มลูกค้า) · feature ล่าสุด: **เฟส 4 tag/กลุ่มลูกค้า + export CSV** (`CustomerTag` + filter หน้า /customers/ + export ตาม filter) ต่อจาก **เฟส 3 เชื่อมระบบ Brief** (0021) + **เฟส 2 ใบงานชุดเดียวกัน** (0020) + **โปรไฟล์ลูกค้า เฟส 1+1.5** (0019) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -138,10 +138,19 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | facebook_link | CharField | ลิงก์ FB (blank ได้) |
 | phone | CharField | เบอร์โทร (blank ได้) |
 | note | TextField | โน้ต (blank ได้) |
+| **tags** | M2M→CustomerTag | กลุ่มลูกค้า (เฟส 4, migration 0022) |
 | created_at / updated_at | DateTimeField | auto |
 - **เกิดอัตโนมัติตอน save ใบงาน** ผ่าน `_resolve_customer(request, order)`: customer_id จาก autocomplete → match ชื่อ+ลิงก์ตรงเป๊ะ → สร้างใหม่. สร้างมือได้จากปุ่ม "+ เพิ่มลูกค้า" หน้า `/customers/`
-- หน้า: `/customers/` (list+ค้นหา+เพิ่ม, `customer_list`) · `/customers/<id>/` (โปรไฟล์: แก้ข้อมูล+ตารางราคา+ประวัติใบงาน, `customer_detail`) · API `/api/customers/?q=` (`customer_search_api`, JSON 10 คนแรก พร้อม prices — ใช้ทำ autocomplete) — ทั้งหมด `@login_required` (viewer cookie เข้าไม่ได้ เพราะเห็นราคา)
+- หน้า: `/customers/` (list+ค้นหา+filter กลุ่ม+เพิ่ม+export, `customer_list`) · `/customers/<id>/` (โปรไฟล์: แก้ข้อมูล+กลุ่ม+ตารางราคา+ประวัติใบงาน, `customer_detail`) · API `/api/customers/?q=` (`customer_search_api`, JSON 10 คนแรก พร้อม prices — ใช้ทำ autocomplete) — ทั้งหมด `@login_required` (viewer cookie เข้าไม่ได้ เพราะเห็นราคา)
 - navbar ปุ่ม "👥 ลูกค้า" (เฉพาะ user login)
+
+### CustomerTag (กลุ่มลูกค้า — เฟส 4, migration 0022)
+| Field | Type | หมายเหตุ |
+|---|---|---|
+| name | CharField(50) | unique เช่น "ลูกค้าประจำ", "โรงเรียน" |
+- **สร้าง:** พิมพ์ในช่อง `new_tags` หน้าโปรไฟล์ (คั่น comma ได้, `get_or_create` แล้วติ๊กให้เลย) · **ติ๊กเข้า/ออก:** checkbox ในโปรไฟล์ (`_save_customer_tags` ใช้ `tags.set`) · **ลบ tag:** ผ่าน Django admin เท่านั้น
+- **filter:** chips หน้า `/customers/` (`?tag=<id>` ทำงานร่วม `?q=` — `_filtered_customers` ใช้ร่วมกับ export ให้ผลตรงกัน)
+- **export CSV:** `/customers/export/` (`customer_export_csv`) ตาม filter ปัจจุบัน — คอลัมน์ ชื่อ/ลิงก์/เบอร์/กลุ่ม/จำนวนใบ/สั่งล่าสุด/โน้ต, BOM ตัวเดียวต้นไฟล์ตาม Lessons ข้อ 13, ชื่อไฟล์ไทยผ่าน `filename*=UTF-8''`
 
 ### CustomerPrice (ราคาประจำตัวลูกค้า — หลายแถว/คน)
 | Field | Type | หมายเหตุ |
@@ -257,8 +266,13 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **settings ใหม่ (.env):** `BRIEF_API_BASE` (default `http://127.0.0.1:8600`) · `BRIEF_API_TOKEN` (shared กับ .env ฝั่ง Brief; ว่าง+DEBUG=false = ปิดฟีเจอร์) · `BRIEF_PUBLIC_BASE` (prod = `https://dr89.cloud/brief`)
 - ใบเพิ่ม (เฟส 2) ก๊อป `brief_job_id` จากใบแรกให้ด้วย (hidden field ในฟอร์ม)
 
+**เพิ่มล่าสุด (V3.0 · 2026-07-16): เฟส 4 tag/กลุ่มลูกค้า + export CSV**
+- **CustomerTag + Customer.tags M2M** (ดู Data Models) — additive
+- **หน้าโปรไฟล์:** การ์ด "🏷️ กลุ่มลูกค้า" — checkbox กลุ่มเดิม + ช่องพิมพ์กลุ่มใหม่ (คั่น comma) save รวมกับฟอร์มเดิม
+- **หน้า /customers/:** แถบ chips filter กลุ่ม (+จำนวนคน) ทำงานร่วมค้นหา + คอลัมน์กลุ่ม + ปุ่ม "📥 Export CSV" ตาม filter ปัจจุบัน — ไว้ดึงรายชื่อกลุ่มส่งข่าวส่วนลด/ของขวัญ
+
 ### 🔜 ค้าง / อนาคต
-- [ ] **เฟส 4:** tag/กลุ่มลูกค้า + export รายชื่อ (CRM) · **เฟส 5:** dashboard สถิติ
+- [ ] **เฟส 5:** dashboard สถิติ
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
 - [ ] **เปลี่ยน VPS deploy เป็น git pull** (เลิก scp) — กันปัญหา branch ไม่ตรง
