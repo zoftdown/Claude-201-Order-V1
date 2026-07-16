@@ -195,6 +195,11 @@ class Order(models.Model):
     # designer_name = กราฟิกที่ทำดีไซน์ (มีหลายคน), design_doc_number = อ้างอิงงานออกแบบ.
     designer_name = models.CharField('คนออกแบบ', max_length=100, blank=True)
     design_doc_number = models.CharField('เลขใบงานออกแบบ', max_length=50, blank=True)
+    # เฟส 3: id ของ Job ฝั่งระบบ Brief (dr89.cloud/brief) ที่ใบงานออกแบบนี้ชี้ถึง
+    # — เซ็ตเมื่อเลือกจาก autocomplete (design_doc_number เก็บ "D-xxx" เป็นข้อความ
+    # เหมือนเดิม; id นี้ไว้ทำลิงก์เปิดใบงาน + ยิง order_ref กลับ). พิมพ์เลขเองไม่เลือก
+    # จาก dropdown = null (ไม่มีลิงก์ แต่ข้อความยังอยู่ครบ)
+    brief_job_id = models.IntegerField('Brief job id', null=True, blank=True)
     fabric_spec = models.TextField('spec ผ้า', blank=True, help_text='แสดงเฉพาะ source=เพจเสื้อคนงาน')
     special_note = models.TextField('คำสั่งพิเศษ', blank=True)
     total_price = models.DecimalField('ยอดรวม', max_digits=10, decimal_places=2, default=0)
