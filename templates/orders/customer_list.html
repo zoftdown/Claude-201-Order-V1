@@ -17,8 +17,24 @@
                    placeholder="ชื่อลูกค้าใหม่" required>
             <button type="submit" class="btn btn-success btn-sm text-nowrap">+ เพิ่มลูกค้า</button>
         </form>
+        <a href="{% url 'customer_export_csv' %}?q={{ q|urlencode }}{% if active_tag %}&tag={{ active_tag.pk }}{% endif %}"
+           class="btn btn-outline-success btn-sm text-nowrap">📥 Export CSV</a>
     </div>
 </div>
+
+{# เฟส 4: filter กลุ่มลูกค้า — chip กดสลับกลุ่ม (คง q ค้นหาไว้), export ตาม filter นี้ #}
+{% if all_tags %}
+<div class="mb-3 d-flex align-items-center flex-wrap gap-1">
+    <span class="text-muted small me-1">กลุ่ม:</span>
+    <a href="{% url 'customer_list' %}?q={{ q|urlencode }}"
+       class="badge text-decoration-none {% if not active_tag %}text-bg-primary{% else %}text-bg-light border{% endif %}">ทั้งหมด</a>
+    {% for t in all_tags %}
+    <a href="{% url 'customer_list' %}?q={{ q|urlencode }}&tag={{ t.pk }}"
+       class="badge text-decoration-none {% if active_tag.pk == t.pk %}text-bg-primary{% else %}text-bg-light border{% endif %}">
+        {{ t.name }} ({{ t.customer_count }})</a>
+    {% endfor %}
+</div>
+{% endif %}
 
 {% if messages %}
     {% for message in messages %}
@@ -31,6 +47,7 @@
         <thead class="table-light">
             <tr>
                 <th>ชื่อลูกค้า</th>
+                <th>กลุ่ม</th>
                 <th>Facebook/ลิงก์</th>
                 <th>เบอร์โทร</th>
                 <th class="text-center">ใบงาน</th>
@@ -43,6 +60,11 @@
             {% for c in customers %}
             <tr>
                 <td class="fw-bold"><a href="{% url 'customer_detail' c.pk %}" class="text-decoration-none">{{ c.name }}</a></td>
+                <td>
+                    {% for t in c.tags.all %}
+                        <span class="badge" style="background-color:#5c6ac4;">{{ t.name }}</span>
+                    {% empty %}—{% endfor %}
+                </td>
                 <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                     {% if c.facebook_link %}<a href="{{ c.facebook_link }}" target="_blank" rel="noopener" title="{{ c.facebook_link }}">{{ c.facebook_link }}</a>{% else %}—{% endif %}
                 </td>
@@ -59,7 +81,7 @@
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="7" class="text-center text-muted py-4">
+            <tr><td colspan="8" class="text-center text-muted py-4">
                 {% if q %}ไม่พบลูกค้าที่ค้นหา{% else %}ยังไม่มีโปรไฟล์ลูกค้า — ระบบจะสร้างให้อัตโนมัติเมื่อสร้างใบงานใหม่{% endif %}
             </td></tr>
             {% endfor %}

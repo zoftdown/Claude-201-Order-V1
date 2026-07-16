@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib import messages
@@ -29,8 +30,8 @@ from .forms import (
     SLEEVE_SUGGESTIONS,
 )
 from .models import (
-    Customer, CustomerPrice, DepartmentPIN, ExtraImage, ExtraNameRow,
-    MasterImage, Order, StageLog, Tailor,
+    Customer, CustomerPrice, CustomerTag, DepartmentPIN, ExtraImage,
+    ExtraNameRow, MasterImage, Order, StageLog, Tailor,
 )
 from .qr_utils import generate_qr_svg
 
@@ -1399,15 +1400,16 @@ def custom_search(request):
 # ---------------------------------------------------------------------------
 
 
-@login_required
-def customer_list(request):
-    """รายชื่อลูกค้าทั้งหมด + ค้นหา (ชื่อ/ลิงก์/เบอร์) + สรุปจำนวนใบต่อคน."""
+def _filtered_customers(request):
+    """Queryset ลูกค้าตาม filter ปัจจุบัน (?q= ค้นหา + ?tag=<id> กลุ่ม) —
+    ใช้ร่วมกันระหว่างหน้ารายชื่อและ export CSV ให้ผลตรงกันเสมอ."""
     q = (request.GET.get('q') or '').strip()
+    tag_id = (request.GET.get('tag') or '').strip()
     customers = (
         Customer.objects
         .annotate(order_count=Count('orders', distinct=True),
                   last_order=Max('orders__created_date'))
-        .prefetch_related('prices')
+        .prefetch_related('prices', 'tags')
         .order_by('name')
     )
     if q:
@@ -1416,10 +1418,56 @@ def customer_list(request):
             Q(facebook_link__icontains=q) |
             Q(phone__icontains=q)
         )
+    active_tag = None
+    if tag_id.isdigit():
+        active_tag = CustomerTag.objects.filter(pk=int(tag_id)).first()
+        if active_tag:
+            customers = customers.filter(tags=active_tag)
+    return customers, q, active_tag
+
+
+@login_required
+def customer_list(request):
+    """รายชื่อลูกค้าทั้งหมด + ค้นหา (ชื่อ/ลิงก์/เบอร์) + filter กลุ่ม (เฟส 4)
+    + สรุปจำนวนใบต่อคน + ปุ่ม export CSV ตาม filter ปัจจุบัน."""
+    customers, q, active_tag = _filtered_customers(request)
+    all_tags = CustomerTag.objects.annotate(customer_count=Count('customers'))
     return render(request, 'orders/customer_list.html', {
         'customers': customers,
         'q': q,
+        'active_tag': active_tag,
+        'all_tags': all_tags,
     })
+
+
+@login_required
+def customer_export_csv(request):
+    """Export รายชื่อลูกค้าตาม filter ปัจจุบัน (?q= + ?tag=) เป็น CSV
+    เปิดใน Excel ได้ — ไว้ทำรายชื่อส่งข่าวส่วนลด/ของขวัญตามกลุ่ม.
+    charset ต้องเป็น utf-8 + เขียน BOM เองครั้งเดียว (Lessons ข้อ 13 — ห้าม utf-8-sig)."""
+    import csv
+
+    customers, q, active_tag = _filtered_customers(request)
+    filename = 'customers'
+    if active_tag:
+        filename += f'_{active_tag.name}'
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}.csv"
+    resp.write('﻿')
+    writer = csv.writer(resp)
+    writer.writerow(['ชื่อลูกค้า', 'Facebook/ลิงก์', 'เบอร์โทร', 'กลุ่ม',
+                     'จำนวนใบงาน', 'สั่งล่าสุด', 'โน้ต'])
+    for c in customers:
+        writer.writerow([
+            c.name,
+            c.facebook_link,
+            c.phone,
+            ', '.join(t.name for t in c.tags.all()),
+            c.order_count,
+            c.last_order.strftime('%Y-%m-%d') if c.last_order else '',
+            c.note,
+        ])
+    return resp
 
 
 def _save_customer_prices(request, customer):
@@ -1449,9 +1497,24 @@ def _save_customer_prices(request, customer):
         CustomerPrice.objects.bulk_create(rows)
 
 
+def _save_customer_tags(request, customer):
+    """เซ็ตกลุ่มของลูกค้าจากฟอร์มโปรไฟล์ (เฟส 4): checkbox `tags` (id ที่ติ๊ก)
+    + ช่อง `new_tags` (ชื่อกลุ่มใหม่ คั่น comma — get_or_create แล้วติ๊กให้เลย)."""
+    tag_ids = [int(t) for t in request.POST.getlist('tags') if t.isdigit()]
+    tags = list(CustomerTag.objects.filter(pk__in=tag_ids))
+    new_names = (request.POST.get('new_tags') or '').split(',')
+    for raw in new_names:
+        tag_name = raw.strip()[:50]
+        if not tag_name:
+            continue
+        tag, _created = CustomerTag.objects.get_or_create(name=tag_name)
+        tags.append(tag)
+    customer.tags.set(tags)
+
+
 @login_required
 def customer_detail(request, pk):
-    """โปรไฟล์ลูกค้า: แก้ข้อมูล + ตารางราคา + ประวัติใบงานทั้งหมดของคนนั้น."""
+    """โปรไฟล์ลูกค้า: แก้ข้อมูล + ตารางราคา + กลุ่ม (tag) + ประวัติใบงานทั้งหมดของคนนั้น."""
     customer = get_object_or_404(Customer, pk=pk)
 
     if request.method == 'POST':
@@ -1463,6 +1526,7 @@ def customer_detail(request, pk):
             customer.note = (request.POST.get('note') or '').strip()
             customer.save()
             _save_customer_prices(request, customer)
+            _save_customer_tags(request, customer)
             messages.success(request, 'บันทึกข้อมูลลูกค้าแล้ว')
             return redirect('customer_detail', pk=customer.pk)
         messages.error(request, 'กรุณาระบุชื่อลูกค้า')
@@ -1476,6 +1540,8 @@ def customer_detail(request, pk):
         'customer': customer,
         'orders': orders,
         'prices': list(customer.prices.all()),
+        'all_tags': CustomerTag.objects.all(),
+        'customer_tags': list(customer.tags.all()),
     })
 
 

@@ -43,6 +43,27 @@
                 </div>
             </div>
 
+            {# เฟส 4: กลุ่มลูกค้า — ติ๊กกลุ่มเดิม + พิมพ์กลุ่มใหม่ (คั่น , ได้) save พร้อมฟอร์มเดียวกัน #}
+            <div class="card mb-3" style="border-left:4px solid #5c6ac4;">
+                <div class="card-header fw-bold" style="background:#eef0fb;">🏷️ กลุ่มลูกค้า</div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        {% for t in all_tags %}
+                        <label class="badge d-flex align-items-center gap-1 fw-normal fs-6 border"
+                               style="cursor:pointer; color:#333; background:#f8f9fa;">
+                            <input type="checkbox" name="tags" value="{{ t.pk }}"
+                                   {% if t in customer_tags %}checked{% endif %}>
+                            {{ t.name }}
+                        </label>
+                        {% empty %}
+                        <span class="text-muted small">ยังไม่มีกลุ่มในระบบ — พิมพ์สร้างกลุ่มแรกด้านล่าง</span>
+                        {% endfor %}
+                    </div>
+                    <input type="text" name="new_tags" class="form-control form-control-sm"
+                           placeholder="เพิ่มกลุ่มใหม่ เช่น ลูกค้าประจำ, โรงเรียน (คั่นด้วย , ได้)">
+                </div>
+            </div>
+
             <div class="card mb-3" style="border-left:4px solid #12b886;">
                 <div class="card-header d-flex justify-content-between align-items-center" style="background:#e6f7f1;">
                     <span class="fw-bold">💰 ราคาประจำตัว <small class="text-muted fw-normal">(บาท/ตัว)</small></span>

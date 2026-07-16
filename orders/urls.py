@@ -11,6 +11,7 @@ urlpatterns = [
     # Customer profiles (เฟส 1 CRM)
     path('customers/', views.customer_list, name='customer_list'),
     path('customers/add/', views.customer_create, name='customer_create'),
+    path('customers/export/', views.customer_export_csv, name='customer_export_csv'),
     path('customers/<int:pk>/', views.customer_detail, name='customer_detail'),
     path('api/customers/', views.customer_search_api, name='customer_search_api'),
 
