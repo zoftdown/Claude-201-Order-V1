@@ -184,6 +184,12 @@ class Order(models.Model):
     customer = models.ForeignKey('Customer', on_delete=models.SET_NULL,
                                  null=True, blank=True, related_name='orders',
                                  verbose_name='โปรไฟล์ลูกค้า')
+    # เฟส 2: ใบงานชุดเดียวกัน — "ใบเพิ่ม" ชี้กลับใบแรกของชุด (root) เสมอ
+    # (สร้างใบเพิ่มจากใบเพิ่ม → flatten ไปชี้ root เดิม ไม่ทำ chain ซ้อน).
+    # ลบใบแรก → SET_NULL ใบเพิ่มที่เหลือกลายเป็นใบเดี่ยว/root ใหม่.
+    parent_order = models.ForeignKey('self', on_delete=models.SET_NULL,
+                                     null=True, blank=True, related_name='child_orders',
+                                     verbose_name='ใบเพิ่มจากใบ')
     shirt_name = models.CharField('ชื่องาน/ชื่อเสื้อ', max_length=200)
     # คนออกแบบ + เลขใบงานออกแบบ — คนละคนกับ created_by (คนคีย์ออร์เดอร์).
     # designer_name = กราฟิกที่ทำดีไซน์ (มีหลายคน), design_doc_number = อ้างอิงงานออกแบบ.
@@ -258,6 +264,16 @@ class Order(models.Model):
     @property
     def total_qty(self):
         return sum(item.total_qty for item in self.items.all())
+
+    def group_orders(self):
+        """ทุกใบในชุดเดียวกัน (root ก่อน แล้วใบเพิ่มเรียงเก่า→ใหม่).
+        คืน [] เมื่อเป็นใบเดี่ยว (ไม่มี parent และไม่มีใบเพิ่ม) — ให้ template
+        gate แบนเนอร์ชุดได้ด้วย if เดียว."""
+        root = self.parent_order or self
+        children = list(root.child_orders.order_by('id'))
+        if not children:
+            return []
+        return [root] + children
 
     @property
     def not_printed(self):
