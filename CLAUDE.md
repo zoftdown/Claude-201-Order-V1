@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.7 · อัปเดตล่าสุด 2026-07-15 · migration ล่าสุด `0019_customer_order_customer_customerprice` (โปรไฟล์ลูกค้า) · feature ล่าสุด: **โปรไฟล์ลูกค้า เฟส 1+1.5** (model `Customer`+`CustomerPrice` + FK `Order.customer` + หน้า `/customers/` + autocomplete ในฟอร์ม + ปุ่มคำนวณยอดจากราคาประจำตัว) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V2.8 · อัปเดตล่าสุด 2026-07-16 · migration ล่าสุด `0020_order_parent_order` (ใบงานชุดเดียวกัน) · feature ล่าสุด: **เฟส 2 ใบงานชุดเดียวกัน** (self-FK `parent_order` + ปุ่ม "สร้างใบเพิ่มจากใบนี้" ใน detail + แบนเนอร์ชุดใน detail/print + badge "งานชุด" ใน list) ต่อจาก **โปรไฟล์ลูกค้า เฟส 1+1.5** (V2.7) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -58,6 +58,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | customer_name | CharField | ชื่อลูกค้า (ไม่แสดงในหน้า list แล้ว) — ยังเป็น source of truth ของข้อความบนใบงาน |
 | customer_link | CharField | Facebook URL หรือเบอร์โทร |
 | **customer** | FK→Customer | โปรไฟล์ลูกค้า (SET_NULL, migration 0019) — ใบเก่า=null ปล่อยไว้ (ไม่ backfill), ใบใหม่ผูกอัตโนมัติตอน save ผ่าน `_resolve_customer` |
+| **parent_order** | FK→self | ใบเพิ่มชี้ "ใบแรกของชุด" (root) เสมอ (SET_NULL, migration 0020) — สร้างผ่านปุ่ม "สร้างใบเพิ่มจากใบนี้" (`/create/?from=<pk>`, `_resolve_parent_order` flatten ไป root ไม่ทำ chain) · `group_orders()` คืนทุกใบในชุด ([] = ใบเดี่ยว) ใช้ gate แบนเนอร์ detail/print · badge "งานชุด" teal `#0c7c92` ใน list (annotate `child_count` กัน N+1) |
 | shirt_name | CharField | ชื่องาน/ชื่อเสื้อ |
 | **designer_name** | CharField | คนออกแบบ (กราฟิกที่ทำดีไซน์ — คนละคนกับ created_by; blank ได้) แสดง detail/print/form |
 | **design_doc_number** | CharField | เลขใบงานออกแบบ (อ้างอิงงานออกแบบ; blank ได้) แสดง detail/print/form |
@@ -241,8 +242,14 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **ปุ่มคำนวณราคา:** ลูกค้ามีราคาประจำตัว → ปุ่มราคาโผล่ใต้กล่องเงิน กด = ยอดรวม := จำนวนตัวรวม × ราคา (ไม่บังคับ แก้มือทับได้)
 - **แผนเฟสถัดไป (คุยไว้ 2026-07-15):** เฟส 2 = ใบงานชุดเดียวกัน reference กัน (`parent_order` self-FK + ปุ่ม "สร้างใบเพิ่มจากใบนี้" + แบนเนอร์เตือนใน detail/print) · เฟส 3 = เชื่อมระบบ Brief (dr89.cloud/brief — Job.order_ref มีอยู่แล้วรอ UI, ทำ endpoint JSON ฝั่ง Brief + proxy ผ่าน 127.0.0.1:8600 + autocomplete ที่ช่อง design_doc_number) · เฟส 4 = tag/กลุ่มลูกค้า + export CSV · เฟส 5 = dashboard สถิติ
 
+**เพิ่มล่าสุด (V2.8 · 2026-07-16): เฟส 2 ใบงานชุดเดียวกัน**
+- **`Order.parent_order`** self-FK (ดู Data Models) — additive, ใบเก่าไม่ถูกแตะ
+- **ปุ่ม "➕ สร้างใบเพิ่มจากใบนี้"** ใน detail → `/create/?from=<pk>`: ฟอร์มขึ้นแบนเนอร์ teal "กำลังสร้างใบเพิ่มของชุด X" + prefill ข้อมูลชุดเดิม (แหล่ง/ผลิตที่/ลูกค้า/ชื่องาน/คนออกแบบ/เลขใบงานออกแบบ/spec ผ้า/วิธีรับ — **ไม่ก๊อปเงิน+คำสั่งพิเศษ**) + ผูกโปรไฟล์ลูกค้าเดิม (ปุ่มราคาโชว์ทันที) + hidden `parent_order_id`
+- **แบนเนอร์ชุด** detail (ลิงก์คลิกได้ ใบนี้=ตัวหนา) + print (`.group-orders-banner` ใน `.page-a4` — ติดทั้งตอนพิมพ์และปุ่มบันทึกภาพ): "🧩 งานชุดเดียวกัน N ใบ: ..."
+- **badge "งานชุด"** (teal `#0c7c92`) ใน `_order_row_cells.html` — โชว์ทั้งใบแรก (มี child) และใบเพิ่ม (มี parent)
+- ลบใบแรกของชุด → SET_NULL ใบเพิ่มกลายเป็นใบเดี่ยว (ไม่ cascade)
+
 ### 🔜 ค้าง / อนาคต
-- [ ] **เฟส 2:** ใบงานชุดเดียวกัน reference กัน (parent_order) — ดูแผนใน V2.7 ด้านบน
 - [ ] **เฟส 3:** เชื่อมระบบ Brief (autocomplete เลขใบงานออกแบบ + ลิงก์สองทาง)
 - [ ] **เฟส 4:** tag/กลุ่มลูกค้า + export รายชื่อ (CRM) · **เฟส 5:** dashboard สถิติ
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
