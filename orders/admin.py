@@ -1,8 +1,14 @@
 from django.contrib import admin
 from .models import (
     Order, OrderItem, MasterImage, ShirtVariant, Tailor, StageLog,
-    DepartmentPIN, Customer, CustomerPrice,
+    DepartmentPIN, Customer, CustomerPrice, CustomerTag,
 )
+
+
+@admin.register(CustomerTag)
+class CustomerTagAdmin(admin.ModelAdmin):
+    list_display = ['name', 'created_at']
+    search_fields = ['name']
 
 
 class CustomerPriceInline(admin.TabularInline):
@@ -15,6 +21,8 @@ class CustomerPriceInline(admin.TabularInline):
 class CustomerAdmin(admin.ModelAdmin):
     list_display = ['name', 'facebook_link', 'phone', 'created_at']
     search_fields = ['name', 'facebook_link', 'phone']
+    list_filter = ['tags']
+    filter_horizontal = ['tags']
     inlines = [CustomerPriceInline]
 
 

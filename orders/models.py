@@ -99,6 +99,22 @@ def downscale_image_field(field, max_side=1600, quality=85):
         img.save(path)
 
 
+class CustomerTag(models.Model):
+    """tag/กลุ่มลูกค้า (เฟส 4 CRM) — เช่น "ลูกค้าประจำ", "โรงเรียน", "โรงงาน".
+    ใช้ filter หน้ารายชื่อ + เลือกกลุ่ม export CSV (ส่งข่าวส่วนลด/ของขวัญ).
+    สร้างได้จากหน้าโปรไฟล์ลูกค้า (พิมพ์ชื่อใหม่) — ลบ tag ผ่าน Django admin."""
+    name = models.CharField('ชื่อกลุ่ม', max_length=50, unique=True)
+    created_at = models.DateTimeField('สร้างเมื่อ', auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'กลุ่มลูกค้า'
+        verbose_name_plural = 'กลุ่มลูกค้า'
+
+    def __str__(self):
+        return self.name
+
+
 class Customer(models.Model):
     """โปรไฟล์ลูกค้า — ฐานลูกค้าของร้าน (1 คน = 1 โปรไฟล์).
 
@@ -109,6 +125,8 @@ class Customer(models.Model):
     facebook_link = models.CharField('Facebook/ลิงก์', max_length=500, blank=True)
     phone = models.CharField('เบอร์โทร', max_length=50, blank=True)
     note = models.TextField('โน้ต', blank=True)
+    tags = models.ManyToManyField(CustomerTag, blank=True, related_name='customers',
+                                  verbose_name='กลุ่ม')
     created_at = models.DateTimeField('สร้างเมื่อ', auto_now_add=True)
     updated_at = models.DateTimeField('แก้ไขล่าสุด', auto_now=True)
 
