@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V2.8 · อัปเดตล่าสุด 2026-07-16 · migration ล่าสุด `0020_order_parent_order` (ใบงานชุดเดียวกัน) · feature ล่าสุด: **เฟส 2 ใบงานชุดเดียวกัน** (self-FK `parent_order` + ปุ่ม "สร้างใบเพิ่มจากใบนี้" ใน detail + แบนเนอร์ชุดใน detail/print + badge "งานชุด" ใน list) ต่อจาก **โปรไฟล์ลูกค้า เฟส 1+1.5** (V2.7) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V2.9 · อัปเดตล่าสุด 2026-07-16 · migration ล่าสุด `0021_order_brief_job_id` (เชื่อมระบบ Brief) · feature ล่าสุด: **เฟส 3 เชื่อมระบบ Brief** (autocomplete เลขใบงานออกแบบ + `brief_job_id` + ลิงก์สองทาง order_ref) ต่อจาก **เฟส 2 ใบงานชุดเดียวกัน** (0020) + **โปรไฟล์ลูกค้า เฟส 1+1.5** (0019) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ
@@ -59,6 +59,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 | customer_link | CharField | Facebook URL หรือเบอร์โทร |
 | **customer** | FK→Customer | โปรไฟล์ลูกค้า (SET_NULL, migration 0019) — ใบเก่า=null ปล่อยไว้ (ไม่ backfill), ใบใหม่ผูกอัตโนมัติตอน save ผ่าน `_resolve_customer` |
 | **parent_order** | FK→self | ใบเพิ่มชี้ "ใบแรกของชุด" (root) เสมอ (SET_NULL, migration 0020) — สร้างผ่านปุ่ม "สร้างใบเพิ่มจากใบนี้" (`/create/?from=<pk>`, `_resolve_parent_order` flatten ไป root ไม่ทำ chain) · `group_orders()` คืนทุกใบในชุด ([] = ใบเดี่ยว) ใช้ gate แบนเนอร์ detail/print · badge "งานชุด" teal `#0c7c92` ใน list (annotate `child_count` กัน N+1) |
+| **brief_job_id** | IntegerField | id ของ Job ฝั่งระบบ Brief (nullable, migration 0021) — เซ็ตเมื่อเลือกจาก autocomplete ช่องเลขใบงานออกแบบ (JS เคลียร์เมื่อพิมพ์เอง, `_apply_brief_job`); มีค่า = ลิงก์ "🎨 เปิดใบงานออกแบบ" ใน detail + ยิง `order_ref` กลับฝั่ง Brief ตอน save (`_push_order_ref_to_brief`, best-effort ไม่ block) |
 | shirt_name | CharField | ชื่องาน/ชื่อเสื้อ |
 | **designer_name** | CharField | คนออกแบบ (กราฟิกที่ทำดีไซน์ — คนละคนกับ created_by; blank ได้) แสดง detail/print/form |
 | **design_doc_number** | CharField | เลขใบงานออกแบบ (อ้างอิงงานออกแบบ; blank ได้) แสดง detail/print/form |
@@ -249,8 +250,14 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **badge "งานชุด"** (teal `#0c7c92`) ใน `_order_row_cells.html` — โชว์ทั้งใบแรก (มี child) และใบเพิ่ม (มี parent)
 - ลบใบแรกของชุด → SET_NULL ใบเพิ่มกลายเป็นใบเดี่ยว (ไม่ cascade)
 
+**เพิ่มล่าสุด (V2.9 · 2026-07-16): เฟส 3 เชื่อมระบบ Brief (dr89.cloud/brief)**
+- **ช่อง "เลขใบงานออกแบบ" = autocomplete** — พิมพ์ D-xxx/ชื่อลูกค้า → dropdown ใบงานจากระบบ Brief (เลข·ลูกค้า·สถานะ·รอบ + badge เตือนถ้าใบนั้นมีออร์เดอร์อยู่แล้ว) → เลือก = เติมเลข + ผูก `brief_job_id` · Brief ล่ม/ไม่ตั้ง token → dropdown เงียบ ฟอร์มใช้ได้ปกติ
+- **proxy `/order/api/brief-jobs/`** (`brief_jobs_api`, `@login_required`) → เรียก internal API ฝั่ง Brief ผ่าน `BRIEF_API_BASE` (localhost) พร้อม `X-Api-Token` — token ไม่หลุดไป browser. ฝั่ง Brief: `GET /api/jobs/?q=` + `POST /api/jobs/<id>/order-ref/` (token-gated, ดู CLAUDE.md repo Claude-203)
+- **ลิงก์สองทาง:** save ใบงานที่ผูก brief_job_id → ยิงเลขออร์เดอร์ไปเซ็ต `Job.order_ref` ฝั่ง Brief อัตโนมัติ (best-effort) · ฝั่ง Brief โชว์ช่อง "เลขออร์เดอร์" + ลิงก์ ↗ กลับมาระบบ Order · detail ฝั่ง Order มีลิงก์ "🎨 เปิดใบงานออกแบบ ↗"
+- **settings ใหม่ (.env):** `BRIEF_API_BASE` (default `http://127.0.0.1:8600`) · `BRIEF_API_TOKEN` (shared กับ .env ฝั่ง Brief; ว่าง+DEBUG=false = ปิดฟีเจอร์) · `BRIEF_PUBLIC_BASE` (prod = `https://dr89.cloud/brief`)
+- ใบเพิ่ม (เฟส 2) ก๊อป `brief_job_id` จากใบแรกให้ด้วย (hidden field ในฟอร์ม)
+
 ### 🔜 ค้าง / อนาคต
-- [ ] **เฟส 3:** เชื่อมระบบ Brief (autocomplete เลขใบงานออกแบบ + ลิงก์สองทาง)
 - [ ] **เฟส 4:** tag/กลุ่มลูกค้า + export รายชื่อ (CRM) · **เฟส 5:** dashboard สถิติ
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)
