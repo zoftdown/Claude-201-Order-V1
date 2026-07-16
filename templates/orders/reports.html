@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 {% block title %}รายงาน{% endblock %}
 
 {% block content %}
@@ -127,6 +128,148 @@
             {% else %}
                 <p class="text-muted">ไม่มีออร์เดอร์ที่เกิน 200 ตัว</p>
             {% endif %}
+
+        {% elif current_report == 'stats' %}
+            <h4 class="mb-1">📈 สถิติร้าน</h4>
+            <p class="text-muted small mb-3">12 เดือนล่าสุด (ตั้งแต่ {{ stats_start|date:"j M Y" }}) — นับจากวันที่สร้างใบงาน</p>
+
+            <!-- การ์ดสรุปเดือนนี้ -->
+            <div class="row g-2 mb-3">
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ใบงานเดือนนี้ ({{ stats_month_label }})</div>
+                        <div class="fs-3 fw-bold">{{ stats_this_month.count|intcomma }}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">จำนวนเสื้อเดือนนี้</div>
+                        <div class="fs-3 fw-bold">{{ stats_this_month.qty|intcomma }} <small class="fs-6 fw-normal">ตัว</small></div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ยอดเงินเดือนนี้</div>
+                        <div class="fs-3 fw-bold">{{ stats_this_month.revenue|floatformat:0|intcomma }} <small class="fs-6 fw-normal">฿</small></div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">เฉลี่ยต่อใบ</div>
+                        <div class="fs-3 fw-bold">{{ stats_avg_per_order|floatformat:0|intcomma }} <small class="fs-6 fw-normal">฿</small></div>
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- กราฟรายเดือน: คนละกราฟคนละแกน (ไม่ทำ dual-axis) -->
+            <div class="row g-3 mb-3">
+                <div class="col-12">
+                    <div class="card"><div class="card-body">
+                        <div class="fw-bold mb-2">ยอดเงินรายเดือน (บาท)</div>
+                        <canvas id="chart-revenue" height="90"></canvas>
+                    </div></div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card"><div class="card-body">
+                        <div class="fw-bold mb-2">จำนวนใบงานรายเดือน</div>
+                        <canvas id="chart-count" height="140"></canvas>
+                    </div></div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card"><div class="card-body">
+                        <div class="fw-bold mb-2">จำนวนเสื้อรายเดือน (ตัว)</div>
+                        <canvas id="chart-qty" height="140"></canvas>
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- แหล่งที่มา + ลูกค้า top -->
+            <div class="row g-3 mb-3">
+                <div class="col-lg-6">
+                    <div class="card h-100"><div class="card-body">
+                        <div class="fw-bold mb-2">ยอดเงินแยกตามแหล่งที่มา</div>
+                        <canvas id="chart-source"></canvas>
+                    </div></div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100"><div class="card-body">
+                        <div class="fw-bold mb-2">🏆 ลูกค้า Top 10 (ตามยอดเงิน)</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle report-table m-0">
+                                <thead class="table-light">
+                                    <tr><th>ลูกค้า</th><th class="num">ใบ</th><th class="num">ตัว</th><th class="num">ยอดเงิน</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for c in stats_top_customers %}
+                                    <tr>
+                                        <td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ c.name }}">{{ c.name }}</td>
+                                        <td class="num">{{ c.count|intcomma }}</td>
+                                        <td class="num">{{ c.qty|intcomma }}</td>
+                                        <td class="num fw-bold">{{ c.revenue|floatformat:0|intcomma }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr><td colspan="4" class="text-muted text-center">ยังไม่มีข้อมูล</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- ตารางรายเดือน (มุมมองตัวเลขของกราฟด้านบน) -->
+            <div class="card mb-3"><div class="card-body">
+                <div class="fw-bold mb-2">ตารางรายเดือน</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle report-table m-0">
+                        <thead class="table-dark">
+                            <tr><th>เดือน</th><th class="num">ใบงาน</th><th class="num">จำนวนเสื้อ (ตัว)</th><th class="num">ยอดเงิน (฿)</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for label, b in stats_monthly_rows %}
+                            <tr>
+                                <td>{{ label }}</td>
+                                <td class="num">{{ b.count|intcomma }}</td>
+                                <td class="num">{{ b.qty|intcomma }}</td>
+                                <td class="num">{{ b.revenue|floatformat:0|intcomma }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div></div>
+
+            {{ stats_chart_data|json_script:"stats-chart-data" }}
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+            <script>
+            (function () {
+                const D = JSON.parse(document.getElementById('stats-chart-data').textContent);
+                const BLUE = '#2c5fb8';   // แท่งจำนวน (ใบ/ตัว)
+                const TEAL = '#0c7c92';   // แท่งยอดเงิน — โทนเดียวกับ badge งานชุด
+                const fmt = (n) => new Intl.NumberFormat('th-TH').format(n);
+                const baseOpts = {
+                    plugins: { legend: { display: false },  /* series เดียว หัวการ์ดบอกอยู่แล้ว */
+                               tooltip: { callbacks: { label: (c) => fmt(c.parsed.y ?? c.parsed.x) } } },
+                    scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } } },
+                    maintainAspectRatio: true,
+                };
+                const bar = (id, labels, data, color, extra) => new Chart(
+                    document.getElementById(id),
+                    { type: 'bar',
+                      data: { labels, datasets: [{ data, backgroundColor: color,
+                              borderRadius: 4, maxBarThickness: 28 }] },
+                      options: Object.assign({}, baseOpts, extra || {}) });
+
+                bar('chart-revenue', D.labels, D.revenue, TEAL);
+                bar('chart-count', D.labels, D.counts, BLUE);
+                bar('chart-qty', D.labels, D.qtys, BLUE);
+                // แหล่งที่มา: แท่งแนวนอน เรียงมาก→น้อย (สีเดียว — identity อยู่ที่ป้ายแกน)
+                bar('chart-source', D.source_labels, D.source_revenue, TEAL, {
+                    indexAxis: 'y',
+                    scales: { x: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } }, y: {} },
+                });
+            })();
+            </script>
         {% endif %}
     </div>
 </div>

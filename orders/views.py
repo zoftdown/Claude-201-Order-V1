@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
@@ -136,7 +136,91 @@ REPORT_TABS = [
     ('daily', '📋 สรุปรายวัน'),
     ('stuck', '⏳ ค้างเกิน 7 วัน'),
     ('over200', '📦 เกิน 200 ตัว'),
+    ('stats', '📈 สถิติร้าน'),
 ]
+
+THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+                     'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+
+
+def _report_stats_context():
+    """สถิติร้าน 12 เดือนล่าสุด (เฟส 5 dashboard): รายเดือน (ใบ/ตัว/ยอดเงิน),
+    แยกตามแหล่งที่มา, ลูกค้า top 10. รวมยอดใน app layer รอบเดียว เพราะ
+    total_qty อยู่ใน ShirtVariant.sizes (JSON) นับใน DB ไม่ได้ — prefetch
+    items__variants ตัด N+1 เหมือน report อื่น. group ลูกค้าด้วย customer_name
+    (ข้อความ) เพื่อให้ครอบคลุมใบเก่าที่ไม่มีโปรไฟล์ Customer ด้วย."""
+    today = timezone.localdate()
+    month_keys = []
+    for i in range(11, -1, -1):
+        mm, yy = today.month - i, today.year
+        while mm <= 0:
+            mm += 12
+            yy -= 1
+        month_keys.append((yy, mm))
+    start = date(month_keys[0][0], month_keys[0][1], 1)
+
+    buckets = {k: {'count': 0, 'qty': 0, 'revenue': 0.0} for k in month_keys}
+    source_stats = {}
+    customer_stats = {}
+
+    orders = (
+        Order.objects.filter(created_date__gte=start)
+        .prefetch_related('items', 'items__variants')
+    )
+    for o in orders:
+        key = (o.created_date.year, o.created_date.month)
+        if key not in buckets:
+            continue
+        qty = o.total_qty
+        revenue = float(o.total_price or 0)
+        b = buckets[key]
+        b['count'] += 1
+        b['qty'] += qty
+        b['revenue'] += revenue
+        s = source_stats.setdefault(o.source, {'count': 0, 'qty': 0, 'revenue': 0.0})
+        s['count'] += 1
+        s['qty'] += qty
+        s['revenue'] += revenue
+        cname = (o.customer_name or '').strip() or '(ไม่ระบุชื่อ)'
+        c = customer_stats.setdefault(cname, {'count': 0, 'qty': 0, 'revenue': 0.0})
+        c['count'] += 1
+        c['qty'] += qty
+        c['revenue'] += revenue
+
+    # label เดือนแบบไทย เช่น "ก.ค. 69" (ปี พ.ศ. 2 หลัก — ชุดเดียวกับเลข order)
+    month_labels = [
+        f'{THAI_MONTHS_SHORT[mm - 1]} {(yy + 543) % 100:02d}' for yy, mm in month_keys
+    ]
+    monthly = [buckets[k] for k in month_keys]
+    source_rows = sorted(
+        ({'source': k, **v} for k, v in source_stats.items()),
+        key=lambda r: r['revenue'], reverse=True,
+    )
+    top_customers = sorted(
+        ({'name': k, **v} for k, v in customer_stats.items()),
+        key=lambda r: r['revenue'], reverse=True,
+    )[:10]
+
+    this_month = buckets[month_keys[-1]]
+    avg_per_order = (this_month['revenue'] / this_month['count']) if this_month['count'] else 0
+
+    return {
+        'stats_chart_data': {
+            'labels': month_labels,
+            'revenue': [round(b['revenue']) for b in monthly],
+            'counts': [b['count'] for b in monthly],
+            'qtys': [b['qty'] for b in monthly],
+            'source_labels': [r['source'] for r in source_rows],
+            'source_revenue': [round(r['revenue']) for r in source_rows],
+        },
+        'stats_this_month': this_month,
+        'stats_avg_per_order': avg_per_order,
+        'stats_month_label': month_labels[-1],
+        'stats_source_rows': source_rows,
+        'stats_top_customers': top_customers,
+        'stats_monthly_rows': list(zip(month_labels, monthly)),
+        'stats_start': start,
+    }
 
 
 # Statuses ที่ถือว่า "ขยับแล้ว" → ตัดออกจากรายงานค้าง แม้ stage timestamp จะ null
@@ -189,6 +273,8 @@ def reports(request):
         ctx['stuck_rows'] = _report_stuck_rows(stuck_sort)
     elif report == 'over200':
         ctx['over200_rows'] = _report_over200_rows()
+    elif report == 'stats':
+        ctx.update(_report_stats_context())
 
     return render(request, 'orders/reports.html', ctx)
 
