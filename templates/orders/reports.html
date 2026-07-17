@@ -209,7 +209,10 @@
                 <div class="col-lg-6">
                     <div class="card h-100"><div class="card-body">
                         <div class="fw-bold mb-2">ยอดเงินแยกตามแหล่งที่มา</div>
-                        <canvas id="chart-source"></canvas>
+                        {# ความสูง set ด้วย JS ตามจำนวนแหล่ง — กัน Chart.js autoSkip ตัดป้ายชื่อ #}
+                        <div id="chart-source-wrap" style="position:relative;">
+                            <canvas id="chart-source"></canvas>
+                        </div>
                     </div></div>
                 </div>
                 <div class="col-lg-6">
@@ -285,9 +288,14 @@
                 bar('chart-count', D.labels, D.counts, BLUE);
                 bar('chart-qty', D.labels, D.qtys, BLUE);
                 // แหล่งที่มา: แท่งแนวนอน เรียงมาก→น้อย (สีเดียว — identity อยู่ที่ป้ายแกน)
+                // สูงตามจำนวนแหล่ง (~32px/แถว) + autoSkip:false — ป้ายชื่อครบทุกแหล่ง ไม่โดนเว้น
+                document.getElementById('chart-source-wrap').style.height =
+                    Math.max(160, D.source_labels.length * 32 + 60) + 'px';
                 bar('chart-source', D.source_labels, D.source_revenue, TEAL, {
                     indexAxis: 'y',
-                    scales: { x: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } }, y: {} },
+                    maintainAspectRatio: false,
+                    scales: { x: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } },
+                              y: { ticks: { autoSkip: false } } },
                 });
             })();
             </script>
