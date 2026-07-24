@@ -31,7 +31,7 @@ from .forms import (
 )
 from .models import (
     Customer, CustomerPrice, CustomerTag, DepartmentPIN, ExtraImage,
-    ExtraNameRow, MasterImage, Order, StageLog, Tailor,
+    ExtraNameRow, MasterImage, Order, StageLog, Tailor, UserPin,
 )
 from .qr_utils import generate_qr_svg
 
@@ -1299,11 +1299,57 @@ def update_order_stage(request, order_number):
 
 
 # ---------------------------------------------------------------------------
+# Login ด้วย PIN ประจำตัว — หน้า login หลัก (แทน username/password เดิม)
+# ---------------------------------------------------------------------------
+
+def pin_login(request):
+    """กรอก PIN ช่องเดียว → login เป็นเจ้าของ PIN (map ผ่าน UserPin → User เดิม)
+    ดังนั้น log ทุกอย่างที่ผูก user (created_by, StageLog, last_login) แยกรายคนได้เหมือนเดิม.
+    fallback: /login/classic/ = username/password เดิม (กันล็อกหมดตอน PIN ยังไม่ถูกตั้ง)."""
+    import time as time_mod  # ห้ามใช้ชื่อ time — ชนกับ datetime.time ที่ import ไว้บนไฟล์
+
+    from django.contrib.auth import login as auth_login
+
+    if request.user.is_authenticated:
+        return redirect('order_list')
+
+    error = False
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    if request.method == 'POST':
+        pin = (request.POST.get('pin') or '').strip()
+        row = UserPin.objects.select_related('user').filter(pin=pin).first() if pin else None
+        if row and row.user.is_active:
+            auth_login(request, row.user)
+            if next_url and url_has_allowed_host_and_scheme(
+                    next_url, allowed_hosts={request.get_host()}):
+                return redirect(next_url)
+            return redirect('order_list')
+        time_mod.sleep(0.5)  # หน่วงตอน PIN ผิด — ถ่วงการนั่งเดา
+        error = True
+
+    return render(request, 'registration/login.html', {'error': error, 'next': next_url})
+
+
+# ---------------------------------------------------------------------------
 # User management (admin-only) — list/add/edit-password/delete
 # Mounted under /order/manage/users/.
 # ---------------------------------------------------------------------------
 
 ALLOWED_USER_GROUPS = ('admin', 'staff')
+
+
+def _validate_pin(pin, exclude_user=None):
+    """คืนข้อความ error ถ้า PIN ใช้ไม่ได้ (None = ผ่าน). PIN ว่าง = ไม่ใช้ PIN, ผ่านเสมอ."""
+    if not pin:
+        return None
+    if not (pin.isdigit() and 4 <= len(pin) <= 8):
+        return 'PIN ต้องเป็นตัวเลข 4–8 หลัก'
+    qs = UserPin.objects.filter(pin=pin)
+    if exclude_user is not None:
+        qs = qs.exclude(user=exclude_user)
+    if qs.exists():
+        return 'PIN นี้ถูกใช้แล้ว — เลือกเลขอื่น'
+    return None
 
 
 def _require_admin(user):
@@ -1322,12 +1368,15 @@ def user_list(request):
     users = (
         User.objects.all()
         .prefetch_related('groups')
+        .select_related('login_pin')
         .order_by('username')
     )
     rows = [{
         'user': u,
         'group': _primary_group_name(u),
         'is_self': u.pk == request.user.pk,
+        # reverse OneToOne ไม่มีแถว → AttributeError ซึ่ง getattr กันให้เป็น None
+        'pin': getattr(u, 'login_pin', None),
     } for u in users]
     return render(request, 'orders/manage/user_list.html', {
         'rows': rows,
@@ -1338,13 +1387,14 @@ def user_list(request):
 def user_add(request):
     _require_admin(request.user)
     errors = {}
-    form_data = {'username': '', 'group': 'staff'}
+    form_data = {'username': '', 'group': 'staff', 'pin': ''}
 
     if request.method == 'POST':
         username = (request.POST.get('username') or '').strip()
         password = request.POST.get('password') or ''
         group_name = request.POST.get('group') or ''
-        form_data = {'username': username, 'group': group_name}
+        pin = (request.POST.get('pin') or '').strip()
+        form_data = {'username': username, 'group': group_name, 'pin': pin}
 
         if not username:
             errors['username'] = 'กรุณากรอก username'
@@ -1359,9 +1409,15 @@ def user_add(request):
         if group_name not in ALLOWED_USER_GROUPS:
             errors['group'] = 'กรุณาเลือก group'
 
+        pin_error = _validate_pin(pin)
+        if pin_error:
+            errors['pin'] = pin_error
+
         if not errors:
             user = User.objects.create_user(username=username, password=password)
             user.groups.add(Group.objects.get(name=group_name))
+            if pin:
+                UserPin.objects.create(user=user, pin=pin)
             messages.success(request, f'เพิ่ม user "{username}" แล้ว')
             return redirect('user_list')
 
@@ -1379,12 +1435,14 @@ def user_edit(request, pk):
     _require_admin(request.user)
     target = get_object_or_404(User, pk=pk)
     errors = {}
-    form_data = {'group': _primary_group_name(target)}
+    current_pin = getattr(getattr(target, 'login_pin', None), 'pin', '')
+    form_data = {'group': _primary_group_name(target), 'pin': current_pin}
 
     if request.method == 'POST':
         password = request.POST.get('password') or ''
         group_name = request.POST.get('group') or ''
-        form_data = {'group': group_name}
+        pin = (request.POST.get('pin') or '').strip()
+        form_data = {'group': group_name, 'pin': pin}
 
         # Password optional on edit — only validate if provided.
         if password and len(password) < 4:
@@ -1393,12 +1451,21 @@ def user_edit(request, pk):
         if group_name not in ALLOWED_USER_GROUPS:
             errors['group'] = 'กรุณาเลือก group'
 
+        pin_error = _validate_pin(pin, exclude_user=target)
+        if pin_error:
+            errors['pin'] = pin_error
+
         if not errors:
             if password:
                 target.set_password(password)
                 target.save()
             target.groups.clear()
             target.groups.add(Group.objects.get(name=group_name))
+            if pin:
+                UserPin.objects.update_or_create(user=target, defaults={'pin': pin})
+            else:
+                # เคลียร์ช่อง PIN = ถอน PIN ของคนนั้น (login ได้ทาง classic เท่านั้น)
+                UserPin.objects.filter(user=target).delete()
             messages.success(request, f'อัปเดต user "{target.username}" แล้ว')
             return redirect('user_list')
 

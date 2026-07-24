@@ -1,6 +1,19 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V3.1 · อัปเดตล่าสุด 2026-07-16 · migration ล่าสุด `0022_customertag_customer_tags` (กลุ่มลูกค้า) · feature ล่าสุด: **เฟส 5 dashboard สถิติร้าน** (tab "📈 สถิติร้าน" ใน /reports/ — 12 เดือน, Chart.js CDN) — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V3.2 · อัปเดตล่าสุด 2026-07-24 · migration ล่าสุด `0023_userpin` (PIN ต่อคน) · feature ล่าสุด: **login ด้วย PIN ประจำตัว** (กรอก PIN ช่องเดียว → login เป็น user ตัวเอง; จัดการ PIN ในหน้า "จัดการ user"; fallback `/login/classic/`) · ก่อนหน้า: เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+
+## Auth: login ด้วย PIN ประจำตัว (V3.2 · 2026-07-24)
+- **หน้า `/login/` = ช่อง PIN ช่องเดียว** (`orders.views.pin_login`, template `registration/login.html`) —
+  พนักงานกรอก PIN 4–8 หลักของตัวเอง → map ผ่าน model **`UserPin`** (OneToOne→User, `pin` unique,
+  เก็บ plaintext โดยตั้งใจ — แอดมินเปิดดูให้คนที่ลืมได้) → `login()` เป็น user นั้น →
+  `created_by`/`last_login`/log ทุกอย่างแยกรายคนเหมือนเดิม; PIN ผิดหน่วง 0.5s; รองรับ `?next=`
+- **จัดการ PIN ที่หน้า "จัดการ user"** (`/manage/users/`, admin เท่านั้น): ตาราง user มีคอลัมน์ PIN
+  (โชว์เลขตรงๆ — ไว้บอกพนักงานที่มาขอ/ลืม), ฟอร์ม เพิ่ม/แก้ user มีช่อง PIN
+  (validate ตัวเลข 4–8 หลัก + กันซ้ำข้ามคน ด้วย `_validate_pin`; เว้นว่างตอนแก้ = ถอน PIN)
+- **fallback `/login/classic/`** = username/password เดิม (LoginView, template `login_classic.html`,
+  มีลิงก์เล็กใต้ฟอร์ม PIN) — กันล็อกทั้งร้านตอน PIN ยังไม่ถูกตั้ง / superuser ยังเข้าได้เสมอ;
+  Django admin `/admin/` login แยกของตัวเองตามปกติ
+- อย่าสับสนกับ PIN อื่นในระบบ: `DepartmentPIN` (gate cookie แผนก, sha256) · `STATS_PIN` (หน้าสถิติ) — คนละเรื่องกัน
 
 ## Project Overview
 ระบบจัดการใบออร์เดอร์สำหรับร้านพิมพ์เสื้อ

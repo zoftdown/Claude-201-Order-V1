@@ -8,35 +8,33 @@
     <style>
         body { background: #2c3e50; min-height: 100vh; display: flex; align-items: center; }
         .login-card { max-width: 380px; margin: 0 auto; }
-        .pin-input { font-size: 1.6rem; letter-spacing: .4rem; text-align: center; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="card login-card shadow">
             <div class="card-body p-4">
-                <h4 class="text-center mb-1">ระบบออร์เดอร์ร้านพิมพ์เสื้อ</h4>
-                <p class="text-center text-muted small mb-4">ใส่ PIN ประจำตัวของคุณ</p>
+                <h4 class="text-center mb-4">ระบบออร์เดอร์ร้านพิมพ์เสื้อ</h4>
 
-                {% if error %}
-                <div class="alert alert-danger py-2">PIN ไม่ถูกต้อง</div>
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger py-2">
+                    {{ form.non_field_errors.0 }}
+                </div>
                 {% endif %}
 
                 <form method="post">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <input type="password" name="pin" class="form-control pin-input"
-                               inputmode="numeric" autocomplete="off" required autofocus
-                               placeholder="••••">
+                        <label for="id_username" class="form-label">ชื่อผู้ใช้</label>
+                        <input type="text" name="username" id="id_username" class="form-control" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_password" class="form-label">รหัสผ่าน</label>
+                        <input type="password" name="password" id="id_password" class="form-control" required>
                     </div>
                     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
                     <button type="submit" class="btn btn-primary w-100">เข้าสู่ระบบ</button>
                 </form>
-
-                <div class="text-center mt-3">
-                    <a href="{% url 'login_classic' %}{% if next %}?next={{ next|urlencode }}{% endif %}"
-                       class="small text-muted">เข้าด้วยชื่อผู้ใช้/รหัสผ่าน</a>
-                </div>
             </div>
         </div>
     </div>

@@ -575,3 +575,24 @@ class StageLog(models.Model):
 
     def __str__(self):
         return f'{self.order.order_number} · {self.department} · {self.action}'
+
+
+class UserPin(models.Model):
+    """PIN ประจำตัวพนักงานสำหรับหน้า login (กรอก PIN ช่องเดียว → login เป็น user นั้น).
+
+    เก็บ plaintext โดยตั้งใจ — แอดมินต้องเปิดดู PIN ให้พนักงานที่มาขอ/ลืมได้
+    จากหน้าจัดการ user (ความลับระดับเดียวกับ DepartmentPIN); เข้าถึงได้เฉพาะ
+    admin และเปลี่ยนได้ทันทีจากหน้าเดียวกัน. PIN unique ทั้งระบบเพราะใช้
+    ระบุตัวคนตอน login โดยไม่ต้องกรอก username.
+    """
+    user = models.OneToOneField('auth.User', on_delete=models.CASCADE,
+                                related_name='login_pin', verbose_name='user')
+    pin = models.CharField('PIN', max_length=8, unique=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'PIN เข้าระบบ'
+        verbose_name_plural = 'PIN เข้าระบบ'
+
+    def __str__(self):
+        return f'{self.user.username}'
