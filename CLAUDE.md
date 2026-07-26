@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V3.2 · อัปเดตล่าสุด 2026-07-24 · migration ล่าสุด `0023_userpin` (PIN ต่อคน) · feature ล่าสุด: **login ด้วย PIN ประจำตัว** (กรอก PIN ช่องเดียว → login เป็น user ตัวเอง; จัดการ PIN ในหน้า "จัดการ user"; fallback `/login/classic/`) · ก่อนหน้า: เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V3.3 · อัปเดตล่าสุด 2026-07-27 · migration ล่าสุด `0024_profit_report` (รายงานกำไร) · feature ล่าสุด: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Auth: login ด้วย PIN ประจำตัว (V3.2 · 2026-07-24)
 - **หน้า `/login/` = ช่อง PIN ช่องเดียว** (`orders.views.pin_login`, template `registration/login.html`) —
@@ -103,6 +103,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 |---|---|---|
 | order | FK → Order | |
 | design_image | ImageField | รูปดีไซน์ (upload designs/YYYY/MM/) |
+| **shirt_type** | CharField | ประเภทเสื้อสำหรับคิดต้นทุน: short/long/polo (migration 0024, blank ได้ — '' = ใบเก่า/ยังไม่ระบุ → รายงานกำไรคิดแบบ short + badge เตือน). item ใหม่ default short ในฟอร์ม; `OrderItemForm.has_changed()` ตัด shirt_type ออกจากการตัดสิน "ฟอร์มเปลี่ยน" ของ extra form (คงพฤติกรรม formset เดิม: item ถูกสร้างเมื่อมีรูป) |
 | order_index | int | ลำดับ |
 
 ### ShirtVariant ("แบบ" — 1 OrderItem มีหลาย variant)
@@ -174,6 +175,14 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - save แบบ **wipe-and-recreate** จาก parallel arrays (`price_label[]/price_value[]`) ใน `_save_customer_prices` — pattern เดียวกับ ExtraNameRow. แถวราคาไม่ใช่ตัวเลข → ข้าม
 - **ฟอร์มใบงาน:** เลือกลูกค้าจาก autocomplete → ปุ่มราคาใต้กล่องเงิน (`#customer-price-panel`) กด = `total_price := จำนวนตัวรวม × ราคา` (client-side, แก้มือทับได้). หน้าแก้ไข inject ราคาผ่าน `{{ customer_prices|json_script }}` (view ส่ง `_customer_prices_payload`)
 - **hidden `customer_id`** ในฟอร์ม: JS เซ็ตเมื่อเลือกจาก dropdown, เคลียร์เมื่อพิมพ์ชื่อเอง (server จะ match/สร้างใหม่)
+
+### รายงานกำไร (V3.3, migration 0024 — logic ทั้งหมดอยู่ `orders/profit.py`)
+- **ShirtCost** — ต้นทุน/ตัว ตามประเภท (shirt_type unique) · seed ใน migration: short=50, long=65, polo=85 · แก้ผ่าน Django admin (list_editable) — แก้แล้วล้าง cache DailySummary ทั้งหมด
+- **DailyAdSpend** — ค่าแอดรายวันต่อเพจ (unique date+page) · กรอกจากฟอร์มใน tab กำไรรายวัน (ช่องว่าง = ไม่เปลี่ยน, 0 = ลบแถว) หรือแก้ใน admin
+- **DailySummary** — cache สรุปกำไรต่อ (วัน, เพจ): orders/shirts/revenue/shirt_cost/ad_spend/gross_profit/net_after_ads/defaulted_shirts (unique date+page)
+  - **วันที่ผ่านแล้ว:** คำนวณครั้งแรกใน `get_day_rows()` แล้วเขียน cache → อ่านจาก cache ตลอด · **วันนี้/อนาคต:** คำนวณสดเสมอ ไม่เขียน cache
+  - **invalidate:** แก้/สร้าง/ลบ order → ลบแถวของ created_date เดิม+ใหม่ (hook ใน order_create/edit/delete) · บันทึกค่าแอด → ลบแถวของวันนั้น · แก้ต้นทุน → ลบทั้งหมด
+  - **สูตร:** gross = revenue − Σ(qty ของ item × ต้นทุนตาม shirt_type; '' → short) · net = gross − ค่าแอดของเพจวันนั้น · item ที่ '' นับเข้า defaulted_shirts → badge "⚠ default N ตัว"
 
 ### อื่นๆ
 - **Tailor** — ช่างเย็บ (M2M กับ Order)
@@ -289,6 +298,13 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **เนื้อหา:** การ์ดสรุปเดือนนี้ (ใบ/ตัว/ยอดเงิน/เฉลี่ยต่อใบ) · กราฟแท่งรายเดือน 3 ตัว (ยอดเงิน teal / ใบงาน / จำนวนตัว น้ำเงิน — **คนละกราฟคนละแกน ไม่ทำ dual-axis**) · แหล่งที่มาแท่งแนวนอนเรียงมาก→น้อย · ตารางลูกค้า Top 10 · ตารางรายเดือน (มุมมองตัวเลขของกราฟ)
 - **Chart.js 4.4.1 ผ่าน jsdelivr CDN** (ชุดเดียวกับ Bootstrap) + ข้อมูล inject ผ่าน `json_script` — label เดือนแบบไทย "ก.ค. 69" (พ.ศ. 2 หลัก ชุดเดียวกับเลข order)
 - **ล็อกด้วยรหัสอีกชั้น (2026-07-17):** เปิด tab สถิติต้องใส่รหัสก่อน (นอกจาก login+admin เพราะเป็นยอดขายรวมร้าน) — `STATS_PIN` ใน .env (default `265424`), เทียบด้วย `constant_time_compare`, ใส่ถูกจำใน `request.session['stats_unlocked']` (หมดตอน logout/session หมดอายุ; แต่ละ browser ใส่ครั้งเดียว)
+
+**เพิ่มล่าสุด (V3.3 · 2026-07-27): รายงานกำไรรายวัน/รายเดือน**
+- **tab "💰 กำไรรายวัน"** ใน `/reports/` — ตารางแยกเพจ (ใบ/ตัว/ยอดขาย/ต้นทุนเสื้อ/กำไรขั้นต้น/ค่าแอด/กำไรสุทธิ) + แถวรวม + ฟอร์มกรอกค่าแอดต่อเพจของวันนั้น (save แล้ว redirect กัน resubmit) + ปุ่มเลื่อนวัน/พิมพ์ A4 — บอกในหน้าว่า "คำนวณสด" (วันนี้) หรือ "ข้อมูลจาก cache"
+- **tab "📅 กำไรรายเดือน"** — การ์ดสรุปเดือน 6 ใบ + กราฟแท่งกำไรรายวัน (Chart.js: กำไรขั้นต้น teal + กำไรสุทธิ น้ำเงิน — หน่วยบาทเดียวกันเลยอยู่กราฟเดียว ไม่ใช่ dual-axis) + ตารางรวมเดือนแยกเพจ + ตารางรายวัน (วันที่คลิกเข้า tab รายวันได้) · `?month=YYYY-MM`
+- **ทั้ง 2 tab อยู่หลังรหัส STATS_PIN** เหมือน tab สถิติ — flag `stats_unlocked` ตัวเดียวปลดทั้งกลุ่ม `MONEY_REPORTS` (การ์ดล็อกใช้ร่วมใน template, form action ชี้ tab ปัจจุบัน)
+- **ฟอร์มใบงาน:** รายการเสื้อมี select "ประเภทเสื้อ (ต้นทุน)" ข้างช่องรูป (default แขนสั้น; เพิ่มทั้งใน form จริงและ `empty-item-template` ที่ JS clone) — ไม่บังคับ ใบเก่าแก้ทีหลังได้
+- **regression tests** ใน `orders/tests.py` (14 เคส: สูตรกำไร/cache/invalidate/PIN gate/ฟอร์มค่าแอด/สร้าง-แก้ใบงานเดิม) — รัน `python manage.py test orders`
 
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
