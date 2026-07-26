@@ -1,7 +1,7 @@
 import json
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Order, OrderItem, ShirtVariant
+from .models import Order, OrderItem, ShirtVariant, SHIRT_TYPE_CHOICES
 
 
 # Default sizes shown when a new variant is added.
@@ -63,7 +63,26 @@ class OrderItemForm(BootstrapMixin, forms.ModelForm):
 
     class Meta:
         model = OrderItem
-        fields = ['design_image']
+        fields = ['design_image', 'shirt_type']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # ตัวเลือกว่าง = item เก่าที่ยังไม่เคยระบุ — รายงานกำไรคิดต้นทุนแบบแขนสั้น
+        # พร้อม badge เตือน. item ใหม่ default แขนสั้น (ประเภทที่ใช้บ่อยสุด).
+        self.fields['shirt_type'].choices = (
+            [('', 'ยังไม่ระบุ (คิดแบบแขนสั้น)')] + list(SHIRT_TYPE_CHOICES)
+        )
+        if not (self.instance and self.instance.pk):
+            self.fields['shirt_type'].initial = 'short'
+
+    def has_changed(self):
+        """คงพฤติกรรม formset เดิม: item ใหม่ถูกสร้างเมื่อมีข้อมูลจริง (รูปดีไซน์)
+        เท่านั้น — ไม่ให้ shirt_type อย่างเดียว (ซึ่งมี initial='short') ชี้ขาดว่า
+        ฟอร์มเปลี่ยน/ไม่เปลี่ยน (ไม่งั้นค่า default ตรง initial = ฟอร์มถูกข้าม
+        ทั้งที่มีรูป... กลับกัน เลือกค่าอื่นบนฟอร์มเปล่า = สร้าง item เปล่า)."""
+        if self.instance.pk:
+            return super().has_changed()
+        return bool(set(self.changed_data) - {'shirt_type'})
 
 
 class ShirtVariantForm(BootstrapMixin, forms.ModelForm):

@@ -30,9 +30,11 @@ from .forms import (
     SLEEVE_SUGGESTIONS,
 )
 from .models import (
-    Customer, CustomerPrice, CustomerTag, DepartmentPIN, ExtraImage,
-    ExtraNameRow, MasterImage, Order, StageLog, Tailor, UserPin,
+    Customer, CustomerPrice, CustomerTag, DailyAdSpend, DepartmentPIN,
+    ExtraImage, ExtraNameRow, MasterImage, Order, StageLog, Tailor, UserPin,
 )
+from .profit import get_day_rows, get_month_data, invalidate_days
+from .profit import totals as profit_totals
 from .qr_utils import generate_qr_svg
 
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
@@ -137,7 +139,13 @@ REPORT_TABS = [
     ('stuck', '⏳ ค้างเกิน 7 วัน'),
     ('over200', '📦 เกิน 200 ตัว'),
     ('stats', '📈 สถิติร้าน'),
+    ('profit', '💰 กำไรรายวัน'),
+    ('profit_month', '📅 กำไรรายเดือน'),
 ]
+
+# Tab ที่เปิดเผยยอดเงิน/กำไรรวมของร้าน — ล็อกด้วย STATS_PIN อีกชั้น
+# (ใส่ถูกครั้งเดียวจำใน session — flag เดียวกันปลดทุก tab ในกลุ่มนี้)
+MONEY_REPORTS = {'stats', 'profit', 'profit_month'}
 
 THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
                      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
@@ -223,6 +231,85 @@ def _report_stats_context():
     }
 
 
+def _save_ad_spend(request, day):
+    """บันทึกค่าแอดของวันจากฟอร์มใน tab กำไรรายวัน (input ต่อเพจ ชื่อ ad__<เพจ>).
+    ช่องว่าง/0 = ลบแถว (ไม่มีค่าแอด), ตัวเลข = update_or_create. เสร็จแล้ว
+    invalidate cache ของวันนั้นให้คำนวณ net ใหม่."""
+    for page, _label in Order.SOURCE_CHOICES:
+        raw = (request.POST.get(f'ad__{page}') or '').strip()
+        if raw == '':
+            continue  # ช่องที่ไม่ได้แตะ — ปล่อยค่าเดิมไว้
+        try:
+            amount = Decimal(raw)
+        except (InvalidOperation, ValueError):
+            continue
+        if amount <= 0:
+            DailyAdSpend.objects.filter(date=day, page=page).delete()
+        else:
+            DailyAdSpend.objects.update_or_create(
+                date=day, page=page, defaults={'amount': amount},
+            )
+    invalidate_days(day)
+
+
+def _report_profit_context(request):
+    """tab กำไรรายวัน: ตารางแยกเพจ + แถวรวม + ฟอร์มกรอกค่าแอดของวันนั้น.
+    วันที่ผ่านแล้วอ่านจาก cache (DailySummary), วันนี้คำนวณสด — ดู orders/profit.py."""
+    today = timezone.localdate()
+    day = parse_date(request.GET.get('date', '') or '') or today
+    rows = get_day_rows(day)
+    ad_current = {s.page: s.amount for s in DailyAdSpend.objects.filter(date=day)}
+    return {
+        'profit_day': day,
+        'profit_today': today,
+        'profit_rows': rows,
+        'profit_total': profit_totals(rows),
+        'profit_prev_date': day - timedelta(days=1),
+        'profit_next_date': day + timedelta(days=1),
+        'ad_form_rows': [
+            {'page': page, 'amount': ad_current.get(page)}
+            for page, _label in Order.SOURCE_CHOICES
+        ],
+    }
+
+
+def _report_profit_month_context(request):
+    """tab กำไรรายเดือน: กราฟกำไรรายวัน + สรุปเดือน + ตารางแยกเพจ.
+    ?month=YYYY-MM (ไม่ระบุ/ผิด = เดือนนี้). วันที่ผ่านแล้วถูก cache อัตโนมัติ."""
+    today = timezone.localdate()
+    raw = (request.GET.get('month') or '').strip()
+    year, month = today.year, today.month
+    if len(raw) == 7 and raw[4] == '-':
+        try:
+            y, m = int(raw[:4]), int(raw[5:7])
+            if 1 <= m <= 12 and 2000 <= y <= 2100:
+                year, month = y, m
+        except ValueError:
+            pass
+
+    day_rows, month_total, page_rows = get_month_data(year, month)
+
+    prev_y, prev_m = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_y, next_m = (year + 1, 1) if month == 12 else (year, month + 1)
+    month_label = f'{THAI_MONTHS_SHORT[month - 1]} {(year + 543) % 100:02d}'
+
+    return {
+        'pm_month_label': month_label,
+        'pm_month_value': f'{year:04d}-{month:02d}',
+        'pm_prev': f'{prev_y:04d}-{prev_m:02d}',
+        'pm_next': f'{next_y:04d}-{next_m:02d}',
+        'pm_is_current': (year, month) == (today.year, today.month),
+        'pm_day_rows': day_rows,
+        'pm_total': month_total,
+        'pm_page_rows': page_rows,
+        'pm_chart_data': {
+            'labels': [r['date'].day for r in day_rows],
+            'gross': [float(r['gross_profit']) for r in day_rows],
+            'net': [float(r['net_after_ads']) for r in day_rows],
+        },
+    }
+
+
 # Statuses ที่ถือว่า "ขยับแล้ว" → ตัดออกจากรายงานค้าง แม้ stage timestamp จะ null
 # (ใบที่ตั้ง status เองโดยไม่ได้กดผ่านระบบ stage QR). เหลือเฉพาะ "รอดำเนินการ".
 STUCK_EXCLUDE_STATUSES = ('กำลังผลิต', 'เสร็จแล้ว', 'ส่งแล้ว')
@@ -273,21 +360,32 @@ def reports(request):
         ctx['stuck_rows'] = _report_stuck_rows(stuck_sort)
     elif report == 'over200':
         ctx['over200_rows'] = _report_over200_rows()
-    elif report == 'stats':
-        # หน้าสถิติมีรหัสอีกชั้น (นอกจาก login+admin) เพราะเป็นยอดขายรวมของร้าน.
-        # ใส่ถูกครั้งเดียว → จำใน session (หมดเมื่อ logout/session หมดอายุ)
+    elif report in MONEY_REPORTS:
+        # tab กลุ่มเงิน (สถิติ/กำไร) มีรหัสอีกชั้น (นอกจาก login+admin) เพราะเป็น
+        # ยอดขาย/กำไรรวมของร้าน. ใส่ถูกครั้งเดียว → จำใน session (flag เดียว
+        # ปลดทุก tab ในกลุ่ม; หมดเมื่อ logout/session หมดอายุ)
         if not request.session.get('stats_unlocked'):
-            if request.method == 'POST':
+            if request.method == 'POST' and 'stats_pin' in request.POST:
                 from django.utils.crypto import constant_time_compare
                 pin = (request.POST.get('stats_pin') or '').strip()
                 if constant_time_compare(pin, settings.STATS_PIN):
                     request.session['stats_unlocked'] = True
                 else:
                     ctx['stats_pin_error'] = True
-        if request.session.get('stats_unlocked'):
-            ctx.update(_report_stats_context())
-        else:
+        if not request.session.get('stats_unlocked'):
             ctx['stats_locked'] = True
+        elif report == 'stats':
+            ctx.update(_report_stats_context())
+        elif report == 'profit':
+            # ฟอร์มกรอกค่าแอดรายวัน — save แล้ว redirect กัน resubmit
+            if request.method == 'POST' and request.POST.get('ad_spend_submit'):
+                day = parse_date(request.POST.get('date', '') or '') or timezone.localdate()
+                _save_ad_spend(request, day)
+                messages.success(request, f'บันทึกค่าแอดของวันที่ {day:%d/%m/%Y} แล้ว')
+                return redirect(f"{reverse('reports')}?report=profit&date={day.isoformat()}")
+            ctx.update(_report_profit_context(request))
+        elif report == 'profit_month':
+            ctx.update(_report_profit_month_context(request))
 
     return render(request, 'orders/reports.html', ctx)
 
@@ -614,6 +712,8 @@ def order_create(request):
             if parent_order and parent_order.pk != order.pk:
                 order.parent_order = parent_order
                 order.save(update_fields=['parent_order'])
+            # ล้าง cache กำไรของวันนั้น (กรณี backdate ใบใหม่ลงวันเก่า)
+            invalidate_days(order.created_date)
             return redirect('order_detail', pk=order.pk)
     else:
         initial = {}
@@ -649,6 +749,9 @@ def order_create(request):
 def order_edit(request, pk):
     order = get_object_or_404(Order, pk=pk)
     is_admin = _is_admin(request.user)
+    # เก็บวันเดิมก่อน bind form (is_valid() จะเขียนค่าใหม่ทับ instance) —
+    # ไว้ล้าง cache กำไรทั้งวันเดิมและวันใหม่กรณีย้ายวันที่
+    original_created_date = order.created_date
     if request.method == 'POST':
         form = OrderForm(request.POST, instance=order, is_admin=is_admin)
         item_formset = OrderItemFormSet(
@@ -665,6 +768,8 @@ def order_edit(request, pk):
             _save_with_variants(
                 form, item_formset, variant_formsets, request, set_created_date=False,
             )
+            # แก้ order ย้อนหลัง → ล้าง cache กำไรของวันเดิม+วันใหม่ (invalidate on edit)
+            invalidate_days(original_created_date, order.created_date)
             return redirect('order_detail', pk=order.pk)
     else:
         form = OrderForm(instance=order, is_admin=is_admin)
@@ -813,7 +918,10 @@ def order_delete(request, pk):
     if not _is_admin(request.user):
         raise PermissionDenied
     order = get_object_or_404(Order, pk=pk)
+    created_date = order.created_date
     order.delete()
+    # ลบใบย้อนหลัง → ล้าง cache กำไรของวันนั้นให้คำนวณใหม่
+    invalidate_days(created_date)
     return redirect('order_list')
 
 

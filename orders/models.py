@@ -99,6 +99,15 @@ def downscale_image_field(field, max_side=1600, quality=85):
         img.save(path)
 
 
+# ประเภทเสื้อ (ต้นทุน) — ใช้ร่วมระหว่าง OrderItem.shirt_type กับ ShirtCost.
+# key ภาษาอังกฤษเก็บใน DB, label ไทยแสดงในฟอร์ม/รายงาน.
+SHIRT_TYPE_CHOICES = [
+    ('short', 'แขนสั้น'),
+    ('long', 'แขนยาว'),
+    ('polo', 'โปโล'),
+]
+
+
 class CustomerTag(models.Model):
     """tag/กลุ่มลูกค้า (เฟส 4 CRM) — เช่น "ลูกค้าประจำ", "โรงเรียน", "โรงงาน".
     ใช้ filter หน้ารายชื่อ + เลือกกลุ่ม export CSV (ส่งข่าวส่วนลด/ของขวัญ).
@@ -384,6 +393,10 @@ class OrderItem(models.Model):
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     design_image = models.ImageField('รูปดีไซน์', upload_to=design_upload_path, blank=True)
+    # ประเภทเสื้อสำหรับคิดต้นทุนในรายงานกำไร. blank ('') = ใบเก่า/ยังไม่ระบุ
+    # → รายงานคิดต้นทุนแบบแขนสั้น (default) พร้อม badge เตือนว่าเป็นค่า default.
+    shirt_type = models.CharField('ประเภทเสื้อ (ต้นทุน)', max_length=10,
+                                  choices=SHIRT_TYPE_CHOICES, blank=True, default='')
     order_index = models.PositiveIntegerField('ลำดับ', default=0)
 
     class Meta:
@@ -559,6 +572,71 @@ class DepartmentPIN(models.Model):
         if not row or not row.pin or not candidate:
             return False
         return constant_time_compare(str(candidate), row.pin)
+
+
+class ShirtCost(models.Model):
+    """ต้นทุนเสื้อต่อตัวตามประเภท (แขนสั้น/แขนยาว/โปโล) — ใช้ในรายงานกำไรรายวัน.
+    seed ค่าเริ่มต้นใน migration (short=50, long=65, polo=85) — แก้ผ่าน Django admin.
+    แก้ต้นทุนแล้ว cache รายงานกำไร (DailySummary) ถูกล้างทั้งหมดให้คำนวณใหม่."""
+    shirt_type = models.CharField('ประเภทเสื้อ', max_length=10,
+                                  choices=SHIRT_TYPE_CHOICES, unique=True)
+    cost = models.DecimalField('ต้นทุน/ตัว (บาท)', max_digits=10, decimal_places=2)
+
+    class Meta:
+        ordering = ['shirt_type']
+        verbose_name = 'ต้นทุนเสื้อ'
+        verbose_name_plural = 'ต้นทุนเสื้อ'
+
+    def __str__(self):
+        return f'{self.get_shirt_type_display()} = {self.cost}'
+
+
+class DailyAdSpend(models.Model):
+    """ค่าแอดรายวันต่อเพจ (แหล่งที่มา) — กรอกมือจากฟอร์มใน tab กำไรรายวัน.
+    1 แถว = (วัน, เพจ). ใช้หัก gross_profit → net_after_ads ในรายงานกำไร."""
+    date = models.DateField('วันที่')
+    page = models.CharField('เพจ/แหล่งที่มา', max_length=50, choices=Order.SOURCE_CHOICES)
+    amount = models.DecimalField('ค่าแอด (บาท)', max_digits=10, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ['-date', 'page']
+        constraints = [
+            models.UniqueConstraint(fields=['date', 'page'], name='uniq_adspend_date_page'),
+        ]
+        verbose_name = 'ค่าแอดรายวัน'
+        verbose_name_plural = 'ค่าแอดรายวัน'
+
+    def __str__(self):
+        return f'{self.date} · {self.page} = {self.amount}'
+
+
+class DailySummary(models.Model):
+    """Cache สรุปกำไรรายวันต่อเพจ — เขียนครั้งเดียวเมื่อวันนั้นผ่านไปแล้ว
+    (วันปัจจุบันคำนวณสดเสมอ ไม่เขียน cache). แก้ order/ค่าแอด/ต้นทุนย้อนหลัง
+    → ลบแถวของวันนั้นทิ้ง (invalidate) ให้คำนวณใหม่รอบหน้า. ดู orders/profit.py."""
+    date = models.DateField('วันที่')
+    page = models.CharField('เพจ/แหล่งที่มา', max_length=50)
+    orders = models.PositiveIntegerField('จำนวนใบ', default=0)
+    shirts = models.PositiveIntegerField('จำนวนตัว', default=0)
+    revenue = models.DecimalField('ยอดขาย', max_digits=12, decimal_places=2, default=0)
+    shirt_cost = models.DecimalField('ต้นทุนเสื้อ', max_digits=12, decimal_places=2, default=0)
+    ad_spend = models.DecimalField('ค่าแอด', max_digits=12, decimal_places=2, default=0)
+    gross_profit = models.DecimalField('กำไรขั้นต้น', max_digits=12, decimal_places=2, default=0)
+    net_after_ads = models.DecimalField('กำไรหลังหักแอด', max_digits=12, decimal_places=2, default=0)
+    # จำนวนตัวที่คิดต้นทุนด้วยค่า default (item เก่าที่ไม่ได้ระบุ shirt_type)
+    # — ไว้โชว์ badge เตือนในรายงานแม้อ่านจาก cache
+    defaulted_shirts = models.PositiveIntegerField('ตัวที่ใช้ต้นทุน default', default=0)
+
+    class Meta:
+        ordering = ['-date', 'page']
+        constraints = [
+            models.UniqueConstraint(fields=['date', 'page'], name='uniq_summary_date_page'),
+        ]
+        verbose_name = 'สรุปกำไรรายวัน (cache)'
+        verbose_name_plural = 'สรุปกำไรรายวัน (cache)'
+
+    def __str__(self):
+        return f'{self.date} · {self.page} · net {self.net_after_ads}'
 
 
 class StageLog(models.Model):

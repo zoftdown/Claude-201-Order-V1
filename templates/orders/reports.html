@@ -129,28 +129,28 @@
                 <p class="text-muted">ไม่มีออร์เดอร์ที่เกิน 200 ตัว</p>
             {% endif %}
 
-        {% elif current_report == 'stats' %}
-            {% if stats_locked %}
-            {# ล็อกด้วยรหัสอีกชั้น — ใส่ถูกครั้งเดียวจำใน session #}
+        {% elif stats_locked %}
+            {# ล็อกด้วยรหัสอีกชั้น (ทุก tab กลุ่มเงิน: สถิติ/กำไร) — ใส่ถูกครั้งเดียวจำใน session #}
             <div class="d-flex justify-content-center py-5">
                 <div class="card shadow-sm" style="max-width:360px; width:100%;">
                     <div class="card-body text-center p-4">
                         <div style="font-size:42px;">🔒</div>
-                        <h5 class="mb-1">สถิติร้าน</h5>
+                        <h5 class="mb-1">ข้อมูลยอดขาย/กำไร</h5>
                         <p class="text-muted small mb-3">หน้านี้ต้องใส่รหัสก่อนเข้าดู</p>
-                        <form method="post" action="?report=stats">
+                        <form method="post" action="?report={{ current_report }}">
                             {% csrf_token %}
                             <input type="password" name="stats_pin" class="form-control text-center fs-4 mb-2"
                                    inputmode="numeric" autocomplete="off" placeholder="••••••" autofocus required>
                             {% if stats_pin_error %}
                             <div class="text-danger small mb-2">รหัสไม่ถูกต้อง ลองใหม่อีกครั้ง</div>
                             {% endif %}
-                            <button type="submit" class="btn btn-primary w-100">เข้าดูสถิติ</button>
+                            <button type="submit" class="btn btn-primary w-100">เข้าดู</button>
                         </form>
                     </div>
                 </div>
             </div>
-            {% else %}
+
+        {% elif current_report == 'stats' %}
             <h4 class="mb-1">📈 สถิติร้าน</h4>
             <p class="text-muted small mb-3">12 เดือนล่าสุด (ตั้งแต่ {{ stats_start|date:"j M Y" }}) — นับจากวันที่สร้างใบงาน</p>
 
@@ -299,7 +299,294 @@
                 });
             })();
             </script>
-            {% endif %}{# stats_locked #}
+
+        {% elif current_report == 'profit' %}
+            <style>
+                @media print {
+                    @page { size: A4 portrait; margin: 12mm; }
+                    .navbar, .reports-menu, .reports-title { display: none !important; }
+                    body { background: #fff !important; }
+                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                }
+            </style>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h4 class="mb-0">💰 กำไรรายวัน</h4>
+                <div class="d-flex align-items-center gap-1 flex-wrap d-print-none">
+                    <form method="get" class="d-flex align-items-center gap-1 flex-wrap m-0">
+                        <input type="hidden" name="report" value="profit">
+                        <a href="?report=profit&amp;date={{ profit_prev_date|date:'Y-m-d' }}" class="btn btn-outline-secondary btn-sm" title="วันก่อนหน้า">◀</a>
+                        <input type="date" name="date" value="{{ profit_day|date:'Y-m-d' }}" class="form-control form-control-sm" style="width:auto;" onchange="this.form.submit()">
+                        <a href="?report=profit&amp;date={{ profit_next_date|date:'Y-m-d' }}" class="btn btn-outline-secondary btn-sm" title="วันถัดไป">▶</a>
+                        <a href="{% url 'reports' %}?report=profit" class="btn btn-outline-primary btn-sm">วันนี้</a>
+                    </form>
+                    <button type="button" class="btn btn-success btn-sm" onclick="window.print()">🖨️ พิมพ์ A4</button>
+                </div>
+            </div>
+
+            <div class="alert {% if profit_day == profit_today %}alert-primary{% else %}alert-secondary{% endif %} py-2 d-flex justify-content-between align-items-center flex-wrap">
+                <strong>{{ profit_day|date:"l j F Y" }}</strong>
+                <span>
+                    {% if profit_day == profit_today %}คำนวณสด (วันนี้ยังไม่เก็บ cache){% else %}ข้อมูลจาก cache{% endif %}
+                    · รวม <strong>{{ profit_total.orders }}</strong> ใบ · <strong>{{ profit_total.shirts|intcomma }}</strong> ตัว
+                </span>
+            </div>
+
+            {% if profit_rows %}
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm align-middle report-table">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>เพจ/แหล่งที่มา</th>
+                            <th class="num">ใบ</th>
+                            <th class="num">ตัว</th>
+                            <th class="num">ยอดขาย (฿)</th>
+                            <th class="num">ต้นทุนเสื้อ (฿)</th>
+                            <th class="num">กำไรขั้นต้น (฿)</th>
+                            <th class="num">ค่าแอด (฿)</th>
+                            <th class="num">กำไรสุทธิ (฿)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in profit_rows %}
+                        <tr>
+                            <td>
+                                {{ row.page }}
+                                {% if row.defaulted_shirts %}
+                                <span class="badge bg-warning text-dark"
+                                      title="มีรายการเสื้อที่ยังไม่ระบุประเภท — คิดต้นทุนแบบแขนสั้น (default) {{ row.defaulted_shirts }} ตัว">
+                                    ⚠ default {{ row.defaulted_shirts }} ตัว
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="num">{{ row.orders }}</td>
+                            <td class="num">{{ row.shirts|intcomma }}</td>
+                            <td class="num">{{ row.revenue|floatformat:0|intcomma }}</td>
+                            <td class="num">{{ row.shirt_cost|floatformat:0|intcomma }}</td>
+                            <td class="num {% if row.gross_profit < 0 %}text-danger fw-bold{% endif %}">{{ row.gross_profit|floatformat:0|intcomma }}</td>
+                            <td class="num">{{ row.ad_spend|floatformat:0|intcomma }}</td>
+                            <td class="num fw-bold {% if row.net_after_ads < 0 %}text-danger{% endif %}">{{ row.net_after_ads|floatformat:0|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-secondary fw-bold">
+                        <tr>
+                            <td>รวมทุกเพจ</td>
+                            <td class="num">{{ profit_total.orders }}</td>
+                            <td class="num">{{ profit_total.shirts|intcomma }}</td>
+                            <td class="num">{{ profit_total.revenue|floatformat:0|intcomma }}</td>
+                            <td class="num">{{ profit_total.shirt_cost|floatformat:0|intcomma }}</td>
+                            <td class="num">{{ profit_total.gross_profit|floatformat:0|intcomma }}</td>
+                            <td class="num">{{ profit_total.ad_spend|floatformat:0|intcomma }}</td>
+                            <td class="num {% if profit_total.net_after_ads < 0 %}text-danger{% endif %}">{{ profit_total.net_after_ads|floatformat:0|intcomma }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% if profit_total.defaulted_shirts %}
+            <p class="small text-warning-emphasis">
+                ⚠ มี {{ profit_total.defaulted_shirts|intcomma }} ตัวที่คิดต้นทุนด้วยค่า default (แขนสั้น)
+                เพราะรายการเสื้อเก่ายังไม่ระบุประเภท — แก้ได้ในหน้าแก้ไขใบงาน (ช่อง "ประเภทเสื้อ")
+            </p>
+            {% endif %}
+            {% else %}
+            <p class="text-muted">วันนี้ยังไม่มีออร์เดอร์และค่าแอด</p>
+            {% endif %}
+
+            {# ===== ฟอร์มกรอกค่าแอดของวันนี้ (ต่อเพจ) ===== #}
+            <div class="card mt-3 d-print-none">
+                <div class="card-header py-2 fw-bold">📣 กรอกค่าแอดของวันที่ {{ profit_day|date:"j M Y" }}</div>
+                <div class="card-body">
+                    <form method="post" action="?report=profit&amp;date={{ profit_day|date:'Y-m-d' }}">
+                        {% csrf_token %}
+                        <input type="hidden" name="ad_spend_submit" value="1">
+                        <input type="hidden" name="date" value="{{ profit_day|date:'Y-m-d' }}">
+                        <div class="row g-2">
+                            {% for ad in ad_form_rows %}
+                            <div class="col-6 col-md-4 col-lg-3">
+                                <label class="form-label small mb-0">{{ ad.page }}</label>
+                                <input type="number" step="0.01" min="0" name="ad__{{ ad.page }}"
+                                       value="{{ ad.amount|default_if_none:'' }}"
+                                       class="form-control form-control-sm" placeholder="—">
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div class="form-text small">ช่องที่เว้นว่าง = ไม่เปลี่ยนค่าเดิม · ใส่ 0 = ลบค่าแอดของเพจนั้น</div>
+                        <button type="submit" class="btn btn-primary btn-sm mt-2">บันทึกค่าแอด</button>
+                    </form>
+                </div>
+            </div>
+
+        {% elif current_report == 'profit_month' %}
+            <style>
+                @media print {
+                    @page { size: A4 portrait; margin: 12mm; }
+                    .navbar, .reports-menu, .reports-title { display: none !important; }
+                    body { background: #fff !important; }
+                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                }
+            </style>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h4 class="mb-0">📅 กำไรรายเดือน — {{ pm_month_label }}</h4>
+                <div class="d-flex align-items-center gap-1 flex-wrap d-print-none">
+                    <form method="get" class="d-flex align-items-center gap-1 flex-wrap m-0">
+                        <input type="hidden" name="report" value="profit_month">
+                        <a href="?report=profit_month&amp;month={{ pm_prev }}" class="btn btn-outline-secondary btn-sm" title="เดือนก่อนหน้า">◀</a>
+                        <input type="month" name="month" value="{{ pm_month_value }}" class="form-control form-control-sm" style="width:auto;" onchange="this.form.submit()">
+                        <a href="?report=profit_month&amp;month={{ pm_next }}" class="btn btn-outline-secondary btn-sm" title="เดือนถัดไป">▶</a>
+                        <a href="{% url 'reports' %}?report=profit_month" class="btn btn-outline-primary btn-sm">เดือนนี้</a>
+                    </form>
+                    <button type="button" class="btn btn-success btn-sm" onclick="window.print()">🖨️ พิมพ์ A4</button>
+                </div>
+            </div>
+
+            <!-- การ์ดสรุปเดือน -->
+            <div class="row g-2 mb-3">
+                <div class="col-6 col-lg-2">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ใบงาน</div>
+                        <div class="fs-4 fw-bold">{{ pm_total.orders|intcomma }}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">จำนวนตัว</div>
+                        <div class="fs-4 fw-bold">{{ pm_total.shirts|intcomma }}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ยอดขาย</div>
+                        <div class="fs-4 fw-bold">{{ pm_total.revenue|floatformat:0|intcomma }}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">กำไรขั้นต้น</div>
+                        <div class="fs-4 fw-bold">{{ pm_total.gross_profit|floatformat:0|intcomma }}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ค่าแอด</div>
+                        <div class="fs-4 fw-bold">{{ pm_total.ad_spend|floatformat:0|intcomma }}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="card text-center h-100 border-success"><div class="card-body py-2">
+                        <div class="text-muted small">กำไรสุทธิ</div>
+                        <div class="fs-4 fw-bold {% if pm_total.net_after_ads < 0 %}text-danger{% else %}text-success{% endif %}">{{ pm_total.net_after_ads|floatformat:0|intcomma }}</div>
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- กราฟกำไรรายวัน (หน่วยบาทเหมือนกัน 2 ชุดในกราฟเดียว — ไม่ใช่ dual-axis) -->
+            <div class="card mb-3"><div class="card-body">
+                <div class="fw-bold mb-2">กำไรรายวัน (บาท)</div>
+                <canvas id="chart-profit-day" height="90"></canvas>
+            </div></div>
+
+            <!-- รวมทั้งเดือนแยกต่อเพจ -->
+            <div class="card mb-3"><div class="card-body">
+                <div class="fw-bold mb-2">รวมทั้งเดือนแยกตามเพจ</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle report-table m-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>เพจ/แหล่งที่มา</th>
+                                <th class="num">ใบ</th>
+                                <th class="num">ตัว</th>
+                                <th class="num">ยอดขาย</th>
+                                <th class="num">ต้นทุนเสื้อ</th>
+                                <th class="num">กำไรขั้นต้น</th>
+                                <th class="num">ค่าแอด</th>
+                                <th class="num">กำไรสุทธิ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in pm_page_rows %}
+                            <tr>
+                                <td>{{ row.page }}
+                                    {% if row.defaulted_shirts %}
+                                    <span class="badge bg-warning text-dark" title="คิดต้นทุนแบบ default {{ row.defaulted_shirts }} ตัว">⚠</span>
+                                    {% endif %}
+                                </td>
+                                <td class="num">{{ row.orders|intcomma }}</td>
+                                <td class="num">{{ row.shirts|intcomma }}</td>
+                                <td class="num">{{ row.revenue|floatformat:0|intcomma }}</td>
+                                <td class="num">{{ row.shirt_cost|floatformat:0|intcomma }}</td>
+                                <td class="num">{{ row.gross_profit|floatformat:0|intcomma }}</td>
+                                <td class="num">{{ row.ad_spend|floatformat:0|intcomma }}</td>
+                                <td class="num fw-bold {% if row.net_after_ads < 0 %}text-danger{% endif %}">{{ row.net_after_ads|floatformat:0|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="8" class="text-muted text-center">ยังไม่มีข้อมูลเดือนนี้</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div></div>
+
+            <!-- ตารางรายวัน (มุมมองตัวเลขของกราฟ) -->
+            <div class="card mb-3"><div class="card-body">
+                <div class="fw-bold mb-2">ตารางรายวัน</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle report-table m-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>วันที่</th>
+                                <th class="num">ใบ</th>
+                                <th class="num">ตัว</th>
+                                <th class="num">ยอดขาย</th>
+                                <th class="num">ต้นทุนเสื้อ</th>
+                                <th class="num">กำไรขั้นต้น</th>
+                                <th class="num">ค่าแอด</th>
+                                <th class="num">กำไรสุทธิ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in pm_day_rows %}
+                            <tr>
+                                <td><a href="?report=profit&amp;date={{ row.date|date:'Y-m-d' }}">{{ row.date|date:"j M" }}</a></td>
+                                <td class="num">{{ row.orders }}</td>
+                                <td class="num">{{ row.shirts|intcomma }}</td>
+                                <td class="num">{{ row.revenue|floatformat:0|intcomma }}</td>
+                                <td class="num">{{ row.shirt_cost|floatformat:0|intcomma }}</td>
+                                <td class="num">{{ row.gross_profit|floatformat:0|intcomma }}</td>
+                                <td class="num">{{ row.ad_spend|floatformat:0|intcomma }}</td>
+                                <td class="num fw-bold {% if row.net_after_ads < 0 %}text-danger{% endif %}">{{ row.net_after_ads|floatformat:0|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="8" class="text-muted text-center">ยังไม่มีข้อมูลเดือนนี้</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div></div>
+
+            {{ pm_chart_data|json_script:"pm-chart-data" }}
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+            <script>
+            (function () {
+                const D = JSON.parse(document.getElementById('pm-chart-data').textContent);
+                const fmt = (n) => new Intl.NumberFormat('th-TH').format(n);
+                new Chart(document.getElementById('chart-profit-day'), {
+                    type: 'bar',
+                    data: {
+                        labels: D.labels,
+                        datasets: [
+                            { label: 'กำไรขั้นต้น', data: D.gross, backgroundColor: '#0c7c92',
+                              borderRadius: 3, maxBarThickness: 22 },
+                            { label: 'กำไรสุทธิ (หลังแอด)', data: D.net, backgroundColor: '#2c5fb8',
+                              borderRadius: 3, maxBarThickness: 22 },
+                        ],
+                    },
+                    options: {
+                        plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}` } } },
+                        scales: { y: { ticks: { callback: (v) => fmt(v) } } },
+                    },
+                });
+            })();
+            </script>
         {% endif %}
     </div>
 </div>

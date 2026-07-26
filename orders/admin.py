@@ -2,7 +2,59 @@ from django.contrib import admin
 from .models import (
     Order, OrderItem, MasterImage, ShirtVariant, Tailor, StageLog,
     DepartmentPIN, Customer, CustomerPrice, CustomerTag,
+    ShirtCost, DailyAdSpend, DailySummary,
 )
+from .profit import invalidate_all, invalidate_days
+
+
+@admin.register(ShirtCost)
+class ShirtCostAdmin(admin.ModelAdmin):
+    """ต้นทุนเสื้อต่อตัว (แขนสั้น/แขนยาว/โปโล) — แก้ตัวเลขได้จากหน้า list เลย.
+    แก้ต้นทุนกระทบกำไรทุกวันย้อนหลัง → ล้าง cache DailySummary ทั้งหมด."""
+    list_display = ['shirt_type', 'cost']
+    list_editable = ['cost']
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        invalidate_all()
+
+    def delete_model(self, request, obj):
+        super().delete_model(request, obj)
+        invalidate_all()
+
+
+@admin.register(DailyAdSpend)
+class DailyAdSpendAdmin(admin.ModelAdmin):
+    """ค่าแอดรายวันต่อเพจ — ปกติกรอกจากฟอร์มใน tab กำไรรายวัน (/reports/),
+    หน้านี้ไว้แก้/ลบย้อนหลัง. แก้แล้วล้าง cache ของวันนั้นให้คำนวณใหม่."""
+    list_display = ['date', 'page', 'amount']
+    list_filter = ['page']
+    date_hierarchy = 'date'
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        invalidate_days(obj.date)
+
+    def delete_model(self, request, obj):
+        day = obj.date
+        super().delete_model(request, obj)
+        invalidate_days(day)
+
+
+@admin.register(DailySummary)
+class DailySummaryAdmin(admin.ModelAdmin):
+    """Cache สรุปกำไรรายวัน — read-only (ระบบเขียนเอง). ลบแถวได้ = บังคับ
+    คำนวณวันนั้นใหม่รอบหน้า."""
+    list_display = ['date', 'page', 'orders', 'shirts', 'revenue',
+                    'shirt_cost', 'ad_spend', 'gross_profit', 'net_after_ads']
+    list_filter = ['page']
+    date_hierarchy = 'date'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(CustomerTag)
@@ -29,7 +81,7 @@ class CustomerAdmin(admin.ModelAdmin):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
-    fields = ['order_index', 'design_image']
+    fields = ['order_index', 'design_image', 'shirt_type']
 
 
 class MasterImageInline(admin.TabularInline):

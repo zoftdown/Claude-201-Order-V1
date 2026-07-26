@@ -259,6 +259,11 @@
                             <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
                         </div>
                     </div>
+                    <div class="col-md-3">
+                        <label class="form-label">ประเภทเสื้อ (ต้นทุน)</label>
+                        {{ item_form.shirt_type }}
+                        <div class="form-text small">ใช้คิดต้นทุนในรายงานกำไร</div>
+                    </div>
                 </div>
 
                 <!-- Variants for this item -->
@@ -500,6 +505,16 @@
                 <input class="form-check-input copy-image-cb" type="checkbox" name="copy_image___prefix__" data-index="__prefix__">
                 <label class="form-check-label small text-muted">ใช้รูปจากรายการที่ 1</label>
             </div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">ประเภทเสื้อ (ต้นทุน)</label>
+            <select name="items-__prefix__-shirt_type" id="id_items-__prefix__-shirt_type" class="form-select form-select-sm">
+                <option value="">ยังไม่ระบุ (คิดแบบแขนสั้น)</option>
+                <option value="short" selected>แขนสั้น</option>
+                <option value="long">แขนยาว</option>
+                <option value="polo">โปโล</option>
+            </select>
+            <div class="form-text small">ใช้คิดต้นทุนในรายงานกำไร</div>
         </div>
     </div>
 
