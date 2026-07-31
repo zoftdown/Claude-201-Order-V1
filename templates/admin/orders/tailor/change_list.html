@@ -1,0 +1,80 @@
+{% extends "admin/change_list.html" %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .tailor-drag-handle { cursor: grab; font-size: 16px; color: #999; padding: 0 6px; user-select: none; }
+  tr.tailor-dragging { opacity: 0.4; }
+  #tailor-drag-hint { margin: 8px 0; color: #666; font-size: 12px; }
+</style>
+{% endblock %}
+
+{% block result_list %}
+<p id="tailor-drag-hint">⠿ ลากแถวเพื่อจัดลำดับคนเย็บ (ลำดับนี้ใช้ทั้ง dropdown แผนกเย็บและหน้าค้นหา) — บันทึกอัตโนมัติเมื่อปล่อย</p>
+{{ block.super }}
+<script>
+(function () {
+  document.addEventListener('DOMContentLoaded', function () {
+    var table = document.getElementById('result_list');
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+    if (!tbody || !tbody.querySelector('.tailor-drag-handle')) return;
+    var dragged = null;
+
+    Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (row) {
+      row.draggable = true;
+      row.addEventListener('dragstart', function (e) {
+        dragged = row;
+        row.classList.add('tailor-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', '');
+      });
+      row.addEventListener('dragover', function (e) {
+        if (!dragged || dragged === row) return;
+        e.preventDefault();
+        var rect = row.getBoundingClientRect();
+        var after = (e.clientY - rect.top) > rect.height / 2;
+        tbody.insertBefore(dragged, after ? row.nextSibling : row);
+      });
+      row.addEventListener('dragend', function () {
+        row.classList.remove('tailor-dragging');
+        dragged = null;
+        saveOrder();
+      });
+    });
+
+    function saveOrder() {
+      var ids = Array.prototype.map.call(
+        tbody.querySelectorAll('.tailor-drag-handle'),
+        function (el) { return el.dataset.pk; }
+      );
+      var csrfInput = document.querySelector('input[name=csrfmiddlewaretoken]');
+      fetch('reorder/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfInput ? csrfInput.value : '',
+        },
+        body: JSON.stringify({ ids: ids }),
+      }).then(function (resp) {
+        var hint = document.getElementById('tailor-drag-hint');
+        if (!hint) return;
+        if (resp.ok) {
+          hint.textContent = '✅ บันทึกลำดับแล้ว';
+          hint.style.color = '#2e7d32';
+        } else {
+          hint.textContent = '❌ บันทึกลำดับไม่สำเร็จ — refresh แล้วลองใหม่';
+          hint.style.color = '#c62828';
+        }
+      }).catch(function () {
+        var hint = document.getElementById('tailor-drag-hint');
+        if (hint) {
+          hint.textContent = '❌ บันทึกลำดับไม่สำเร็จ — refresh แล้วลองใหม่';
+          hint.style.color = '#c62828';
+        }
+      });
+    }
+  });
+})();
+</script>
+{% endblock %}

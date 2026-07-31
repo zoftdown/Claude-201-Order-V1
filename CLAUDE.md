@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V3.3 · อัปเดตล่าสุด 2026-07-27 · migration ล่าสุด `0024_profit_report` (รายงานกำไร) · feature ล่าสุด: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V3.4 · อัปเดตล่าสุด 2026-07-31 · migration ล่าสุด `0025_tailor_order_index` (ลำดับคนเย็บ) · feature ล่าสุด: **จัดลำดับคนเย็บแบบ drag ในหน้า admin** (`/admin/orders/tailor/` ลากแถวแล้วบันทึกอัตโนมัติ — ลำดับมีผล dropdown แผนกเย็บ + filter หน้าค้นหา; ดูหัวข้อ Tailor ใน Data Models) · ก่อนหน้า: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Auth: login ด้วย PIN ประจำตัว (V3.2 · 2026-07-24)
 - **หน้า `/login/` = ช่อง PIN ช่องเดียว** (`orders.views.pin_login`, template `registration/login.html`) —
@@ -185,7 +185,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
   - **สูตร:** gross = revenue − Σ(qty ของ item × ต้นทุนตาม shirt_type; '' → short) · net = gross − ค่าแอดของเพจวันนั้น · item ที่ '' นับเข้า defaulted_shirts → badge "⚠ default N ตัว"
 
 ### อื่นๆ
-- **Tailor** — ช่างเย็บ (M2M กับ Order)
+- **Tailor** — ช่างเย็บ (M2M กับ Order) · มี `order_index` (migration 0025, default 0 = ยังไม่จัด → ลอยขึ้นบน; backfill คนเดิมเรียงตามชื่อ) · Meta ordering `['order_index','name']` → dropdown แผนกเย็บ + filter custom_search เรียงตามนี้ · **จัดลำดับแบบ drag ที่ `/admin/orders/tailor/`** — template override `templates/admin/orders/tailor/change_list.html` (JS HTML5 dnd, hand-rolled ไม่ใช้ package) POST JSON ไป `reorder/` (`TailorAdmin.reorder_view`, เช็ค `has_change_permission`, renumber 1..n ทั้งชุด)
 - **DepartmentPIN** — PIN 4 หลัก (singleton, sha256) gate cookie แผนก
 - **StageLog** — log การเปลี่ยน stage
 

@@ -1,4 +1,11 @@
+import json
+
 from django.contrib import admin
+from django.db import transaction
+from django.http import JsonResponse
+from django.urls import path
+from django.utils.html import format_html
+
 from .models import (
     Order, OrderItem, MasterImage, ShirtVariant, Tailor, StageLog,
     DepartmentPIN, Customer, CustomerPrice, CustomerTag,
@@ -115,9 +122,39 @@ class OrderItemAdmin(admin.ModelAdmin):
 
 @admin.register(Tailor)
 class TailorAdmin(admin.ModelAdmin):
-    list_display = ['name', 'phone', 'is_active', 'created_at']
+    list_display = ['drag_handle', 'name', 'phone', 'is_active', 'order_index', 'created_at']
+    list_display_links = ['name']
     list_filter = ['is_active']
     search_fields = ['name', 'phone']
+    change_list_template = 'admin/orders/tailor/change_list.html'
+
+    @admin.display(description='')
+    def drag_handle(self, obj):
+        return format_html(
+            '<span class="tailor-drag-handle" data-pk="{}" title="ลากเพื่อจัดลำดับ">⠿</span>',
+            obj.pk,
+        )
+
+    def get_urls(self):
+        custom = [
+            path('reorder/', self.admin_site.admin_view(self.reorder_view),
+                 name='orders_tailor_reorder'),
+        ]
+        return custom + super().get_urls()
+
+    def reorder_view(self, request):
+        if not self.has_change_permission(request):
+            return JsonResponse({'ok': False}, status=403)
+        if request.method != 'POST':
+            return JsonResponse({'ok': False}, status=405)
+        try:
+            ids = [int(pk) for pk in json.loads(request.body)['ids']]
+        except (KeyError, TypeError, ValueError):
+            return JsonResponse({'ok': False}, status=400)
+        with transaction.atomic():
+            for position, pk in enumerate(ids, start=1):
+                Tailor.objects.filter(pk=pk).update(order_index=position)
+        return JsonResponse({'ok': True})
 
 
 @admin.register(StageLog)

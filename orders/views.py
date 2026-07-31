@@ -1616,7 +1616,7 @@ def user_delete(request, pk):
 def custom_search(request):
     _require_admin(request.user)
 
-    tailors = Tailor.objects.filter(is_active=True).order_by('name')
+    tailors = Tailor.objects.filter(is_active=True).order_by('order_index', 'name')
 
     tailor_id = (request.GET.get('tailor') or '').strip()
     source = (request.GET.get('source') or '').strip()

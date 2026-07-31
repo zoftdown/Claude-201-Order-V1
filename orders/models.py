@@ -526,10 +526,12 @@ class Tailor(models.Model):
     name = models.CharField('ชื่อ', max_length=100)
     phone = models.CharField('เบอร์โทร', max_length=20, blank=True)
     is_active = models.BooleanField('ใช้งาน', default=True)
+    # 0 = ยังไม่จัดลำดับ → ลอยขึ้นบนสุดให้แอดมินลากไปวางตำแหน่งที่ต้องการ
+    order_index = models.IntegerField('ลำดับ', default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['order_index', 'name']
         verbose_name = 'คนเย็บ'
         verbose_name_plural = 'คนเย็บ'
 
