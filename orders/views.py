@@ -141,11 +141,12 @@ REPORT_TABS = [
     ('stats', '📈 สถิติร้าน'),
     ('profit', '💰 กำไรรายวัน'),
     ('profit_month', '📅 กำไรรายเดือน'),
+    ('roi', '🎯 ROI แอดรายเพจ'),
 ]
 
 # Tab ที่เปิดเผยยอดเงิน/กำไรรวมของร้าน — ล็อกด้วย STATS_PIN อีกชั้น
 # (ใส่ถูกครั้งเดียวจำใน session — flag เดียวกันปลดทุก tab ในกลุ่มนี้)
-MONEY_REPORTS = {'stats', 'profit', 'profit_month'}
+MONEY_REPORTS = {'stats', 'profit', 'profit_month', 'roi'}
 
 THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
                      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
@@ -310,6 +311,92 @@ def _report_profit_month_context(request):
     }
 
 
+ROI_DEFAULT_PAGE = 'เพจเสื้อคนงาน'
+ROI_TARGET = 2.0        # เส้นเป้า ROI ในกราฟ + เกณฑ์สีเขียว
+ROI_WARN = 1.2          # ต่ำกว่านี้ = แดง (1.2–2.0 = เหลือง)
+
+
+def _roi_day_row(day, page_row):
+    """แถวรายวันของ tab ROI จากแถว get_day_rows ของเพจนั้น (None = เพจไม่มี
+    ทั้งออร์เดอร์และค่าแอดวันนั้น). วันที่ค่าแอด = 0/ไม่กรอก → roi/ad_per_shirt
+    เป็น None (template แสดง "—" ไม่คำนวณ)."""
+    r = page_row or {}
+    ad = r.get('ad_spend') or Decimal('0')
+    row = {
+        'date': day,
+        'ad_spend': ad,
+        'orders': r.get('orders', 0),
+        'shirts': r.get('shirts', 0),
+        'revenue': r.get('revenue', Decimal('0')),
+        'gross_profit': r.get('gross_profit', Decimal('0')),
+        'roi': None, 'roi_class': '', 'ad_per_shirt': None,
+    }
+    if ad > 0:
+        roi = float(row['gross_profit'] / ad)
+        row['roi'] = roi
+        row['roi_class'] = ('bg-success' if roi >= ROI_TARGET
+                            else 'bg-warning text-dark' if roi >= ROI_WARN
+                            else 'bg-danger')
+        if row['shirts']:
+            row['ad_per_shirt'] = ad / row['shirts']
+    return row
+
+
+def _roi_window_avg(rows):
+    """(roi, ad_per_shirt) เฉลี่ยถ่วงตามเงินที่จ่ายจริงของช่วงวัน — รวมเฉพาะวันที่
+    มีค่าแอด (Σกำไรขั้นต้น ÷ Σค่าแอด, Σค่าแอด ÷ Σตัว) ไม่ใช่ mean ของ ROI รายวัน
+    เพื่อไม่ให้วันจ่ายน้อยๆ ลาก/ดันค่าเฉลี่ยเกินจริง. ไม่มีวันจ่ายแอดเลย → (None, None)."""
+    spent = sum((r['ad_spend'] for r in rows if r['ad_spend'] > 0), Decimal('0'))
+    if not spent:
+        return None, None
+    gross = sum((r['gross_profit'] for r in rows if r['ad_spend'] > 0), Decimal('0'))
+    shirts = sum(r['shirts'] for r in rows if r['ad_spend'] > 0)
+    return float(gross / spent), (spent / shirts if shirts else None)
+
+
+def _report_roi_context(request):
+    """tab ROI แอดรายเพจ: 30 วันล่าสุดของเพจที่เลือก (?page=, default เพจเสื้อคนงาน).
+    reuse get_day_rows ทั้งหมด (วันเก่าอ่าน cache DailySummary, วันนี้คำนวณสด) —
+    ไม่แตะ logic กำไรเดิม."""
+    valid_pages = [p for p, _ in Order.SOURCE_CHOICES]
+    page = request.GET.get('page') or ROI_DEFAULT_PAGE
+    if page not in valid_pages:
+        page = ROI_DEFAULT_PAGE
+
+    today = timezone.localdate()
+    rows = []
+    for i in range(29, -1, -1):
+        day = today - timedelta(days=i)
+        by_page = {r['page']: r for r in get_day_rows(day)}
+        rows.append(_roi_day_row(day, by_page.get(page)))
+
+    roi_7, ad_per_shirt_7 = _roi_window_avg(rows[-7:])
+    roi_prev7, _ = _roi_window_avg(rows[-14:-7])
+    roi_30, _ = _roi_window_avg(rows)
+
+    trend = None  # ลูกศรเทียบสัปดาห์ก่อน — ต้องมีค่าทั้ง 2 สัปดาห์ถึงเทียบได้
+    if roi_7 is not None and roi_prev7 is not None:
+        trend = 'up' if roi_7 >= roi_prev7 else 'down'
+
+    return {
+        'roi_page': page,
+        'roi_pages': valid_pages,
+        'roi_rows': list(reversed(rows)),  # ตาราง: วันล่าสุดขึ้นบน
+        'roi_7': roi_7,
+        'roi_prev7': roi_prev7,
+        'roi_30': roi_30,
+        'roi_trend': trend,
+        'roi_ad_per_shirt_7': ad_per_shirt_7,
+        'roi_target': ROI_TARGET,
+        'roi_chart_data': {  # กราฟ: เรียงตามเวลา ซ้าย→ขวา, วันไม่มีแอด = null (เว้นช่อง)
+            'labels': [f'{r["date"].day} {THAI_MONTHS_SHORT[r["date"].month - 1]}'
+                       for r in rows],
+            'roi': [round(r['roi'], 2) if r['roi'] is not None else None for r in rows],
+            'target': ROI_TARGET,
+        },
+    }
+
+
 # Statuses ที่ถือว่า "ขยับแล้ว" → ตัดออกจากรายงานค้าง แม้ stage timestamp จะ null
 # (ใบที่ตั้ง status เองโดยไม่ได้กดผ่านระบบ stage QR). เหลือเฉพาะ "รอดำเนินการ".
 STUCK_EXCLUDE_STATUSES = ('กำลังผลิต', 'เสร็จแล้ว', 'ส่งแล้ว')
@@ -386,6 +473,8 @@ def reports(request):
             ctx.update(_report_profit_context(request))
         elif report == 'profit_month':
             ctx.update(_report_profit_month_context(request))
+        elif report == 'roi':
+            ctx.update(_report_roi_context(request))
 
     return render(request, 'orders/reports.html', ctx)
 

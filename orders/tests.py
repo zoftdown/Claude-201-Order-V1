@@ -171,6 +171,83 @@ class ProfitViewTests(TestCase):
         self.assertIn('pm_total', resp.context)
 
 
+class RoiReportTests(TestCase):
+    """tab ROI แอดรายเพจ — reuse get_day_rows ไม่แตะ logic กำไรเดิม"""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser('boss2', password='pw1234')
+        self.client.force_login(self.admin)
+        self.url = reverse('reports')
+        self.today = timezone.localdate()
+
+    def unlock(self):
+        return self.client.post(f'{self.url}?report=roi',
+                                {'stats_pin': settings.STATS_PIN})
+
+    def test_roi_locked_until_pin(self):
+        """tab ROI อยู่ในกลุ่ม MONEY_REPORTS — ต้องใส่ STATS_PIN ก่อน"""
+        resp = self.client.get(f'{self.url}?report=roi')
+        self.assertTrue(resp.context['stats_locked'])
+        self.unlock()
+        resp = self.client.get(f'{self.url}?report=roi')
+        self.assertNotIn('stats_locked', resp.context)
+        self.assertIn('roi_rows', resp.context)
+
+    def test_roi_math_and_colors(self):
+        """ROI = กำไรขั้นต้น ÷ ค่าแอด + สีตามเกณฑ์ 2.0/1.2 + วันไม่มีแอด = None"""
+        page = 'เพจเสื้อคนงาน'
+        d_green = self.today - timedelta(days=1)   # gross 1500, ad 500 → 3.0x เขียว
+        d_yellow = self.today - timedelta(days=2)  # gross 1500, ad 1000 → 1.5x เหลือง
+        d_red = self.today - timedelta(days=3)     # gross 1500, ad 2000 → 0.75x แดง
+        d_noad = self.today - timedelta(days=4)    # ไม่กรอกค่าแอด → "—"
+        for d in (d_green, d_yellow, d_red, d_noad):
+            make_order(d, source=page, price='2000', items=[('short', 10)])
+        DailyAdSpend.objects.create(date=d_green, page=page, amount=Decimal('500'))
+        DailyAdSpend.objects.create(date=d_yellow, page=page, amount=Decimal('1000'))
+        DailyAdSpend.objects.create(date=d_red, page=page, amount=Decimal('2000'))
+
+        self.unlock()
+        resp = self.client.get(f'{self.url}?report=roi&page={page}')
+        rows = {r['date']: r for r in resp.context['roi_rows']}
+
+        self.assertEqual(rows[d_green]['roi'], 3.0)
+        self.assertEqual(rows[d_green]['roi_class'], 'bg-success')
+        self.assertEqual(rows[d_green]['ad_per_shirt'], Decimal('50'))
+        self.assertEqual(rows[d_yellow]['roi'], 1.5)
+        self.assertEqual(rows[d_yellow]['roi_class'], 'bg-warning text-dark')
+        self.assertEqual(rows[d_red]['roi'], 0.75)
+        self.assertEqual(rows[d_red]['roi_class'], 'bg-danger')
+        self.assertIsNone(rows[d_noad]['roi'])
+        self.assertIsNone(rows[d_noad]['ad_per_shirt'])
+
+    def test_roi_window_avg_weighted(self):
+        """ค่าเฉลี่ย = Σgross ÷ Σad ของวันที่มีแอด (ถ่วงตามเงิน ไม่ใช่ mean รายวัน)"""
+        page = 'เพจเสื้อคนงาน'
+        d1 = self.today - timedelta(days=1)
+        d2 = self.today - timedelta(days=2)
+        make_order(d1, source=page, price='2000', items=[('short', 10)])  # gross 1500
+        make_order(d2, source=page, price='1000', items=[('short', 10)])  # gross 500
+        DailyAdSpend.objects.create(date=d1, page=page, amount=Decimal('500'))
+        DailyAdSpend.objects.create(date=d2, page=page, amount=Decimal('500'))
+
+        self.unlock()
+        resp = self.client.get(f'{self.url}?report=roi&page={page}')
+        # (1500+500) ÷ (500+500) = 2.0 · แอด/ตัว = 1000 ÷ 20 = 50
+        self.assertEqual(resp.context['roi_7'], 2.0)
+        self.assertEqual(resp.context['roi_ad_per_shirt_7'], Decimal('50'))
+        # สัปดาห์ก่อน (วัน 8–14) ไม่มีแอด → เทียบ trend ไม่ได้
+        self.assertIsNone(resp.context['roi_prev7'])
+        self.assertIsNone(resp.context['roi_trend'])
+
+    def test_roi_page_dropdown_default_and_validate(self):
+        """ไม่ส่ง ?page=/ส่งค่ามั่ว → fallback เพจเสื้อคนงาน"""
+        self.unlock()
+        resp = self.client.get(f'{self.url}?report=roi')
+        self.assertEqual(resp.context['roi_page'], 'เพจเสื้อคนงาน')
+        resp = self.client.get(f'{self.url}?report=roi&page=ไม่มีเพจนี้')
+        self.assertEqual(resp.context['roi_page'], 'เพจเสื้อคนงาน')
+
+
 def tiny_png(name='design.png'):
     """รูป PNG 2×2 สำหรับอัปโหลดในเทสต์ (item ใหม่ต้องมีรูปถึงจะถูกสร้าง
     — พฤติกรรม formset เดิม)."""

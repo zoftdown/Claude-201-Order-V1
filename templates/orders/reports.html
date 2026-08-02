@@ -587,6 +587,136 @@
                 });
             })();
             </script>
+
+        {% elif current_report == 'roi' %}
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h4 class="mb-0">🎯 ROI แอดรายเพจ</h4>
+                <form method="get" class="d-flex align-items-center gap-1 m-0">
+                    <input type="hidden" name="report" value="roi">
+                    <label class="small text-muted mb-0">เพจ:</label>
+                    <select name="page" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                        {% for p in roi_pages %}
+                        <option value="{{ p }}" {% if p == roi_page %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+
+            <!-- การ์ดสรุป: ROI เฉลี่ยถ่วงตามค่าแอด (Σกำไรขั้นต้น ÷ Σค่าแอด เฉพาะวันที่มีแอด) -->
+            <div class="row g-2 mb-3">
+                <div class="col-6 col-lg-4">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ROI เฉลี่ย 7 วัน</div>
+                        <div class="fs-3 fw-bold">
+                            {% if roi_7 is not None %}
+                                {{ roi_7|floatformat:1 }}x
+                                {% if roi_trend == 'up' %}
+                                <span class="text-success fs-5" title="ดีขึ้นจากสัปดาห์ก่อน ({{ roi_prev7|floatformat:1 }}x)">▲</span>
+                                {% elif roi_trend == 'down' %}
+                                <span class="text-danger fs-5" title="แย่ลงจากสัปดาห์ก่อน ({{ roi_prev7|floatformat:1 }}x)">▼</span>
+                                {% endif %}
+                            {% else %}—{% endif %}
+                        </div>
+                        {% if roi_prev7 is not None %}
+                        <div class="text-muted small">สัปดาห์ก่อน {{ roi_prev7|floatformat:1 }}x</div>
+                        {% endif %}
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-4">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ROI เฉลี่ย 30 วัน</div>
+                        <div class="fs-3 fw-bold">{% if roi_30 is not None %}{{ roi_30|floatformat:1 }}x{% else %}—{% endif %}</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-4">
+                    <div class="card text-center h-100"><div class="card-body py-2">
+                        <div class="text-muted small">ต้นทุนแอด/ตัว เฉลี่ย 7 วัน</div>
+                        <div class="fs-3 fw-bold">
+                            {% if roi_ad_per_shirt_7 is not None %}{{ roi_ad_per_shirt_7|floatformat:1 }} <small class="fs-6 fw-normal">฿/ตัว</small>{% else %}—{% endif %}
+                        </div>
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- กราฟเส้น ROI รายวัน 30 วัน + เส้นประเป้า 2.0 -->
+            <div class="card mb-3"><div class="card-body">
+                <div class="fw-bold mb-2">ROI รายวัน 30 วันล่าสุด — {{ roi_page }}</div>
+                <canvas id="chart-roi" height="90"></canvas>
+            </div></div>
+
+            <!-- ตารางรายวัน (วันล่าสุดขึ้นบน) -->
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm align-middle report-table">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>วันที่</th>
+                            <th class="num">ค่าแอด (฿)</th>
+                            <th class="num">ใบ</th>
+                            <th class="num">ตัว</th>
+                            <th class="num">ยอดขาย (฿)</th>
+                            <th class="num">กำไรขั้นต้น (฿)</th>
+                            <th class="num">ROI</th>
+                            <th class="num">แอด/ตัว (฿)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in roi_rows %}
+                        <tr>
+                            <td><a href="?report=profit&amp;date={{ row.date|date:'Y-m-d' }}">{{ row.date|date:"j M" }}</a></td>
+                            <td class="num">{% if row.ad_spend > 0 %}{{ row.ad_spend|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td class="num">{{ row.orders }}</td>
+                            <td class="num">{{ row.shirts|intcomma }}</td>
+                            <td class="num">{{ row.revenue|floatformat:0|intcomma }}</td>
+                            <td class="num {% if row.gross_profit < 0 %}text-danger fw-bold{% endif %}">{{ row.gross_profit|floatformat:0|intcomma }}</td>
+                            <td class="num">
+                                {% if row.roi is not None %}
+                                <span class="badge {{ row.roi_class }}">{{ row.roi|floatformat:1 }}x</span>
+                                {% else %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                            <td class="num">{% if row.ad_per_shirt is not None %}{{ row.ad_per_shirt|floatformat:1 }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="small text-muted mt-2 mb-4">
+                📝 <strong>วิธีคิด:</strong> ROI = กำไรขั้นต้น ÷ ค่าแอด (เขียว ≥{{ roi_target|floatformat:1 }} / เหลือง 1.2–2.0 / แดง &lt;1.2) ·
+                กำไรขั้นต้น = ยอดขาย − ต้นทุนเสื้อ ยังไม่หัก fixed cost ·
+                ออเดอร์อาจปิดคนละวันกับวันที่ยิงแอด ROI รายวันจึงแกว่ง ให้ดูค่าเฉลี่ย 7 วันเป็นหลัก ·
+                ค่าเฉลี่ย = Σกำไรขั้นต้น ÷ Σค่าแอด (ถ่วงตามเงินที่จ่ายจริง เฉพาะวันที่กรอกค่าแอด) ·
+                วันที่ไม่กรอกค่าแอดแสดง "—" ไม่ร่วมคำนวณ
+            </p>
+
+            {{ roi_chart_data|json_script:"roi-chart-data" }}
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+            <script>
+            (function () {
+                const D = JSON.parse(document.getElementById('roi-chart-data').textContent);
+                new Chart(document.getElementById('chart-roi'), {
+                    type: 'line',
+                    data: {
+                        labels: D.labels,
+                        datasets: [
+                            { label: 'ROI รายวัน', data: D.roi, borderColor: '#0c7c92',
+                              backgroundColor: '#0c7c92', pointRadius: 3, tension: 0.2,
+                              spanGaps: true },
+                            { label: 'เป้า ' + D.target.toFixed(1) + 'x',
+                              data: D.labels.map(() => D.target),
+                              borderColor: '#d32f2f', borderDash: [6, 4], borderWidth: 1.5,
+                              pointRadius: 0, fill: false },
+                        ],
+                    },
+                    options: {
+                        plugins: { tooltip: { callbacks: {
+                            label: (c) => `${c.dataset.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + 'x'}`,
+                        } } },
+                        scales: { y: { beginAtZero: true,
+                                       ticks: { callback: (v) => v + 'x' } } },
+                    },
+                });
+            })();
+            </script>
         {% endif %}
     </div>
 </div>
