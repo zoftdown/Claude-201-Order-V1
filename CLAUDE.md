@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V3.4 · อัปเดตล่าสุด 2026-07-31 · migration ล่าสุด `0025_tailor_order_index` (ลำดับคนเย็บ) · feature ล่าสุด: **จัดลำดับคนเย็บแบบ drag ในหน้า admin** (`/admin/orders/tailor/` ลากแถวแล้วบันทึกอัตโนมัติ — ลำดับมีผล dropdown แผนกเย็บ + filter หน้าค้นหา; ดูหัวข้อ Tailor ใน Data Models) · ก่อนหน้า: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V3.5 · อัปเดตล่าสุด 2026-08-02 · migration ล่าสุด `0025_tailor_order_index` (ลำดับคนเย็บ) · feature ล่าสุด: **tab "🎯 ROI แอดรายเพจ"** (`/reports/?report=roi` หลังรหัส STATS_PIN — ROI รายวัน 30 วันต่อเพจ + เส้นเป้า 2.0x; ดูหัวข้อ V3.5) · ก่อนหน้า: **จัดลำดับคนเย็บแบบ drag ในหน้า admin** (`/admin/orders/tailor/` ลากแถวแล้วบันทึกอัตโนมัติ — ลำดับมีผล dropdown แผนกเย็บ + filter หน้าค้นหา; ดูหัวข้อ Tailor ใน Data Models) · ก่อนหน้า: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Auth: login ด้วย PIN ประจำตัว (V3.2 · 2026-07-24)
 - **หน้า `/login/` = ช่อง PIN ช่องเดียว** (`orders.views.pin_login`, template `registration/login.html`) —
@@ -305,6 +305,15 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **ทั้ง 2 tab อยู่หลังรหัส STATS_PIN** เหมือน tab สถิติ — flag `stats_unlocked` ตัวเดียวปลดทั้งกลุ่ม `MONEY_REPORTS` (การ์ดล็อกใช้ร่วมใน template, form action ชี้ tab ปัจจุบัน)
 - **ฟอร์มใบงาน:** รายการเสื้อมี select "ประเภทเสื้อ (ต้นทุน)" ข้างช่องรูป (default แขนสั้น; เพิ่มทั้งใน form จริงและ `empty-item-template` ที่ JS clone) — ไม่บังคับ ใบเก่าแก้ทีหลังได้
 - **regression tests** ใน `orders/tests.py` (14 เคส: สูตรกำไร/cache/invalidate/PIN gate/ฟอร์มค่าแอด/สร้าง-แก้ใบงานเดิม) — รัน `python manage.py test orders`
+
+**เพิ่มล่าสุด (V3.5 · 2026-08-02): tab "🎯 ROI แอดรายเพจ"**
+- **tab ใหม่ใน `/reports/?report=roi`** (อยู่ในกลุ่ม `MONEY_REPORTS` หลังรหัส STATS_PIN) — ดูประสิทธิภาพเงินแอดต่อเพจ 30 วันล่าสุด. **reuse `get_day_rows` จาก `orders/profit.py` ทั้งหมด** (วันเก่าอ่าน cache DailySummary, วันนี้คำนวณสด) — logic ใหม่อยู่ใน views.py (`_report_roi_context` + `_roi_day_row` + `_roi_window_avg`) ไม่แตะ profit.py
+- **dropdown เลือกเพจ** (`?page=`, default เพจเสื้อคนงาน; ค่ามั่ว → fallback default)
+- **ตารางรายวัน** (วันล่าสุดขึ้นบน, วันที่คลิกเข้า tab กำไรรายวันได้): ค่าแอด/ใบ/ตัว/ยอดขาย/กำไรขั้นต้น/**ROI = กำไรขั้นต้น ÷ ค่าแอด** (badge เขียว ≥2.0 / เหลือง 1.2–2.0 / แดง <1.2 — ค่าคงที่ `ROI_TARGET`/`ROI_WARN`)/**แอดต่อตัว = ค่าแอด ÷ ตัว**. วันที่ค่าแอด 0/ไม่กรอก → "—" ไม่คำนวณ
+- **การ์ดสรุป:** ROI เฉลี่ย 7 วัน (+ ลูกศร ▲▼ เทียบสัปดาห์ก่อน = วัน 8–14) / ROI เฉลี่ย 30 วัน / แอดต่อตัวเฉลี่ย 7 วัน — **เฉลี่ยถ่วงตามเงิน** (Σกำไรขั้นต้น ÷ Σค่าแอด เฉพาะวันที่มีแอด ไม่ใช่ mean ของ ROI รายวัน — กันวันจ่ายน้อยลากค่าเฉลี่ย)
+- **กราฟเส้น 30 วัน** (Chart.js ชุดเดิม): ROI รายวัน teal (วันไม่มีแอด = null, `spanGaps`) + เส้นประแดงเป้า 2.0x
+- **หมายเหตุ methodology ท้ายหน้า** (ยังไม่หัก fixed cost / ออเดอร์อาจปิดคนละวันกับวันยิงแอด → ดูเฉลี่ย 7 วันเป็นหลัก)
+- tests เพิ่ม 4 เคส (`RoiReportTests`: PIN gate / สูตร+สี / เฉลี่ยถ่วงน้ำหนัก / validate dropdown) — รวม 18 เคส
 
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
