@@ -329,3 +329,200 @@ class RegressionTests(TestCase):
         make_order(timezone.localdate(), items=[('short', 1)])
         self.assertEqual(self.client.get(reverse('order_list')).status_code, 200)
         self.assertEqual(self.client.get(reverse('daily_summary')).status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# เชื่อมระบบ Brief ลึกขึ้น (V3.6): prefill ?design_job= / command จับคู่ใบเก่า /
+# conversion ในรายงาน ROI — mock urllib.request.urlopen ทั้งหมด ไม่ยิง network จริง
+# ---------------------------------------------------------------------------
+import io
+import json as _json
+from unittest import mock
+
+from django.core.management import call_command
+
+
+def _brief_resp(payload):
+    """ตัวแทน response ของ urlopen — BytesIO เป็น context manager อยู่แล้ว"""
+    return BytesIO(_json.dumps(payload).encode('utf-8'))
+
+
+def _brief_job_payload(pk, number, customer, **extra):
+    row = {
+        'id': pk, 'job_number': number, 'customer_name': customer,
+        'customer_chat_url': '', 'status': 'รอทำแบบ', 'round': 'รอบแรก',
+        'order_ref': '', 'source': '', 'source_label': '',
+        'created_at': timezone.localdate().isoformat(),
+    }
+    row.update(extra)
+    return row
+
+
+@override_settings(BRIEF_API_TOKEN='test-token')
+class BriefPrefillTests(TestCase):
+    """ปุ่ม "สร้างออเดอร์จากใบนี้" ฝั่ง Brief -> /create/?design_job=<id>"""
+
+    def setUp(self):
+        self.user = User.objects.create_superuser('boss3', 'b@x.com', 'x')
+        self.client.force_login(self.user)
+
+    def test_prefill_from_design_job(self):
+        detail = _brief_job_payload(
+            42, 'D-42', 'ป้าแดง', customer_chat_url='https://m.me/pd',
+            source='konngan', source_label='เพจเสื้อคนงาน')
+        with mock.patch('urllib.request.urlopen', return_value=_brief_resp(detail)):
+            resp = self.client.get(reverse('order_create') + '?design_job=42')
+        self.assertEqual(resp.status_code, 200)
+        initial = resp.context['form'].initial
+        self.assertEqual(initial['design_doc_number'], 'D-42')
+        self.assertEqual(initial['customer_name'], 'ป้าแดง')
+        self.assertEqual(initial['customer_link'], 'https://m.me/pd')
+        self.assertEqual(initial['source'], 'เพจเสื้อคนงาน')
+        # hidden brief_job_id ผูกให้เลย (ผ่าน context brief_job)
+        self.assertEqual(resp.context['brief_job']['id'], 42)
+
+    def test_prefill_source_not_matching_choices_skipped(self):
+        # ใบออกแบบ source "อื่นๆ" (label ไม่อยู่ใน SOURCE_CHOICES ฝั่งนี้) -> ไม่เซ็ต source
+        detail = _brief_job_payload(7, 'D-7', 'ลุงมี', source='other', source_label='งานวัด')
+        with mock.patch('urllib.request.urlopen', return_value=_brief_resp(detail)):
+            resp = self.client.get(reverse('order_create') + '?design_job=7')
+        self.assertNotIn('source', resp.context['form'].initial)
+
+    def test_brief_down_form_still_works(self):
+        with mock.patch('urllib.request.urlopen', side_effect=OSError):
+            resp = self.client.get(reverse('order_create') + '?design_job=42')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['form'].initial, {})
+        self.assertIsNone(resp.context['brief_job'])
+
+    def test_design_job_garbage_ignored(self):
+        resp = self.client.get(reverse('order_create') + '?design_job=abc')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.context['brief_job'])
+
+
+@override_settings(BRIEF_API_TOKEN='test-token')
+class LinkBriefJobsCommandTests(TestCase):
+    """command จับคู่ design_doc_number (text) -> brief_job_id — เฉพาะแบบมั่นใจ"""
+
+    EXPORT = {'results': [
+        _brief_job_payload(1, 'D-10', 'ร้านกาแฟดอยสูง'),
+        _brief_job_payload(2, 'D-11', 'คนละคนเลย'),
+        _brief_job_payload(3, 'D-12', 'โรงเรียนบ้านไกล', order_ref='6905-1'),
+    ]}
+
+    def _make(self, doc, customer):
+        return Order.objects.create(
+            created_date=timezone.localdate(), source='หน้าร้าน',
+            customer_name=customer, shirt_name='งาน', design_doc_number=doc,
+        )
+
+    def _run(self, *args):
+        self.calls = []
+
+        def fake(req, timeout=None):
+            self.calls.append(req)
+            if '/api/jobs/export/' in req.full_url:
+                return _brief_resp(self.EXPORT)
+            return _brief_resp({'ok': True})
+
+        with mock.patch('urllib.request.urlopen', side_effect=fake):
+            call_command('link_brief_jobs', *args, stdout=io.StringIO())
+
+    def test_dry_run_writes_nothing(self):
+        o = self._make('D-10', 'ร้านกาแฟดอยสูง')
+        self._run()
+        o.refresh_from_db()
+        self.assertIsNone(o.brief_job_id)
+        self.assertEqual(o.design_doc_number, 'D-10')
+
+    def test_confirm_matches_only_confident_pairs(self):
+        exact = self._make('D-10', 'ร้านกาแฟดอยสูง')          # เลข+ชื่อตรง -> จับคู่
+        loose = self._make('d-10', 'กาแฟดอยสูง')              # เลขตรง (เคสต่าง) + ชื่อ substring -> จับคู่
+        digits = self._make('10', 'ร้านกาแฟดอยสูง')           # เลขล้วน = D-10 -> จับคู่
+        mismatch = self._make('D-11', 'โรงเรียนบ้านไกล')      # เลขตรง ชื่อไม่ตรง -> ข้าม
+        nojob = self._make('D-99', 'ใครก็ไม่รู้')             # ไม่มีใบงาน -> ข้าม
+        already = self._make('D-12', 'โรงเรียนบ้านไกล')
+        already.brief_job_id = 3
+        already.save(update_fields=['brief_job_id'])          # ผูกแล้ว -> ไม่แตะ
+
+        self._run('--confirm')
+        for o in (exact, loose, digits, mismatch, nojob, already):
+            o.refresh_from_db()
+        self.assertEqual(exact.brief_job_id, 1)
+        self.assertEqual(loose.brief_job_id, 1)
+        self.assertEqual(digits.brief_job_id, 1)
+        self.assertIsNone(mismatch.brief_job_id)
+        self.assertIsNone(nojob.brief_job_id)
+        self.assertEqual(already.brief_job_id, 3)
+        # text เดิมไม่ถูกแตะสักใบ
+        self.assertEqual(loose.design_doc_number, 'd-10')
+        self.assertEqual(digits.design_doc_number, '10')
+        # ยิง order_ref กลับครั้งเดียวต่อใบงาน (D-10 ยังว่างฝั่ง Brief) —
+        # ใบแรกของชุด (สร้างก่อน = exact) เป็นเลขที่ถูกยิง
+        pushes = [r for r in self.calls if r.data]
+        self.assertEqual(len(pushes), 1)
+        self.assertIn('/api/jobs/1/order-ref/', pushes[0].full_url)
+
+
+class RoiConversionTests(TestCase):
+    """ตาราง conversion ใบออกแบบ -> ออเดอร์ ใน tab ROI"""
+
+    def setUp(self):
+        self.user = User.objects.create_superuser('boss4', 'b@x.com', 'x')
+        self.client.force_login(self.user)
+
+    def unlock(self):
+        self.client.post(reverse('reports') + '?report=roi',
+                         {'stats_pin': settings.STATS_PIN})
+
+    def _get_roi(self, export):
+        def fake(req, timeout=None):
+            if '/api/jobs/export/' in req.full_url:
+                return _brief_resp(export)
+            raise OSError
+
+        with mock.patch('urllib.request.urlopen', side_effect=fake):
+            with override_settings(BRIEF_API_TOKEN='test-token'):
+                return self.client.get(reverse('reports') + '?report=roi')
+
+    def test_conversion_counts_and_stale_list(self):
+        today = timezone.localdate()
+
+        def iso(days_ago):
+            return (today - timedelta(days=days_ago)).isoformat()
+
+        export = {'results': [
+            # ล่าสุด: มีออเดอร์ผ่าน order_ref
+            _brief_job_payload(1, 'D-1', 'ลูกค้า ก', order_ref='6908-1',
+                               source_label='เพจเสื้อคนงาน', created_at=iso(1)),
+            # ค้างเกิน 7 วัน ไม่มีออเดอร์ -> เข้าลิสต์ stale
+            _brief_job_payload(2, 'D-2', 'ลูกค้า ข',
+                               source_label='เพจเสื้อคนงาน', created_at=iso(10)),
+            # ใหม่ 2 วัน ไม่มีออเดอร์ -> ยังไม่ stale
+            _brief_job_payload(3, 'D-3', 'ลูกค้า ค', created_at=iso(2)),
+            # ไม่มี order_ref แต่มีออร์เดอร์ผูกผ่าน brief_job_id -> นับว่ามีออเดอร์
+            _brief_job_payload(4, 'D-4', 'ลูกค้า ง', created_at=iso(9)),
+        ]}
+        Order.objects.create(
+            created_date=today, source='หน้าร้าน', customer_name='ลูกค้า ง',
+            shirt_name='งาน', brief_job_id=4)
+        self.unlock()
+        resp = self._get_roi(export)
+        self.assertTrue(resp.context['conv_ok'])
+        stale = resp.context['conv_stale']
+        self.assertEqual([j['job_number'] for j in stale], ['D-2'])
+        self.assertEqual(stale[0]['days'], 10)
+        # รวมทุกสัปดาห์: 4 ใบ, มีออเดอร์ 2 (D-1 order_ref + D-4 ผูกผ่าน brief_job_id)
+        weeks = resp.context['conv_weeks']
+        self.assertEqual(sum(w['total'] for w in weeks), 4)
+        self.assertEqual(sum(w['with_order'] for w in weeks), 2)
+
+    def test_brief_down_roi_tab_still_renders(self):
+        self.unlock()
+        with mock.patch('urllib.request.urlopen', side_effect=OSError):
+            with override_settings(BRIEF_API_TOKEN='test-token'):
+                resp = self.client.get(reverse('reports') + '?report=roi')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context['conv_ok'])
+        self.assertContains(resp, 'ติดต่อระบบ Brief ไม่ได้')

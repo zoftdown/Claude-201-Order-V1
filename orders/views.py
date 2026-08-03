@@ -354,6 +354,79 @@ def _roi_window_avg(rows):
     return float(gross / spent), (spent / shirts if shirts else None)
 
 
+CONV_WEEKS = 8        # ตาราง conversion ย้อนหลังกี่สัปดาห์ (จันทร์–อาทิตย์)
+CONV_STALE_DAYS = 7   # ใบออกแบบเกินกี่วันไม่มีออเดอร์ = เข้าลิสต์ติดตาม
+
+
+def _roi_conversion_context():
+    """conversion ใบออกแบบ → ออเดอร์ (tab ROI) — ข้อมูลใบออกแบบดึงจาก Brief
+    export API ฝั่ง server. "มีออเดอร์" = Job.order_ref ถูกเซ็ต (ลิงก์สองทางตอน
+    save) หรือมีออร์เดอร์ที่ brief_job_id ชี้ใบนั้น (กันเคสยิง order_ref กลับ
+    ไม่สำเร็จ). Brief ล่ม/ปิดฟีเจอร์ → conv_ok=False ส่วนอื่นของ tab แสดงปกติ."""
+    payload = _brief_api_get(f'/api/jobs/export/?days={CONV_WEEKS * 7 + 7}')
+    if payload is None:
+        return {'conv_ok': False}
+    today = timezone.localdate()
+    linked_ids = set(
+        Order.objects.filter(brief_job_id__isnull=False)
+        .values_list('brief_job_id', flat=True))
+
+    jobs = []
+    for j in payload.get('results', []):
+        try:
+            created = date.fromisoformat(j.get('created_at') or '')
+        except ValueError:
+            continue
+        jobs.append({
+            'id': j.get('id'),
+            'job_number': j.get('job_number', ''),
+            'customer_name': j.get('customer_name', ''),
+            'page': j.get('source_label') or 'ไม่ระบุเพจ',
+            'created': created,
+            'has_order': bool(j.get('order_ref')) or j.get('id') in linked_ids,
+        })
+
+    # ตารางรายสัปดาห์ (จันทร์เป็นวันเริ่ม สัปดาห์ล่าสุดขึ้นบน) + แตกรายเพจในสัปดาห์
+    this_monday = today - timedelta(days=today.weekday())
+    weeks = []
+    for i in range(CONV_WEEKS):
+        start = this_monday - timedelta(days=7 * i)
+        end = start + timedelta(days=6)
+        in_week = [j for j in jobs if start <= j['created'] <= end]
+        pages = {}
+        for j in in_week:
+            p = pages.setdefault(j['page'], {'page': j['page'], 'total': 0, 'with_order': 0})
+            p['total'] += 1
+            if j['has_order']:
+                p['with_order'] += 1
+        page_rows = sorted(pages.values(), key=lambda p: -p['total'])
+        for p in page_rows:
+            p['pct'] = round(100 * p['with_order'] / p['total'])
+        total = len(in_week)
+        with_order = sum(1 for j in in_week if j['has_order'])
+        weeks.append({
+            'start': start, 'end': end, 'total': total, 'with_order': with_order,
+            'pct': round(100 * with_order / total) if total else None,
+            'pages': page_rows,
+        })
+
+    # ใบออกแบบค้าง: เกิน CONV_STALE_DAYS วันแล้วยังไม่มีออเดอร์ — ค้างนานสุดขึ้นบน
+    stale = sorted(
+        (j for j in jobs
+         if not j['has_order'] and (today - j['created']).days > CONV_STALE_DAYS),
+        key=lambda j: j['created'])
+    for j in stale:
+        j['days'] = (today - j['created']).days
+
+    return {
+        'conv_ok': True,
+        'conv_weeks': weeks,
+        'conv_stale': stale,
+        'conv_stale_days': CONV_STALE_DAYS,
+        'brief_public_base': settings.BRIEF_PUBLIC_BASE,
+    }
+
+
 def _report_roi_context(request):
     """tab ROI แอดรายเพจ: 30 วันล่าสุดของเพจที่เลือก (?page=, default เพจเสื้อคนงาน).
     reuse get_day_rows ทั้งหมด (วันเก่าอ่าน cache DailySummary, วันนี้คำนวณสด) —
@@ -378,7 +451,7 @@ def _report_roi_context(request):
     if roi_7 is not None and roi_prev7 is not None:
         trend = 'up' if roi_7 >= roi_prev7 else 'down'
 
-    return {
+    ctx = {
         'roi_page': page,
         'roi_pages': valid_pages,
         'roi_rows': list(reversed(rows)),  # ตาราง: วันล่าสุดขึ้นบน
@@ -395,6 +468,8 @@ def _report_roi_context(request):
             'target': ROI_TARGET,
         },
     }
+    ctx.update(_roi_conversion_context())
+    return ctx
 
 
 # Statuses ที่ถือว่า "ขยับแล้ว" → ตัดออกจากรายงานค้าง แม้ stage timestamp จะ null
@@ -684,6 +759,36 @@ def _apply_brief_job(request, order):
     order.brief_job_id = int(raw) if raw.isdigit() else None
 
 
+def _brief_api_get(path):
+    """GET internal API ฝั่ง Brief ด้วย token ฝั่ง server — คืน dict จาก JSON หรือ
+    None เมื่อปิดฟีเจอร์ (ไม่ตั้ง token บน prod) / Brief ล่ม / ตอบไม่ใช่ JSON.
+    ใช้ร่วม: proxy autocomplete, prefill ?design_job=, รายงาน conversion, command จับคู่ใบเก่า."""
+    import urllib.request
+
+    if not (settings.BRIEF_API_TOKEN or settings.DEBUG):
+        return None
+    headers = {}
+    if settings.BRIEF_API_TOKEN:
+        headers['X-Api-Token'] = settings.BRIEF_API_TOKEN
+    try:
+        req = urllib.request.Request(f'{settings.BRIEF_API_BASE}{path}', headers=headers)
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+    except (OSError, ValueError):
+        return None
+
+
+def _fetch_brief_job(raw_id):
+    """ข้อมูลใบงานออกแบบใบเดียวจาก Brief — ใช้ prefill ฟอร์มเมื่อกดปุ่ม
+    "สร้างออเดอร์จากใบนี้" ฝั่ง Brief (/create/?design_job=<id>).
+    id ไม่ใช่ตัวเลข / Brief ล่ม / ไม่พบใบงาน → None (ฟอร์มเปล่าปกติ ไม่พัง)."""
+    raw_id = str(raw_id or '').strip()
+    if not raw_id.isdigit():
+        return None
+    data = _brief_api_get(f'/api/jobs/{int(raw_id)}/')
+    return data if data and data.get('id') else None
+
+
 def _push_order_ref_to_brief(order):
     """ยิงเลขออร์เดอร์กลับไปเซ็ต Job.order_ref ฝั่ง Brief (ลิงก์สองทาง).
     best-effort: Brief ล่ม/ยังไม่ตั้ง token → ข้ามเงียบ ไม่ block การ save ใบงาน."""
@@ -784,6 +889,7 @@ def order_create(request):
         request.POST.get('parent_order_id') if request.method == 'POST'
         else request.GET.get('from')
     )
+    brief_job = None  # ใบออกแบบที่ prefill จาก ?design_job= (GET เท่านั้น)
     if request.method == 'POST':
         form = OrderForm(request.POST, is_admin=is_admin)
         item_formset = OrderItemFormSet(request.POST, request.FILES, prefix='items')
@@ -819,6 +925,19 @@ def order_create(request):
                 'fabric_spec': parent_order.fabric_spec,
                 'delivery_method': parent_order.delivery_method,
             }
+        elif request.GET.get('design_job'):
+            # ปุ่ม "สร้างออเดอร์จากใบนี้" ฝั่ง Brief — prefill จากใบออกแบบ + ผูก
+            # brief_job_id ผ่าน hidden ใน template (Brief ล่ม/ไม่พบ = ฟอร์มเปล่าปกติ)
+            brief_job = _fetch_brief_job(request.GET.get('design_job'))
+            if brief_job:
+                initial = {
+                    'design_doc_number': brief_job['job_number'],
+                    'customer_name': brief_job.get('customer_name', ''),
+                    'customer_link': brief_job.get('customer_chat_url', ''),
+                }
+                # label เพจฝั่ง Brief ตรงกับค่า SOURCE_CHOICES ฝั่งนี้ (string ไทยเดียวกัน)
+                if brief_job.get('source_label') in dict(Order.SOURCE_CHOICES):
+                    initial['source'] = brief_job['source_label']
         form = OrderForm(is_admin=is_admin, initial=initial)
         item_formset = OrderItemFormSet(prefix='items')
         variant_formsets = _build_variant_formsets(item_formset)
@@ -830,6 +949,7 @@ def order_create(request):
         variant_errors=variant_errors,
         is_admin=is_admin,
         parent_order=parent_order,
+        brief_job=brief_job,
         customer_prices=_customer_prices_payload(parent_order.customer) if parent_order else [],
     ))
 
@@ -1957,19 +2077,11 @@ def brief_jobs_api(request):
     เรียกฝั่ง server (localhost) เพื่อไม่ให้ token หลุดไป browser; Brief
     ล่ม/ไม่ได้ตั้ง token = คืน results ว่าง ฟอร์มใช้งานต่อได้ปกติ."""
     import urllib.parse
-    import urllib.request
 
     q = (request.GET.get('q') or '').strip()
     if not (settings.BRIEF_API_TOKEN or settings.DEBUG):
         return JsonResponse({'results': [], 'disabled': True})
-    url = f'{settings.BRIEF_API_BASE}/api/jobs/?q={urllib.parse.quote(q)}'
-    headers = {}
-    if settings.BRIEF_API_TOKEN:
-        headers['X-Api-Token'] = settings.BRIEF_API_TOKEN
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
-    except (OSError, ValueError):
+    payload = _brief_api_get(f'/api/jobs/?q={urllib.parse.quote(q)}')
+    if payload is None:
         return JsonResponse({'results': [], 'error': 'brief_unreachable'})
     return JsonResponse({'results': payload.get('results', [])})

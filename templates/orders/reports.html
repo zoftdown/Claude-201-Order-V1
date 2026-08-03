@@ -688,6 +688,74 @@
                 วันที่ไม่กรอกค่าแอดแสดง "—" ไม่ร่วมคำนวณ
             </p>
 
+            <!-- Conversion ใบออกแบบ → ออเดอร์ (ทุกเพจ — ไม่ตาม dropdown เพจข้างบน) -->
+            <hr class="my-4">
+            <h5 class="mb-3">🎨 Conversion ใบออกแบบ → ออเดอร์</h5>
+            {% if not conv_ok %}
+            <p class="text-muted small mb-4">— ติดต่อระบบ Brief ไม่ได้ตอนนี้
+                (ส่วนนี้ดึงข้อมูลใบออกแบบจากระบบ Brief) —</p>
+            {% else %}
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered table-sm align-middle report-table">
+                    <thead class="table-dark">
+                        <tr><th>สัปดาห์</th><th>เพจ</th>
+                            <th class="num">ใบออกแบบ</th><th class="num">มีออเดอร์</th><th class="num">%</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for w in conv_weeks %}
+                        <tr class="table-secondary fw-bold">
+                            <td>{{ w.start|date:"j M" }} – {{ w.end|date:"j M" }}</td>
+                            <td>รวมทุกเพจ</td>
+                            <td class="num">{{ w.total }}</td>
+                            <td class="num">{{ w.with_order }}</td>
+                            <td class="num">{% if w.pct is not None %}{{ w.pct }}%{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        </tr>
+                        {% for p in w.pages %}
+                        <tr>
+                            <td></td>
+                            <td>{{ p.page }}</td>
+                            <td class="num">{{ p.total }}</td>
+                            <td class="num">{{ p.with_order }}</td>
+                            <td class="num">{{ p.pct }}%</td>
+                        </tr>
+                        {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="fw-bold mb-2">⏰ ใบออกแบบเกิน {{ conv_stale_days }} วัน ยังไม่มีออเดอร์
+                ({{ conv_stale|length }} ใบ)</div>
+            {% if conv_stale %}
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm align-middle report-table">
+                    <thead class="table-dark">
+                        <tr><th>เลขใบงาน</th><th>ลูกค้า</th><th>เพจ</th><th>สร้างเมื่อ</th>
+                            <th class="num">ค้าง (วัน)</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for j in conv_stale %}
+                        <tr>
+                            <td><a href="{{ brief_public_base }}/job/{{ j.id }}/" target="_blank" rel="noopener">{{ j.job_number }} ↗</a></td>
+                            <td>{{ j.customer_name }}</td>
+                            <td>{{ j.page }}</td>
+                            <td>{{ j.created|date:"j M Y" }}</td>
+                            <td class="num fw-bold {% if j.days > 14 %}text-danger{% endif %}">{{ j.days }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted small">— ไม่มีใบออกแบบค้าง 🎉 —</p>
+            {% endif %}
+            <p class="small text-muted mt-2 mb-4">
+                📝 "มีออเดอร์" = ใบออกแบบที่มีออร์เดอร์ผูกแล้ว (เลือกจาก autocomplete ตอนสร้างใบ
+                หรือ order_ref ฝั่ง Brief ถูกเซ็ต) · นับตามวันสร้างใบออกแบบ สัปดาห์ = จันทร์–อาทิตย์ ·
+                แยกตาม ad_source จะเพิ่มเมื่อฝั่ง Brief มี field นี้
+            </p>
+            {% endif %}
+
             {{ roi_chart_data|json_script:"roi-chart-data" }}
             <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
             <script>

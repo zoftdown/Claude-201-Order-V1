@@ -157,7 +157,7 @@
                             {{ form.design_doc_number }}
                             {# เฟส 3: ผูกกับ Job ฝั่งระบบ Brief — JS เซ็ตเมื่อเลือกจาก dropdown, เคลียร์เมื่อพิมพ์เอง #}
                             <input type="hidden" name="brief_job_id" id="brief-job-id-field"
-                                   value="{% if order and order.brief_job_id %}{{ order.brief_job_id }}{% elif parent_order and parent_order.brief_job_id %}{{ parent_order.brief_job_id }}{% endif %}">
+                                   value="{% if request.POST.brief_job_id %}{{ request.POST.brief_job_id }}{% elif order and order.brief_job_id %}{{ order.brief_job_id }}{% elif parent_order and parent_order.brief_job_id %}{{ parent_order.brief_job_id }}{% elif brief_job %}{{ brief_job.id }}{% endif %}">
                             <div id="brief-suggest" class="list-group position-absolute shadow"
                                  style="z-index:1050; display:none; top:100%; left:0; right:0; max-height:260px; overflow-y:auto;"></div>
                             <div id="brief-linked" class="small mt-1" style="display:none; color:#0d6efd;">
@@ -822,6 +822,23 @@ function setLinkedBrief(id) {
     briefLinked.style.display = '';
 }
 
+// เลือกใบออกแบบ → auto-fill เฉพาะช่องที่ยังว่าง (ไม่ทับที่แอดมินพิมพ์เอง)
+// ยกเว้นแหล่งที่มา: เซ็ตตามเพจของใบออกแบบเสมอ (label Brief = ค่า choices ฝั่งนี้)
+// หมายเหตุ: Brief ยังไม่มีช่องชื่องาน/ad_source — มีเมื่อไหร่ค่อยเติมที่นี่
+function autofillFromBriefJob(j) {
+    if (j.customer_name && !customerNameField.value.trim()) {
+        customerNameField.value = j.customer_name;
+    }
+    if (j.customer_chat_url && !customerLinkField.value.trim()) {
+        customerLinkField.value = j.customer_chat_url;
+    }
+    const sourceField = document.getElementById('id_source');
+    if (j.source_label && sourceField &&
+        [...sourceField.options].some(o => o.value === j.source_label)) {
+        sourceField.value = j.source_label;
+    }
+}
+
 function clearLinkedBrief() {
     briefIdField.value = '';
     briefLinked.style.display = 'none';
@@ -844,12 +861,14 @@ briefField.addEventListener('input', function () {
                 a.href = '#';
                 a.className = 'list-group-item list-group-item-action py-1 px-2';
                 const refHint = j.order_ref ? ` <span class="badge text-bg-warning">มีออร์เดอร์ ${escapeHtml(j.order_ref)}</span>` : '';
+                const srcHint = j.source_label ? ` · ${escapeHtml(j.source_label)}` : '';
                 a.innerHTML = `<div class="fw-bold small">${escapeHtml(j.job_number)} · ${escapeHtml(j.customer_name)}${refHint}</div>` +
-                    `<div class="text-muted" style="font-size:11px;">${escapeHtml(j.status)} · ${escapeHtml(j.round)}</div>`;
+                    `<div class="text-muted" style="font-size:11px;">${escapeHtml(j.status)} · ${escapeHtml(j.round)}${srcHint}</div>`;
                 a.addEventListener('click', function (e) {
                     e.preventDefault();
                     briefField.value = j.job_number;
                     setLinkedBrief(j.id);
+                    autofillFromBriefJob(j);
                     briefSuggest.style.display = 'none';
                 });
                 briefSuggest.appendChild(a);
