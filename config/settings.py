@@ -54,6 +54,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    # no-store ทุกหน้า dynamic (กัน browser โชว์หน้าเก่าตอนกด Back) —
+    # ต้องอยู่ใต้ WhiteNoise เพื่อไม่แตะ static files
+    'orders.middleware.NoStoreCacheMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

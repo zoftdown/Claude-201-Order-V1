@@ -330,6 +330,14 @@ class RegressionTests(TestCase):
         self.assertEqual(self.client.get(reverse('order_list')).status_code, 200)
         self.assertEqual(self.client.get(reverse('daily_summary')).status_code, 200)
 
+    def test_dynamic_pages_send_no_store(self):
+        """ทุกหน้า dynamic ต้องส่ง Cache-Control: no-store — กัน Chrome คืน
+        หน้าเก่าจาก back/forward cache (กด Back แล้วเห็นคำสั่งพิเศษค่าเก่า)"""
+        order = make_order(timezone.localdate(), items=[('short', 1)])
+        for name, args in [('order_list', []), ('order_detail', [order.pk])]:
+            resp = self.client.get(reverse(name, args=args))
+            self.assertEqual(resp['Cache-Control'], 'no-store', name)
+
 
 # ---------------------------------------------------------------------------
 # เชื่อมระบบ Brief ลึกขึ้น (V3.6): prefill ?design_job= / command จับคู่ใบเก่า /
