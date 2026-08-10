@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db.models import Count, Max, OuterRef, Q, Subquery
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -73,13 +74,18 @@ def order_list(request):
             Q(order_number__icontains=q)
         )
 
-    # Evaluate once; derive the urgent subset in Python so the urgent zone
-    # costs no extra DB query (and reuses the same prefetched objects).
-    orders = list(orders)
-    urgent_orders = [o for o in orders if o.is_urgent]
+    # Urgent zone: own (small) query over the same filters, so it always shows
+    # every urgent order no matter which page of the main list is open.
+    urgent_orders = list(orders.filter(is_urgent=True))
+
+    # Paginate the main list — rendering the full history (1,500+ orders, each
+    # with prefetched items/variants) made the page slower every month. 100
+    # rows ≈ the last 1-2 weeks, which is what the shop actually scans.
+    page_obj = Paginator(orders, 100).get_page(request.GET.get('page'))
 
     return render(request, 'orders/order_list.html', {
-        'orders': orders,
+        'orders': page_obj.object_list,
+        'page_obj': page_obj,
         'urgent_orders': urgent_orders,
         'current_status': status,
         'search_query': q or '',

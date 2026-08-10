@@ -103,6 +103,21 @@
         </tbody>
     </table>
 </div>
+
+{# ===== Pagination: newest first, so "next" = older orders. Filters (q / #}
+{#       status) carry over between pages. ===== #}
+{% if page_obj.paginator.num_pages > 1 %}
+<nav class="d-flex justify-content-center align-items-center gap-2 my-3 flex-wrap">
+    {% if page_obj.has_previous %}
+        <a class="btn btn-sm btn-outline-secondary" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">◀ ใหม่กว่า</a>
+    {% endif %}
+    <span class="text-muted small">หน้า {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} · ทั้งหมด {{ page_obj.paginator.count }} ใบ</span>
+    {% if page_obj.has_next %}
+        <a class="btn btn-sm btn-outline-secondary" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">เก่ากว่า ▶</a>
+    {% endif %}
+</nav>
+{% endif %}
+
 {% else %}
 <p class="text-muted text-center mt-5">ไม่พบออร์เดอร์</p>
 {% endif %}
