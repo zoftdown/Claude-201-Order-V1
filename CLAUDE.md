@@ -1,6 +1,6 @@
 # CLAUDE.md — Order System (ร้านพิมพ์เสื้อ)
 
-> **Version:** V3.6 · อัปเดตล่าสุด 2026-08-03 · migration ล่าสุด `0025_tailor_order_index` (V3.6 ไม่มี migration ใหม่) · feature ล่าสุด: **เชื่อมระบบ Brief ลึกขึ้น** (auto-fill จาก autocomplete + `/create/?design_job=` + command `link_brief_jobs` จับคู่ใบเก่า + ตาราง conversion ใน tab ROI; ดูหัวข้อ V3.6) · ก่อนหน้า: **tab "🎯 ROI แอดรายเพจ"** (`/reports/?report=roi` หลังรหัส STATS_PIN — ROI รายวัน 30 วันต่อเพจ + เส้นเป้า 2.0x; ดูหัวข้อ V3.5) · ก่อนหน้า: **จัดลำดับคนเย็บแบบ drag ในหน้า admin** (`/admin/orders/tailor/` ลากแถวแล้วบันทึกอัตโนมัติ — ลำดับมีผล dropdown แผนกเย็บ + filter หน้าค้นหา; ดูหัวข้อ Tailor ใน Data Models) · ก่อนหน้า: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติ (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
+> **Version:** V3.7 · อัปเดตล่าสุด 2026-08-11 · migration ล่าสุด `0025_tailor_order_index` (V3.7 ไม่มี migration ใหม่) · feature ล่าสุด: **แบ่งหน้า list ทีละ 100 แถว** (Paginator + โซนด่วนแยก query โชว์ครบทุกหน้า — แก้หน้าแรกช้าเพราะ render ทุกใบ; ดูหัวข้อ V3.7) · ก่อนหน้า: **เชื่อมระบบ Brief ลึกขึ้น** (auto-fill จาก autocomplete + `/create/?design_job=` + command `link_brief_jobs` จับคู่ใบเก่า + ตาราง conversion ใน tab ROI; ดูหัวข้อ V3.6) · ก่อนหน้า: **tab "🎯 ROI แอดรายเพจ"** (`/reports/?report=roi` หลังรหัส STATS_PIN — ROI รายวัน 30 วันต่อเพจ + เส้นเป้า 2.0x; ดูหัวข้อ V3.5) · ก่อนหน้า: **จัดลำดับคนเย็บแบบ drag ในหน้า admin** (`/admin/orders/tailor/` ลากแถวแล้วบันทึกอัตโนมัติ — ลำดับมีผล dropdown แผนกเย็บ + filter หน้าค้นหา; ดูหัวข้อ Tailor ใน Data Models) · ก่อนหน้า: **รายงานกำไรรายวัน/รายเดือน** (tab "💰 กำไรรายวัน" + "📅 กำไรรายเดือน" ใน /reports/ หลังรหัส STATS_PIN — ต้นทุนเสื้อตามประเภท + ค่าแอดต่อเพจ + cache DailySummary; ดู `orders/profit.py`) · ก่อนหน้า: login ด้วย PIN ประจำตัว (0023_userpin, fallback `/login/classic/`) · เฟส 5 dashboard สถิติร้าน — **ครบทุกเฟสของแผน CRM แล้ว** (เฟส 1-5: โปรไฟล์ลูกค้า 0019 → งานชุด 0020 → เชื่อม Brief 0021 → tag/export 0022 → dashboard) · **หมายเหตุ:** หน้า list = โซนด่วนตีกรอบบนสุด + list วันปกติแบ่งหน้าทีละ 100 แถว (ใบด่วนโชว์ซ้ำ 2 ที่) — **ไม่ใช่ tab** (tab เคย revert ไปแล้ว อย่าทำซ้ำ)
 
 ## Auth: login ด้วย PIN ประจำตัว (V3.2 · 2026-07-24)
 - **หน้า `/login/` = ช่อง PIN ช่องเดียว** (`orders.views.pin_login`, template `registration/login.html`) —
@@ -200,7 +200,7 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **custom_search** — ค้นหา (หน้าแยก)
 - **user-management** — จัดการ user (admin)
 - หน้า list: filter status + ค้นหา (**list เดียว ไม่มี tab**)
-- **หน้า list = 2 โซน (V2.5):** view เรียง `order_by('-created_date', '-id')` (วันปกติ) แล้ว `list(orders)` + แยก `urgent_orders` ใน Python (query เดียว) + `prefetch_related('items','items__variants')` ตัด N+1 ของ `total_qty`
+- **หน้า list = 2 โซน (V2.5, แบ่งหน้า V3.7):** view เรียง `order_by('-created_date', '-id')` (วันปกติ) + `prefetch_related('items','items__variants')` ตัด N+1 ของ `total_qty` · **Paginator ทีละ 100 แถว** (`?page=`) — `urgent_orders` แยก query ของตัวเอง (`filter(is_urgent=True)` บน queryset ที่ผ่าน filter เดียวกัน) ให้โชว์ครบทุกใบด่วนไม่ว่าเปิดหน้าไหน
   - **โซน "⚠️ งานด่วน"** กรอบแดง 3px บนสุด — แสดงใบด่วนทั้งหมด
   - **โซน "ทั้งหมด (เรียงตามวันที่)"** — ใบด่วน**โชว์ซ้ำ**ในวันของมันด้วย (ไฮไลต์ `urgent-row` ชมพู) เพื่อกันตกหล่นตอนไล่ทำตามวัน
   - `{% regroup orders by created_date %}` → zebra เขียวสลับเข้ม/อ่อน (`date-group-a/b`) + เส้นคั่นเขียวทุกขอบวัน (`group-start`)
@@ -324,6 +324,13 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **tab ROI เพิ่มท้ายหน้า:** ตาราง "🎨 Conversion ใบออกแบบ → ออเดอร์" รายสัปดาห์ (จันทร์–อาทิตย์, 8 สัปดาห์, แถวรวม+แตกรายเพจ) + ลิสต์ "⏰ ใบออกแบบเกิน 7 วันไม่มีออเดอร์" (ลิงก์เข้า Brief, ค้างนานสุดบน, >14 วันตัวแดง) — `_roi_conversion_context` ดึง `GET /api/jobs/export/?days=70`; "มีออเดอร์" = Job.order_ref ถูกเซ็ต **หรือ** มี Order ที่ brief_job_id ชี้ใบนั้น; Brief ล่ม → conv_ok=False โชว์ข้อความ ส่วน ROI เดิมปกติ
 - **tests +8 เคส** (BriefPrefillTests / LinkBriefJobsCommandTests / RoiConversionTests — mock `urllib.request.urlopen` ไม่ยิง network จริง) รวม 26 เคส
 - **dev:** `.claude/launch.json` เพิ่ม config `brief` (รัน Brief dev server port 8600 จาก repo Claude-203) — dev ทั้งคู่ DEBUG=true ไม่ต้องตั้ง token; passcode Brief dev = `admin`
+
+**เพิ่มล่าสุด (V3.7 · 2026-08-11): แบ่งหน้า list ทีละ 100 แถว (แก้หน้าแรกช้า)**
+- **สาเหตุ:** `order_list` เดิม `list(orders)` ทั้งตาราง (1,500+ ใบ, prefetch items+variants ทุกใบ) แล้ว render HTML ทั้งหมด — ช้าลงเรื่อยๆ ตามใบสะสม
+- **แก้:** `Paginator(orders, 100).get_page(request.GET.get('page'))` — หน้าแรก ≈ 1-2 สัปดาห์ล่าสุด (ช่วงที่ใช้งานจริง; ใบเก่ากว่านั้นใช้หน้าค้นหา/ปุ่มเปลี่ยนหน้า)
+- **โซนงานด่วนไม่โดนตัด:** แยกเป็น query ของตัวเอง (`filter(is_urgent=True)` บน queryset ที่ผ่าน filter `status`/`q` เดียวกัน) → โชว์ครบทุกใบด่วนบนทุกหน้า
+- **ปุ่มเปลี่ยนหน้า** ท้ายตาราง: "◀ ใหม่กว่า / เก่ากว่า ▶" + "หน้า X / Y · ทั้งหมด N ใบ" — ลิงก์พก `?q=`/`?status=` ข้ามหน้าด้วย; ซ่อนเมื่อมีหน้าเดียว (`num_pages > 1`)
+- พฤติกรรมเดิมคงหมด: ด่วนโชว์ซ้ำในวันของมัน (ไฮไลต์ชมพู) + zebra เขียว regroup ตามวัน + **ไม่ใช่ tab**
 
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
