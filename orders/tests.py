@@ -111,7 +111,7 @@ class ProfitLogicTests(TestCase):
     def test_totals(self):
         make_order(self.yesterday, items=[('short', 1)], price='100')
         make_order(self.yesterday, items=[('long', 2)], price='300',
-                   source='Shopee')
+                   source='Shopee - ปักผ้า')
         t = totals(compute_day(self.yesterday))
         self.assertEqual(t['orders'], 2)
         self.assertEqual(t['shirts'], 3)
