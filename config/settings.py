@@ -39,6 +39,11 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'order_list'
 LOGOUT_REDIRECT_URL = 'login'
 
+# ปิด browser แล้ว session หลุด — ต้อง login ใหม่ทุกครั้งที่เปิดเครื่อง/เปิด browser ใหม่
+# (sessionid เป็น session cookie ไม่ตั้ง Expires/Max-Age; ไม่แตะ cookie แผนกผลิต
+# ซึ่งเป็น cookie แยกของ DepartmentPIN)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
