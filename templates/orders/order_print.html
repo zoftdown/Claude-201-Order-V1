@@ -1,4 +1,4 @@
-{% load humanize %}<!DOCTYPE html>
+{% load humanize %}{% load auth_extras %}<!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
@@ -685,7 +685,8 @@
             </div>
         </div>
         <div class="header-price">
-            {% if not request.is_viewer %}
+            {# กล่องราคา — admin เท่านั้น (เดิม gate แค่ viewer; staff ก็ห้ามเห็นแล้ว) #}
+            {% if user|is_admin %}
             <div class="price-box">
                 <div class="price-line">ยอด {{ order.total_price|floatformat:0|intcomma }} บาท</div>
                 <div class="price-line">มัดจำ {{ order.deposit|floatformat:0|intcomma }} บาท</div>

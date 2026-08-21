@@ -134,10 +134,13 @@
                             </div>
                             {% if form.customer_name.errors %}<div class="text-danger small">{{ form.customer_name.errors.0 }}</div>{% endif %}
                         </div>
+                        {# ลิงก์เฟส/เบอร์ลูกค้า — admin เท่านั้น (field ถูก pop ฝั่ง server ใน OrderForm.__init__) #}
+                        {% if is_admin %}
                         <div class="col-md-6">
                             <label class="form-label">Facebook/เบอร์โทร</label>
                             {{ form.customer_link }}
                         </div>
+                        {% endif %}
                     </div>
                     <div class="row g-2 mt-1">
                         <div class="col-12">
@@ -172,6 +175,8 @@
 
                 <!-- ฝั่งขวา: การเงิน + คำสั่งพิเศษ -->
                 <div class="col-lg-4">
+                    {# กล่องเงิน — admin เท่านั้น (total_price/deposit ถูก pop ฝั่ง server สำหรับ non-admin) #}
+                    {% if is_admin %}
                     <div class="form-money-box">
                         <div class="fmb-title">💰 การเงิน</div>
                         <div class="row g-2">
@@ -195,6 +200,7 @@
                             <div id="customer-price-list" class="d-flex flex-wrap gap-1"></div>
                         </div>
                     </div>
+                    {% endif %}
                     <div class="mt-3">
                         <label class="form-label">คำสั่งพิเศษ <small class="text-danger">(จะแสดงเป็นสีแดงในใบงาน)</small></label>
                         {{ form.special_note }}
@@ -202,13 +208,16 @@
                 </div>
             </div>
 
-            {# แถว toggle (เต็มกว้าง ใต้ 2 ฝั่ง) — ซ่อนไว้ default, JS เปิดตามเงื่อนไข #}
+            {# แถว toggle (เต็มกว้าง ใต้ 2 ฝั่ง) — ซ่อนไว้ default, JS เปิดตามเงื่อนไข.
+               ที่อยู่จัดส่ง = ข้อมูลลูกค้า → admin เท่านั้น (pop ฝั่ง server เช่นกัน) #}
+            {% if is_admin %}
             <div class="row g-2 mt-1" id="shipping-address-row" style="display:none;">
                 <div class="col-12">
                     <label class="form-label">ที่อยู่จัดส่ง 📦</label>
                     {{ form.shipping_address }}
                 </div>
             </div>
+            {% endif %}
 
             <div class="row g-2 mt-1" id="fabric-spec-row" style="display:none;">
                 <div class="col-12">
@@ -652,9 +661,11 @@ const DEFAULT_SIZES = ['S','M','L','XL','2XL','3XL','4XL'];
 const defaultSizesJson = JSON.stringify(DEFAULT_SIZES.map(s => ({label: s, qty: 0})));
 
 // =================== Toggle: shipping_address ===================
+// shippingRow ไม่มีใน DOM สำหรับ non-admin (โซนถูก gate ใน template) → guard กัน JS ตาย
 const deliveryField = document.getElementById('id_delivery_method');
 const shippingRow = document.getElementById('shipping-address-row');
 function toggleShipping() {
+    if (!shippingRow) return;
     shippingRow.style.display = deliveryField.value === 'ส่ง' ? '' : 'none';
 }
 deliveryField.addEventListener('change', toggleShipping);
@@ -676,19 +687,23 @@ sourceField.addEventListener('change', toggleFabric);
 toggleFabric();
 
 // =================== Remaining money ===================
+// กล่องเงินมีเฉพาะ admin — non-admin element เหล่านี้เป็น null → guard ทุกจุด
 const totalPriceField = document.getElementById('id_total_price');
 const depositField = document.getElementById('id_deposit');
 const remainingDisplay = document.getElementById('remaining-display');
 function calcRemaining() {
+    if (!totalPriceField || !depositField || !remainingDisplay) return;
     const total = parseFloat(totalPriceField.value) || 0;
     const deposit = parseFloat(depositField.value) || 0;
     const r = total - deposit;
     remainingDisplay.textContent = r.toLocaleString('th-TH');
     remainingDisplay.style.color = r > 0 ? '#dc3545' : '#198754';
 }
-totalPriceField.addEventListener('input', calcRemaining);
-depositField.addEventListener('input', calcRemaining);
-calcRemaining();
+if (totalPriceField && depositField) {
+    totalPriceField.addEventListener('input', calcRemaining);
+    depositField.addEventListener('input', calcRemaining);
+    calcRemaining();
+}
 
 // =================== Customer profile: autocomplete + price calc ===================
 // พิมพ์ชื่อ → แนะนำลูกค้าเดิม (เลือกแล้วเติมชื่อ+ลิงก์ + ผูก customer_id) /
@@ -724,6 +739,7 @@ function grandTotalQty() {
 }
 
 function renderCustomerPrices(prices) {
+    if (!pricePanel || !priceList) return;  // panel ราคาอยู่ในกล่องเงิน (admin เท่านั้น)
     priceList.innerHTML = '';
     if (!prices || !prices.length) { pricePanel.style.display = 'none'; return; }
     prices.forEach(p => {
@@ -781,7 +797,7 @@ customerNameField.addEventListener('input', function () {
                 a.addEventListener('click', function (e) {
                     e.preventDefault();
                     customerNameField.value = c.name;
-                    if (c.facebook_link) customerLinkField.value = c.facebook_link;
+                    if (customerLinkField && c.facebook_link) customerLinkField.value = c.facebook_link;
                     setLinkedCustomer(c);
                     suggestBox.style.display = 'none';
                 });
@@ -829,7 +845,7 @@ function autofillFromBriefJob(j) {
     if (j.customer_name && !customerNameField.value.trim()) {
         customerNameField.value = j.customer_name;
     }
-    if (j.customer_chat_url && !customerLinkField.value.trim()) {
+    if (customerLinkField && j.customer_chat_url && !customerLinkField.value.trim()) {
         customerLinkField.value = j.customer_chat_url;
     }
     const sourceField = document.getElementById('id_source');

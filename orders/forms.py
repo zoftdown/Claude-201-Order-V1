@@ -52,10 +52,14 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         # <input type="date"> requires ISO format on input parsing too.
         self.fields['created_date'].input_formats = ['%Y-%m-%d']
-        # สถานะ เห็น/แก้ได้เฉพาะ admin — ถ้าไม่ใช่ admin ลบ field ทิ้งทั้ง field
-        # (ไม่ผูกกับ POST → กันแก้ status ฝั่ง server ด้วย ไม่ใช่แค่ซ่อนใน template)
+        # field ที่เห็น/แก้ได้เฉพาะ admin — ถ้าไม่ใช่ admin ลบทิ้งทั้ง field
+        # (ไม่ผูกกับ POST → กันแก้ฝั่ง server ด้วย ไม่ใช่แค่ซ่อนใน template):
+        # status (เดิม) + ข้อมูลลูกค้า/การเงิน (customer_link, total_price,
+        # deposit, shipping_address) — staff แก้ใบงานแล้วค่าเดิมคงอยู่ ไม่ถูกล้าง
         if not is_admin:
-            self.fields.pop('status', None)
+            for name in ('status', 'customer_link', 'total_price',
+                         'deposit', 'shipping_address'):
+                self.fields.pop(name, None)
 
 
 class OrderItemForm(BootstrapMixin, forms.ModelForm):

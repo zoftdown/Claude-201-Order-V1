@@ -110,7 +110,8 @@
 <div class="card mb-3">
     <div class="card-body">
         <div class="row g-3">
-            <div class="{% if not request.is_viewer %}col-lg-8{% else %}col-12{% endif %}">
+            {# กล่องเงินโชว์เฉพาะ admin — ไม่มีกล่อง = panel ซ้ายกินเต็มกว้าง #}
+            <div class="{% if user|is_admin %}col-lg-8{% else %}col-12{% endif %}">
                 <div class="order-info-panel">
                     <div class="oi-row">
                         <span class="oi-label">แหล่ง</span>
@@ -124,10 +125,13 @@
                         <span class="oi-label">ชื่อลูกค้า</span>
                         <span class="oi-val">{{ order.customer_name|default:"-" }}</span>
                     </div>
+                    {# ลิงก์เฟส/เบอร์ลูกค้า — admin เท่านั้น (staff เห็นแค่ชื่อไว้เรียกงาน) #}
+                    {% if user|is_admin %}
                     <div class="oi-row">
                         <span class="oi-label">ลิงก์ลูกค้า</span>
                         <span class="oi-val">{% if order.customer_link %}<a href="{{ order.customer_link }}" target="_blank" rel="noopener" style="color:#0d6efd;">เปิดลิงก์</a>{% else %}-{% endif %}</span>
                     </div>
+                    {% endif %}
                     <div class="oi-row">
                         <span class="oi-label">ชื่องาน/เสื้อ</span>
                         <span class="oi-val">{{ order.shirt_name }}</span>
@@ -156,7 +160,8 @@
                     </div>
                 </div>
             </div>
-            {% if not request.is_viewer %}
+            {# กล่องเงิน — admin เท่านั้น (เดิม gate แค่ viewer; staff ก็ห้ามเห็นแล้ว) #}
+            {% if user|is_admin %}
             <div class="col-lg-4">
                 <div class="order-money-box">
                     <div class="mbx-title">💰 การเงิน</div>
@@ -189,7 +194,7 @@
             </div>
         </div>
         {% endif %}
-        {% if order.delivery_method == 'ส่ง' and order.shipping_address %}
+        {% if user|is_admin and order.delivery_method == 'ส่ง' and order.shipping_address %}
         <div class="row mt-2">
             <div class="col-12"><strong>📦 ที่อยู่จัดส่ง:</strong> <span style="white-space:pre-line;">{{ order.shipping_address }}</span></div>
         </div>
