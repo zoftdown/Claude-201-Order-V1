@@ -16,7 +16,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import (
-    DailyAdSpend, DailySummary, Order, OrderItem, ShirtCost, ShirtVariant,
+    Customer, CustomerPrice, DailyAdSpend, DailySummary, Order, OrderItem,
+    ShirtCost, ShirtVariant,
 )
 from .profit import compute_day, get_day_rows, invalidate_days, totals
 
@@ -337,6 +338,63 @@ class RegressionTests(TestCase):
         for name, args in [('order_list', []), ('order_detail', [order.pk])]:
             resp = self.client.get(reverse(name, args=args))
             self.assertEqual(resp['Cache-Control'], 'no-store', name)
+
+
+class CustomerPrivacyTests(TestCase):
+    """privacy ต่อ (V3.7.3): หน้าลูกค้าทั้งชุด admin-only + search API จำกัดข้อมูล
+    สำหรับ non-admin (autocomplete ผูกโปรไฟล์ยังใช้ได้ แต่ไม่เห็นลิงก์/เบอร์/ราคา)"""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('staff_privacy', password='pw1234')
+        admin_group, _ = Group.objects.get_or_create(name='admin')
+        self.admin = User.objects.create_user('admin_privacy', password='pw1234')
+        self.admin.groups.add(admin_group)
+        self.customer = Customer.objects.create(
+            name='ลูกค้าลับ', facebook_link='https://fb.me/secret', phone='0812345678')
+        CustomerPrice.objects.create(
+            customer=self.customer, label='คอกลม', price=Decimal('120'), order_index=0)
+
+    def _pages(self):
+        return [('customer_list', []), ('customer_export_csv', []),
+                ('customer_detail', [self.customer.pk])]
+
+    def test_customer_pages_blocked_for_staff(self):
+        self.client.force_login(self.staff)
+        for name, args in self._pages():
+            resp = self.client.get(reverse(name, args=args))
+            self.assertEqual(resp.status_code, 403, name)
+        resp = self.client.post(reverse('customer_create'), {'name': 'ใหม่'})
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(Customer.objects.filter(name='ใหม่').exists())
+
+    def test_customer_pages_ok_for_admin(self):
+        self.client.force_login(self.admin)
+        for name, args in self._pages():
+            self.assertEqual(self.client.get(reverse(name, args=args)).status_code, 200, name)
+
+    def test_search_api_limited_for_staff(self):
+        self.client.force_login(self.staff)
+        data = self.client.get(reverse('customer_search_api'), {'q': 'ลับ'}).json()
+        row = data['results'][0]
+        self.assertEqual(row['id'], self.customer.pk)
+        self.assertEqual(row['name'], 'ลูกค้าลับ')
+        self.assertEqual(row['facebook_link'], '')
+        self.assertEqual(row['phone'], '')
+        self.assertEqual(row['prices'], [])
+
+    def test_search_api_full_for_admin(self):
+        self.client.force_login(self.admin)
+        data = self.client.get(reverse('customer_search_api'), {'q': 'ลับ'}).json()
+        row = data['results'][0]
+        self.assertEqual(row['facebook_link'], 'https://fb.me/secret')
+        self.assertEqual(row['phone'], '0812345678')
+        self.assertEqual(row['prices'], [{'label': 'คอกลม', 'price': 120.0}])
+
+    def test_navbar_customers_button_admin_only(self):
+        self.client.force_login(self.staff)
+        self.assertNotContains(self.client.get(reverse('order_list')), '👥 ลูกค้า')
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse('order_list')), '👥 ลูกค้า')
 
 
 # ---------------------------------------------------------------------------

@@ -1916,7 +1916,9 @@ def _filtered_customers(request):
 @login_required
 def customer_list(request):
     """รายชื่อลูกค้าทั้งหมด + ค้นหา (ชื่อ/ลิงก์/เบอร์) + filter กลุ่ม (เฟส 4)
-    + สรุปจำนวนใบต่อคน + ปุ่ม export CSV ตาม filter ปัจจุบัน."""
+    + สรุปจำนวนใบต่อคน + ปุ่ม export CSV ตาม filter ปัจจุบัน.
+    admin เท่านั้น — ฐานลูกค้า (ลิงก์/เบอร์/ราคา/ประวัติ) เป็นข้อมูลลับของร้าน."""
+    _require_admin(request.user)
     customers, q, active_tag = _filtered_customers(request)
     all_tags = CustomerTag.objects.annotate(customer_count=Count('customers'))
     return render(request, 'orders/customer_list.html', {
@@ -1934,6 +1936,7 @@ def customer_export_csv(request):
     charset ต้องเป็น utf-8 + เขียน BOM เองครั้งเดียว (Lessons ข้อ 13 — ห้าม utf-8-sig)."""
     import csv
 
+    _require_admin(request.user)
     customers, q, active_tag = _filtered_customers(request)
     filename = 'customers'
     if active_tag:
@@ -2001,7 +2004,9 @@ def _save_customer_tags(request, customer):
 
 @login_required
 def customer_detail(request, pk):
-    """โปรไฟล์ลูกค้า: แก้ข้อมูล + ตารางราคา + กลุ่ม (tag) + ประวัติใบงานทั้งหมดของคนนั้น."""
+    """โปรไฟล์ลูกค้า: แก้ข้อมูล + ตารางราคา + กลุ่ม (tag) + ประวัติใบงานทั้งหมดของคนนั้น.
+    admin เท่านั้น."""
+    _require_admin(request.user)
     customer = get_object_or_404(Customer, pk=pk)
 
     if request.method == 'POST':
@@ -2035,7 +2040,10 @@ def customer_detail(request, pk):
 @login_required
 def customer_search_api(request):
     """Autocomplete ในฟอร์มใบงาน: ?q=... → JSON ลูกค้า 10 คนแรกที่ match
-    (ชื่อ/ลิงก์/เบอร์) พร้อมตารางราคาของแต่ละคน (ใช้ทำปุ่มคำนวณยอดรวม)."""
+    (ชื่อ/ลิงก์/เบอร์) พร้อมตารางราคาของแต่ละคน (ใช้ทำปุ่มคำนวณยอดรวม).
+    non-admin ยังใช้ autocomplete ผูกโปรไฟล์ได้ แต่ได้แค่ id+ชื่อ —
+    ลิงก์/เบอร์/ราคา ส่งค่าว่าง (คีย์คงเดิมให้ JS ฝั่งฟอร์มไม่ต้องแยกเคส)."""
+    admin = _is_admin(request.user)
     q = (request.GET.get('q') or '').strip()
     results = []
     if q:
@@ -2051,12 +2059,12 @@ def customer_search_api(request):
             results.append({
                 'id': c.pk,
                 'name': c.name,
-                'facebook_link': c.facebook_link,
-                'phone': c.phone,
+                'facebook_link': c.facebook_link if admin else '',
+                'phone': c.phone if admin else '',
                 'prices': [
                     {'label': p.label, 'price': float(p.price)}
                     for p in c.prices.all()
-                ],
+                ] if admin else [],
             })
     return JsonResponse({'results': results})
 
@@ -2066,7 +2074,8 @@ def customer_search_api(request):
 def customer_create(request):
     """สร้างโปรไฟล์ลูกค้ามือ (ปุ่มบนหน้ารายชื่อ) — กรอกแค่ชื่อ แล้วพาไป
     หน้าโปรไฟล์เพื่อเติมลิงก์/เบอร์/ราคา. ปกติโปรไฟล์เกิดอัตโนมัติจากใบงาน
-    — ปุ่มนี้ไว้เคสตั้งราคาล่วงหน้าก่อนมีใบแรก."""
+    — ปุ่มนี้ไว้เคสตั้งราคาล่วงหน้าก่อนมีใบแรก. admin เท่านั้น."""
+    _require_admin(request.user)
     name = (request.POST.get('name') or '').strip()
     if not name:
         messages.error(request, 'กรุณาระบุชื่อลูกค้า')
