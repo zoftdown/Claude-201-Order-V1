@@ -37,12 +37,10 @@ from .models import (
 from .profit import get_day_rows, get_month_data, invalidate_days
 from .profit import totals as profit_totals
 from .qr_utils import generate_qr_svg
+# helper เช็ค role เดียวใช้ทั้งระบบ (view + template filter) — ดู orders/roles.py
+from .roles import is_admin as _is_admin
 
 DEPT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year
-
-
-def _is_admin(user):
-    return user.is_superuser or user.groups.filter(name='admin').exists()
 
 
 @viewer_or_login_required

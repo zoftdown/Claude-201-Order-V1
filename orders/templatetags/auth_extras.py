@@ -1,5 +1,7 @@
 from django import template
 
+from ..roles import is_admin as _is_admin
+
 register = template.Library()
 
 
@@ -12,6 +14,5 @@ def has_group(user, group_name):
 
 @register.filter(name='is_admin')
 def is_admin(user):
-    if not user.is_authenticated:
-        return False
-    return user.is_superuser or user.groups.filter(name='admin').exists()
+    # logic จริงอยู่ orders/roles.py — ที่เดียวใช้ร่วมกับ views (_is_admin)
+    return _is_admin(user)
