@@ -204,8 +204,7 @@
                                 <div class="form-control form-control-sm bg-white fw-bold" id="remaining-display">0</div>
                             </div>
                         </div>
-                        {# ราคาประจำตัวลูกค้า (จากโปรไฟล์) — โชว์เมื่อเลือกลูกค้าที่มีราคา,
-                           กดราคา = ยอดรวม := จำนวนตัวรวม × ราคา (แก้มือทับได้เสมอ) #}
+                        {# ราคาประจำตัวลูกค้า (จากโปรไฟล์) — โชว์เมื่อเลือกลูกค้าที่มีราคา, กดราคา = ยอดรวม := จำนวนตัวรวม × ราคา (แก้มือทับได้เสมอ) #}
                         <div id="customer-price-panel" class="mt-2 pt-2" style="display:none; border-top:1px dashed #adb5bd;">
                             <div class="small fw-bold mb-1">💡 ราคาประจำตัวลูกค้า <span class="text-muted fw-normal">(กดเพื่อคำนวณยอดรวม)</span></div>
                             <div id="customer-price-list" class="d-flex flex-wrap gap-1"></div>
@@ -219,8 +218,7 @@
                 </div>
             </div>
 
-            {# แถว toggle (เต็มกว้าง ใต้ 2 ฝั่ง) — ซ่อนไว้ default, JS เปิดตามเงื่อนไข.
-               ที่อยู่จัดส่ง = ข้อมูลลูกค้า → admin เท่านั้น (pop ฝั่ง server เช่นกัน) #}
+            {# แถว toggle (เต็มกว้าง ใต้ 2 ฝั่ง) — ซ่อนไว้ default, JS เปิดตามเงื่อนไข. ที่อยู่จัดส่ง = ข้อมูลลูกค้า → admin เท่านั้น (pop ฝั่ง server เช่นกัน) #}
             {% if is_admin %}
             <div class="row g-2 mt-1" id="shipping-address-row" style="display:none;">
                 <div class="col-12">
