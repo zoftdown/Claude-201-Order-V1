@@ -230,6 +230,9 @@ class Order(models.Model):
     # เหมือนเดิม; id นี้ไว้ทำลิงก์เปิดใบงาน + ยิง order_ref กลับ). พิมพ์เลขเองไม่เลือก
     # จาก dropdown = null (ไม่มีลิงก์ แต่ข้อความยังอยู่ครบ)
     brief_job_id = models.IntegerField('Brief job id', null=True, blank=True)
+    # งานนี้ออกแบบผ่านเว็บโปรแกรม Mockup (มี D-code/ไฟล์ zip ใช้กับ RunJob ได้) —
+    # checkbox ในฟอร์มข้างช่องเลขใบงานออกแบบ; ใบเก่า default False ไม่กระทบ
+    from_mockup = models.BooleanField('จากโปรแกรม Mockup', default=False)
     fabric_spec = models.TextField('spec ผ้า', blank=True, help_text='แสดงเฉพาะ source=เพจเสื้อคนงาน')
     special_note = models.TextField('คำสั่งพิเศษ', blank=True)
     total_price = models.DecimalField('ยอดรวม', max_digits=10, decimal_places=2, default=0)

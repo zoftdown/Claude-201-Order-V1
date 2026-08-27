@@ -35,6 +35,7 @@ class OrderForm(BootstrapMixin, forms.ModelForm):
             'is_urgent', 'waiting_confirm',
             'source', 'production_place', 'created_date', 'customer_name',
             'customer_link', 'shirt_name', 'designer_name', 'design_doc_number',
+            'from_mockup',
             'fabric_spec', 'special_note', 'extra_note',
             'total_price', 'deposit', 'delivery_method', 'shipping_address', 'status',
         ]

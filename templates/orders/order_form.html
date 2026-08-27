@@ -173,6 +173,11 @@
                                 🎨 <a href="#" id="brief-linked-view" target="_blank" rel="noopener">เปิดใบงานออกแบบ</a>
                             </div>
                             {% if form.design_doc_number.errors %}<div class="text-danger small">{{ form.design_doc_number.errors.0 }}</div>{% endif %}
+                            {# จากโปรแกรม Mockup — ติ๊ก = มี D-code/ไฟล์ zip ใช้กับ RunJob ได้ (render มือแบบ is_urgent) #}
+                            <div class="form-check mt-1">
+                                <input type="checkbox" class="form-check-input" id="id_from_mockup" name="from_mockup" {% if form.from_mockup.value %}checked{% endif %}>
+                                <label class="form-check-label small" for="id_from_mockup" style="color:#1565c0;">🎨 จากโปรแกรม Mockup <span class="text-muted">(มี D-code/zip ใช้กับ RunJob ได้)</span></label>
+                            </div>
                         </div>
                     </div>
                     {# วิธีรับสินค้า: ซ่อนไว้ (toggle ที่อยู่จัดส่งด้านล่าง) — เก็บ id ให้ JS #}

@@ -686,3 +686,65 @@ class ProductionExportTests(TestCase):
         resp = self.client.get(reverse('order_detail', args=[other.pk]))
         self.assertIsNone(resp.context['production_export'])
         self.assertNotContains(resp, 'ส่งเข้าผลิต (.json)')
+
+
+class FromMockupTests(TestCase):
+    """checkbox "จากโปรแกรม Mockup" (Order.from_mockup, migration 0029) —
+    save ผ่านฟอร์ม + badge detail/list + filter ?mockup=1 + flag ใน export"""
+
+    BADGE = '🎨 จากโปรแกรม Mockup'  # ข้อความ badge หน้า detail (JS เตือนใช้คนละข้อความ)
+
+    def setUp(self):
+        self.staff = User.objects.create_user('staff-mk', password='x')
+        self.client.force_login(self.staff)
+
+    def _mk_order(self, from_mockup=False):
+        return Order.objects.create(
+            created_date=timezone.localdate(), source='เพจเสื้อคนงาน',
+            customer_name='ลูกค้า mockup', shirt_name='เสื้อ mockup',
+            design_doc_number='D-900', from_mockup=from_mockup)
+
+    def test_default_false_for_old_orders(self):
+        """ใบเก่า/ใบที่ไม่ติ๊ก → False (default ของ migration ไม่กระทบงานเดิม)"""
+        self.assertFalse(make_order(timezone.localdate()).from_mockup)
+
+    def test_export_carries_flag_outside_payload(self):
+        """export ส่ง from_mockup ให้ JS เตือน — แต่ payload (ไฟล์ .json) ต้องไม่เปลี่ยน"""
+        from .production_export import build_production_export
+        self.assertFalse(build_production_export(self._mk_order())['from_mockup'])
+        data = build_production_export(self._mk_order(from_mockup=True))
+        self.assertTrue(data['from_mockup'])
+        self.assertNotIn('from_mockup', data['payload'])
+
+    def test_detail_badge_only_when_flagged(self):
+        resp = self.client.get(reverse('order_detail',
+                                       args=[self._mk_order(from_mockup=True).pk]))
+        self.assertContains(resp, self.BADGE)
+        resp = self.client.get(reverse('order_detail', args=[self._mk_order().pk]))
+        self.assertNotContains(resp, self.BADGE)
+
+    def test_list_badge_and_mockup_filter(self):
+        plain = self._mk_order()
+        flagged = self._mk_order(from_mockup=True)
+        resp = self.client.get(reverse('order_list'))
+        self.assertContains(resp, '>Mockup</span>')
+        resp = self.client.get(reverse('order_list'), {'mockup': '1'})
+        pks = [o.pk for o in resp.context['orders']]
+        self.assertIn(flagged.pk, pks)
+        self.assertNotIn(plain.pk, pks)
+
+    def test_form_saves_and_clears_checkbox(self):
+        """สร้างใบติ๊ก checkbox → True; แก้ใบโดยไม่ติ๊ก → กลับเป็น False"""
+        day = timezone.localdate()
+        data = RegressionTests._order_post_data(self, day)
+        data['from_mockup'] = 'on'
+        resp = self.client.post(reverse('order_create'), data)
+        self.assertEqual(resp.status_code, 302)
+        order = Order.objects.latest('id')
+        self.assertTrue(order.from_mockup)
+
+        data = RegressionTests._order_post_data(self, day)  # ไม่มี from_mockup = ไม่ติ๊ก
+        resp = self.client.post(reverse('order_edit', args=[order.pk]), data)
+        self.assertEqual(resp.status_code, 302)
+        order.refresh_from_db()
+        self.assertFalse(order.from_mockup)

@@ -7,6 +7,7 @@
         <form method="get" class="d-flex gap-2">
             <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="ค้นหา ชื่อลูกค้า / ชื่อเสื้อ / เลข order">
             {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
+            {% if mockup_filter %}<input type="hidden" name="mockup" value="1">{% endif %}
             <button class="btn btn-primary btn-sm">ค้นหา</button>
         </form>
     </div>
@@ -14,8 +15,14 @@
         <div class="d-flex gap-1 flex-wrap justify-content-end">
             <a href="{% url 'order_list' %}" class="btn btn-sm {% if not current_status %}btn-dark{% else %}btn-outline-secondary{% endif %}">ทั้งหมด</a>
             {% for value, label in status_choices %}
-                <a href="?status={{ value }}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm {% if current_status == value %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+                <a href="?status={{ value }}{% if search_query %}&q={{ search_query }}{% endif %}{% if mockup_filter %}&mockup=1{% endif %}" class="btn btn-sm {% if current_status == value %}btn-dark{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
             {% endfor %}
+            {# filter "จาก Mockup" — งานที่พร้อมเข้าผลิต (มี D-code/zip ใช้กับ RunJob); toggle เปิด/ปิด #}
+            {% if mockup_filter %}
+                <a href="?{% if current_status %}status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="btn btn-sm text-white" style="background-color:#1565c0;">🎨 จาก Mockup ✓</a>
+            {% else %}
+                <a href="?mockup=1{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">🎨 จาก Mockup</a>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -109,11 +116,11 @@
 {% if page_obj.paginator.num_pages > 1 %}
 <nav class="d-flex justify-content-center align-items-center gap-2 my-3 flex-wrap">
     {% if page_obj.has_previous %}
-        <a class="btn btn-sm btn-outline-secondary" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">◀ ใหม่กว่า</a>
+        <a class="btn btn-sm btn-outline-secondary" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if mockup_filter %}&mockup=1{% endif %}">◀ ใหม่กว่า</a>
     {% endif %}
     <span class="text-muted small">หน้า {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} · ทั้งหมด {{ page_obj.paginator.count }} ใบ</span>
     {% if page_obj.has_next %}
-        <a class="btn btn-sm btn-outline-secondary" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">เก่ากว่า ▶</a>
+        <a class="btn btn-sm btn-outline-secondary" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if mockup_filter %}&mockup=1{% endif %}">เก่ากว่า ▶</a>
     {% endif %}
 </nav>
 {% endif %}

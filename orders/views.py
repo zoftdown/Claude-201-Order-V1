@@ -73,6 +73,11 @@ def order_list(request):
             Q(order_number__icontains=q)
         )
 
+    # Filter "จาก Mockup" — หางานที่พร้อมเข้าผลิต (มี D-code/zip ใช้กับ RunJob ได้)
+    mockup = request.GET.get('mockup')
+    if mockup:
+        orders = orders.filter(from_mockup=True)
+
     # Urgent zone: own (small) query over the same filters, so it always shows
     # every urgent order no matter which page of the main list is open.
     urgent_orders = list(orders.filter(is_urgent=True))
@@ -87,6 +92,7 @@ def order_list(request):
         'page_obj': page_obj,
         'urgent_orders': urgent_orders,
         'current_status': status,
+        'mockup_filter': mockup or '',
         'search_query': q or '',
         'status_choices': Order.STATUS_CHOICES,
     })

@@ -115,4 +115,7 @@ def build_production_export(order):
         'payload': payload,
         'uncertain': uncertain,
         'filename': f'{_safe_filename_stem(design)}-order.json' if design else '',
+        # ไม่ได้ติ๊ก "จากโปรแกรม Mockup" → JS เตือนว่าอาจไม่มีไฟล์ zip ก่อน export
+        # (เตือนอย่างเดียว ไม่ block; ไม่ใส่ใน payload เพราะโปรแกรมผลิตไม่รู้จัก field นี้)
+        'from_mockup': bool(order.from_mockup),
     }
