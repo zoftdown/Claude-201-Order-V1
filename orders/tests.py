@@ -748,3 +748,69 @@ class FromMockupTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         order.refresh_from_db()
         self.assertFalse(order.from_mockup)
+
+
+class MultiDesignTests(TestCase):
+    """ออร์เดอร์เดียวหลายลาย — OrderItem.design_doc_number (migration 0030):
+    มีค่า = ใช้แทนเลขระดับใบของรายการนั้น / ว่าง = fallback เลขระดับใบ (ใบเก่าไม่กระทบ)"""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('staff-md', password='x')
+        self.client.force_login(self.staff)
+
+    def _order_two_items(self, item2_design='D-1002'):
+        order = Order.objects.create(
+            created_date=timezone.localdate(), source='เพจเสื้อคนงาน',
+            customer_name='ลูกค้าหลายลาย', shirt_name='เสื้อ 2 ลาย',
+            design_doc_number='D-1001')
+        i1 = OrderItem.objects.create(order=order, order_index=0)  # ลายแรก ใช้เลขระดับใบ
+        ShirtVariant.objects.create(item=i1, collar='คอกลม', sleeve='แขนสั้น',
+                                    sizes=[{'label': 'M', 'qty': 3}])
+        i2 = OrderItem.objects.create(order=order, order_index=1,
+                                      design_doc_number=item2_design)
+        ShirtVariant.objects.create(item=i2, collar='โปโล', sleeve='แขนยาว',
+                                    sizes=[{'label': 'L', 'qty': 2}])
+        return order
+
+    def test_effective_design_doc_fallback(self):
+        order = self._order_two_items()
+        i1, i2 = list(order.items.all())
+        self.assertEqual(i1.effective_design_doc, 'D-1001')  # ว่าง → เลขระดับใบ
+        self.assertEqual(i2.effective_design_doc, 'D-1002')  # มีของตัวเอง → ใช้ของตัวเอง
+
+    def test_export_design_per_item_with_top_level_kept(self):
+        """export: ทุก item มี key design ตาม logic fallback — ระดับบนคง design เดิม
+        (backward compat) และชื่อไฟล์ยังมาจากเลขระดับใบ"""
+        from .production_export import build_production_export
+        data = build_production_export(self._order_two_items())
+        self.assertEqual(data['payload']['design'], 'D-1001')
+        self.assertEqual(data['filename'], 'D-1001-order.json')
+        self.assertEqual([i['design'] for i in data['payload']['items']],
+                         ['D-1001', 'D-1002'])
+
+    def test_old_single_design_order_unchanged(self):
+        """ใบลายเดียว (ไม่กรอกต่อรายการ) — design ทุก item = เลขระดับใบ เหมือนเดิม"""
+        from .production_export import build_production_export
+        order = self._order_two_items(item2_design='')
+        data = build_production_export(order)
+        self.assertEqual([i['design'] for i in data['payload']['items']],
+                         ['D-1001', 'D-1001'])
+
+    def test_print_shows_item_design_only_when_own(self):
+        """ใบ A4: โชว์เลขในกรอบรายการเฉพาะรายการที่มีเลขของตัวเอง"""
+        resp = self.client.get(reverse('order_print',
+                                       args=[self._order_two_items().pk]))
+        self.assertContains(resp, '🎨 D-1002')
+        self.assertNotContains(resp, '🎨 D-1001')  # รายการที่ fallback ไม่โชว์ซ้ำ
+
+    def test_form_saves_item_design(self):
+        """กรอกเลขต่อรายการผ่านฟอร์ม → save ลง OrderItem"""
+        day = timezone.localdate()
+        data = RegressionTests._order_post_data(self, day)
+        data['design_doc_number'] = 'D-2000'
+        data['items-0-design_doc_number'] = 'D-2001'
+        resp = self.client.post(reverse('order_create'), data)
+        self.assertEqual(resp.status_code, 302)
+        item = Order.objects.latest('id').items.first()
+        self.assertEqual(item.design_doc_number, 'D-2001')
+        self.assertEqual(item.effective_design_doc, 'D-2001')

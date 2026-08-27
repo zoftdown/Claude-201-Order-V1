@@ -68,7 +68,12 @@ class OrderItemForm(BootstrapMixin, forms.ModelForm):
 
     class Meta:
         model = OrderItem
-        fields = ['design_image', 'shirt_type']
+        fields = ['design_image', 'shirt_type', 'design_doc_number']
+        widgets = {
+            # เลขใบงานออกแบบเฉพาะรายการ (ออร์เดอร์หลายลาย) — ว่าง = ใช้เลขระดับใบ
+            'design_doc_number': forms.TextInput(
+                attrs={'placeholder': 'ว่าง = ใช้เลขระดับใบ'}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

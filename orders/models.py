@@ -403,6 +403,11 @@ class OrderItem(models.Model):
     # → รายงานคิดต้นทุนแบบแขนสั้น (default) พร้อม badge เตือนว่าเป็นค่า default.
     shirt_type = models.CharField('ประเภทเสื้อ (ต้นทุน)', max_length=10,
                                   choices=SHIRT_TYPE_CHOICES, blank=True, default='')
+    # ออร์เดอร์เดียวหลายลาย: เลขใบงานออกแบบเฉพาะรายการนี้ (optional, migration 0030)
+    # — มีค่า = ใช้แทนเลขระดับใบ (Order.design_doc_number) สำหรับรายการนี้;
+    # ว่าง = งานลายเดียวตามเดิม ใช้เลขระดับใบ (ใบเก่าไม่กระทบ). ดู effective_design_doc
+    design_doc_number = models.CharField('เลขใบงานออกแบบ (เฉพาะรายการนี้)',
+                                         max_length=50, blank=True)
     order_index = models.PositiveIntegerField('ลำดับ', default=0)
 
     class Meta:
@@ -416,6 +421,13 @@ class OrderItem(models.Model):
     @property
     def total_qty(self):
         return sum(v.total_qty for v in self.variants.all())
+
+    @property
+    def effective_design_doc(self):
+        """เลขใบงานออกแบบที่ใช้จริงของรายการนี้ — ของตัวเองถ้ากรอก ไม่งั้นระดับใบ.
+        ใช้ร่วมทั้ง export JSON (design ต่อ item) และใบ A4 (โชว์เมื่อมีเลขของตัวเอง)"""
+        return (self.design_doc_number or '').strip() or \
+            (self.order.design_doc_number or '').strip()
 
 
 class MasterImage(models.Model):

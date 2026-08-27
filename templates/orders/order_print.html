@@ -719,6 +719,10 @@
     <div class="item-block">
         <div class="item-block-header">
             <span class="item-counter">รายการที่ {{ forloop.counter }} / {{ items|length }}</span>
+            {# ออร์เดอร์หลายลาย: รายการนี้มีเลขใบงานออกแบบของตัวเอง — โชว์ให้ฝ่ายผลิตเห็นว่าลายไหน (ว่าง = ใช้เลขระดับใบในหัวใบงาน ไม่โชว์ซ้ำ) #}
+            {% if item.design_doc_number %}
+            <span class="item-design-doc" style="border:1.5px solid #0d47a1; color:#0d47a1; font-weight:bold; padding:1px 8px; border-radius:4px;">🎨 {{ item.design_doc_number }}</span>
+            {% endif %}
         </div>
         {% with variant_count=item.variants.all|length %}
         <div class="item-top-row{% if variant_count > 2 %} solo-image{% endif %}">

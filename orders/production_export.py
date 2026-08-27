@@ -80,9 +80,13 @@ def build_production_export(order):
       (JS เปิด popup ให้คนเลือกทับค่าใน payload ก่อน download)
     - filename: "<เลขใบงานออกแบบ>-order.json" (design ว่าง → JS เตือน ไม่ export)
     """
+    design = (order.design_doc_number or '').strip()
     items = []
     uncertain = []
     for oitem in order.items.all():
+        # ออร์เดอร์หลายลาย: design ต่อ item = เลขของรายการเอง (ถ้ากรอก) ไม่งั้น
+        # เลขระดับใบ — ระดับบนยังส่ง "design" เดิมเพื่อ backward compat
+        item_design = oitem.effective_design_doc
         for variant in oitem.variants.all():
             idx = len(items)
             collar, collar_ok = normalize_collar(variant.collar)
@@ -94,6 +98,7 @@ def build_production_export(order):
                 uncertain.append({'index': idx, 'field': 'sleeve',
                                   'raw': variant.sleeve, 'guess': sleeve})
             items.append({
+                'design': item_design,
                 'collar': collar,
                 'sleeve': sleeve,
                 'color': variant.color,
@@ -101,7 +106,6 @@ def build_production_export(order):
                 'sizes': _sizes_dict(variant),
             })
 
-    design = (order.design_doc_number or '').strip()
     payload = {
         'order': order.order_number,
         'design': design,

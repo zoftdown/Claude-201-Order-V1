@@ -282,6 +282,12 @@
                         {{ item_form.shirt_type }}
                         <div class="form-text small">ใช้คิดต้นทุนในรายงานกำไร</div>
                     </div>
+                    {# ออร์เดอร์หลายลาย: เลขใบงานออกแบบเฉพาะรายการนี้ (ว่าง = ใช้เลขระดับใบ) #}
+                    <div class="col-md-3">
+                        <label class="form-label">เลขใบงานออกแบบ (เฉพาะรายการนี้)</label>
+                        {{ item_form.design_doc_number }}
+                        <div class="form-text small">งานหลายลายค่อยกรอก — ว่าง = ใช้เลขระดับใบ</div>
+                    </div>
                 </div>
 
                 <!-- Variants for this item -->
@@ -541,6 +547,12 @@
                 <option value="polo">โปโล</option>
             </select>
             <div class="form-text small">ใช้คิดต้นทุนในรายงานกำไร</div>
+        </div>
+        {# ออร์เดอร์หลายลาย: เลขใบงานออกแบบเฉพาะรายการนี้ (ว่าง = ใช้เลขระดับใบ) #}
+        <div class="col-md-3">
+            <label class="form-label">เลขใบงานออกแบบ (เฉพาะรายการนี้)</label>
+            <input type="text" name="items-__prefix__-design_doc_number" id="id_items-__prefix__-design_doc_number" class="form-control form-control-sm" placeholder="ว่าง = ใช้เลขระดับใบ">
+            <div class="form-text small">งานหลายลายค่อยกรอก — ว่าง = ใช้เลขระดับใบ</div>
         </div>
     </div>
 
