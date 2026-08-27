@@ -600,7 +600,11 @@ class ProductionExportTests(TestCase):
     def test_normalize_collar(self):
         from .production_export import normalize_collar
         self.assertEqual(normalize_collar('คอวี'), ('v', True))
+        # คอปกวี + คำใกล้เคียง = v มั่นใจ ไม่ติด uncertain (ผลิตใช้คอวี เย็บปกหน้างาน;
+        # A4 ยังโชว์ข้อความดิบ) — ล็อกไว้กันใครเพิ่ม pattern "ปก" → polo มาทับ
         self.assertEqual(normalize_collar('คอปกวี'), ('v', True))
+        self.assertEqual(normalize_collar('ปกวี'), ('v', True))
+        self.assertEqual(normalize_collar('คอปก+วี'), ('v', True))
         self.assertEqual(normalize_collar('V-neck'), ('v', True))
         self.assertEqual(normalize_collar('โปโล'), ('polo', True))
         self.assertEqual(normalize_collar('คอกลม'), ('round', True))

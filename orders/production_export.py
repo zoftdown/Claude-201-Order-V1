@@ -24,6 +24,10 @@ def normalize_collar(text):
     ไม่เข้า pattern ไหนเลย (เช่น คอกีฬา, ค่าว่าง) → เดา round แต่ confident=False
     ให้ popup ถามคนยืนยันก่อน."""
     t = (text or '').strip().lower()
+    # เช็ค วี ก่อนเสมอ: "คอปกวี"/"ปกวี"/"คอปก+วี" ต้องได้ v มั่นใจ ไม่ติด uncertain —
+    # pattern ผลิตใช้คอวีแล้วเย็บปกเพิ่มหน้างาน (ใบ A4 ยังโชว์ข้อความดิบตามที่กรอก
+    # ให้ช่างเย็บรู้ว่าใส่ปก — normalize มีผลแค่ payload ส่งผลิต). ห้ามเพิ่ม pattern
+    # "ปก" → polo หรือสลับลำดับเช็ค ไม่งั้นคอปกวีจะกลายเป็น polo เงียบๆ
     if 'วี' in t or 'v' in t:
         return 'v', True
     if 'โปโล' in t or 'polo' in t:
