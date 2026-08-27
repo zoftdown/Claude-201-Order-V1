@@ -34,6 +34,7 @@ from .models import (
     Customer, CustomerPrice, CustomerTag, DailyAdSpend, DepartmentPIN,
     ExtraImage, ExtraNameRow, MasterImage, Order, StageLog, Tailor, UserPin,
 )
+from .production_export import build_production_export, WORKER_SOURCE
 from .profit import get_day_rows, get_month_data, invalidate_days
 from .profit import totals as profit_totals
 from .qr_utils import generate_qr_svg
@@ -1038,11 +1039,17 @@ def _build_detail_timeline(order):
 @viewer_or_login_required
 def order_detail(request, pk):
     order = get_object_or_404(Order, pk=pk)
+    # ปุ่ม "ส่งเข้าผลิต (.json)" — เฉพาะเสื้อคนงาน + user login เท่านั้น
+    # (payload มีชื่อลูกค้า → viewer cookie ไม่ให้เห็น เหมือน gate เงิน/ลูกค้าเดิม)
+    production_export = None
+    if order.source == WORKER_SOURCE and not getattr(request, 'is_viewer', False):
+        production_export = build_production_export(order)
     return render(request, 'orders/order_detail.html', {
         'order': order,
         'stage_timeline': _build_detail_timeline(order),
         'group_orders': order.group_orders(),
         'brief_public_base': settings.BRIEF_PUBLIC_BASE,
+        'production_export': production_export,
     })
 
 

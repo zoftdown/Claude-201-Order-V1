@@ -494,6 +494,9 @@ class ShirtVariant(models.Model):
     sleeve = models.CharField('แขน', max_length=50, blank=True,
                               help_text='เช่น แขนสั้น, แขนยาว, แขนกุด')
     color = models.CharField('สี', max_length=50, blank=True)
+    # เสื้อคนงาน: มีกระเป๋าหน้าอกหรือไม่ (ใช้ใน export JSON ส่งเข้าผลิต) —
+    # checkbox ในฟอร์มโชว์เฉพาะ source=เพจเสื้อคนงาน แต่ field มีทุก variant
+    pocket = models.BooleanField('กระเป๋าหน้าอก', default=False)
     sizes = models.JSONField('ไซส์และจำนวน', default=list,
                              help_text='[{"label":"S","qty":5}, ...]')
     note = models.CharField('โน้ตเฉพาะแบบนี้', max_length=200, blank=True)

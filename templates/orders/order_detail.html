@@ -15,6 +15,9 @@
         <a href="{% url 'order_print' order.pk %}" class="btn btn-success btn-sm" target="_blank">พิมพ์ใบงาน</a>
         {% if not request.is_viewer %}
         <a href="{% url 'order_create' %}?from={{ order.pk }}" class="btn btn-sm text-white" style="background-color:#0c7c92;">➕ สร้างใบเพิ่มจากใบนี้</a>
+        {% if production_export %}
+        <button type="button" id="export-production-btn" class="btn btn-warning btn-sm">🏭 ส่งเข้าผลิต (.json)</button>
+        {% endif %}
         <a href="{% url 'order_edit' order.pk %}" class="btn btn-primary btn-sm">แก้ไข</a>
         {% if user|is_admin %}
         <form method="post" action="{% url 'order_delete' order.pk %}" class="m-0" onsubmit="return confirm('ยืนยันการลบออร์เดอร์ {{ order.order_number }}?');">
@@ -610,6 +613,22 @@
     <img src="" alt="รูปขยาย">
 </div>
 {% endif %}
+
+{# ===== ส่งเข้าผลิต (.json) — เฉพาะเสื้อคนงาน: payload จาก build_production_export ===== #}
+{% if production_export %}
+{{ production_export|json_script:"production-export-data" }}
+<div id="exportConfirmModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:10px; max-width:520px; width:92%; padding:20px; max-height:80vh; overflow:auto;">
+        <h5 class="mb-2">⚠️ ยืนยันคอ/แขน ก่อน export</h5>
+        <p class="text-muted small mb-3">ค่าด้านล่างระบบแปลงอัตโนมัติไม่มั่นใจ — เลือกยืนยันให้ถูกก่อนสร้างไฟล์</p>
+        <div id="export-uncertain-list"></div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="export-cancel-btn">ยกเลิก</button>
+            <button type="button" class="btn btn-warning btn-sm" id="export-confirm-btn">ยืนยัน + ดาวน์โหลด</button>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -629,6 +648,77 @@
     lb.addEventListener('click', close);
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') close();
+    });
+})();
+</script>
+{% endif %}
+
+{% if production_export %}
+<script>
+// ===== ส่งเข้าผลิต (.json) =====
+// payload/uncertain/filename มาจาก orders/production_export.py (json_script ด้านบน)
+// - design ว่าง → เตือน ไม่ export (spec ข้อ 5)
+// - uncertain มีรายการ → popup ให้คนเลือกยืนยันคอ/แขน ก่อนสร้างไฟล์ (spec ข้อ 3)
+(function () {
+    const btn = document.getElementById('export-production-btn');
+    if (!btn) return;
+    const data = JSON.parse(document.getElementById('production-export-data').textContent);
+    const modal = document.getElementById('exportConfirmModal');
+    const listEl = document.getElementById('export-uncertain-list');
+
+    const OPTIONS = {
+        collar: [['round', 'คอกลม (round)'], ['v', 'คอวี (v)'], ['polo', 'โปโล (polo)']],
+        sleeve: [['short', 'แขนสั้น (short)'], ['long', 'แขนยาว (long)']],
+    };
+    const FIELD_LABEL = {collar: 'คอ', sleeve: 'แขน'};
+
+    function download() {
+        const blob = new Blob([JSON.stringify(data.payload, null, 2)], {type: 'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = data.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+    }
+
+    function openModal() {
+        listEl.innerHTML = '';
+        data.uncertain.forEach(function (u, i) {
+            const opts = OPTIONS[u.field]
+                .map(o => `<option value="${o[0]}"${o[0] === u.guess ? ' selected' : ''}>${o[1]}</option>`)
+                .join('');
+            const row = document.createElement('div');
+            row.className = 'mb-2';
+            row.innerHTML =
+                `<label class="form-label small mb-1">แบบที่ ${u.index + 1} — ${FIELD_LABEL[u.field]}: "<strong></strong>"</label>` +
+                `<select class="form-select form-select-sm export-uncertain-select" data-uidx="${i}">${opts}</select>`;
+            // raw เป็นข้อความที่คนพิมพ์เอง → เซ็ตผ่าน textContent กัน HTML injection
+            row.querySelector('strong').textContent = u.raw || '(ว่าง)';
+            listEl.appendChild(row);
+        });
+        modal.style.display = 'flex';
+    }
+
+    btn.addEventListener('click', function () {
+        if (!data.payload.design) {
+            alert('ยังไม่ผูกใบงานออกแบบ — กรุณาใส่เลขใบงานออกแบบในใบนี้ก่อน export');
+            return;
+        }
+        if (data.uncertain.length) { openModal(); } else { download(); }
+    });
+
+    document.getElementById('export-cancel-btn').addEventListener('click', function () {
+        modal.style.display = 'none';
+    });
+    document.getElementById('export-confirm-btn').addEventListener('click', function () {
+        listEl.querySelectorAll('.export-uncertain-select').forEach(function (sel) {
+            const u = data.uncertain[parseInt(sel.dataset.uidx, 10)];
+            data.payload.items[u.index][u.field] = sel.value;
+        });
+        modal.style.display = 'none';
+        download();
     });
 })();
 </script>

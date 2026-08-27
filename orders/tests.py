@@ -592,3 +592,97 @@ class RoiConversionTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.context['conv_ok'])
         self.assertContains(resp, 'ติดต่อระบบ Brief ไม่ได้')
+
+
+class ProductionExportTests(TestCase):
+    """ปุ่ม "ส่งเข้าผลิต (.json)" — normalize คอ/แขน + payload (orders/production_export.py)"""
+
+    def test_normalize_collar(self):
+        from .production_export import normalize_collar
+        self.assertEqual(normalize_collar('คอวี'), ('v', True))
+        self.assertEqual(normalize_collar('คอปกวี'), ('v', True))
+        self.assertEqual(normalize_collar('V-neck'), ('v', True))
+        self.assertEqual(normalize_collar('โปโล'), ('polo', True))
+        self.assertEqual(normalize_collar('คอกลม'), ('round', True))
+        # ไม่เข้า pattern ไหนเลย -> เดา round แต่ไม่มั่นใจ (popup ถามคน)
+        self.assertEqual(normalize_collar('คอกีฬา'), ('round', False))
+        self.assertEqual(normalize_collar(''), ('round', False))
+
+    def test_normalize_sleeve(self):
+        from .production_export import normalize_sleeve
+        self.assertEqual(normalize_sleeve('แขนสั้น'), ('short', True))
+        self.assertEqual(normalize_sleeve('แขนยาว'), ('long', True))
+        self.assertEqual(normalize_sleeve('แขนกุด'), ('long', False))
+        self.assertEqual(normalize_sleeve(''), ('long', False))
+
+    def _worker_order(self, design='D-874'):
+        order = Order.objects.create(
+            created_date=timezone.localdate(), source='เพจเสื้อคนงาน',
+            customer_name='ลุงมี', shirt_name='เสื้อช่าง',
+            design_doc_number=design, fabric_spec='ผ้า 120 แกรม',
+            special_note='รีบหน่อย',
+        )
+        item = OrderItem.objects.create(order=order, shirt_type='short')
+        ShirtVariant.objects.create(
+            item=item, collar='คอกลม', sleeve='แขนยาว', color='กรม', pocket=True,
+            sizes=[{'label': 'M', 'qty': 8}, {'label': 'L', 'qty': 4},
+                   {'label': 'เด็ก S', 'qty': 1}],
+        )
+        ShirtVariant.objects.create(
+            item=item, collar='คอกีฬา', sleeve='แขนสั้น',
+            sizes=[{'label': 'XL', 'qty': 2}],
+        )
+        return order
+
+    def test_build_payload_and_uncertain(self):
+        from .production_export import build_production_export
+        data = build_production_export(self._worker_order())
+        p = data['payload']
+        self.assertEqual(data['filename'], 'D-874-order.json')
+        self.assertEqual(p['design'], 'D-874')
+        self.assertEqual(p['type'], 'worker')
+        self.assertEqual(p['customer'], 'ลุงมี')
+        self.assertEqual(p['fabric'], 'ผ้า 120 แกรม')
+        self.assertEqual(p['note'], 'รีบหน่อย')
+        self.assertEqual(len(p['items']), 2)
+
+        first = p['items'][0]
+        self.assertEqual(first['collar'], 'round')
+        self.assertEqual(first['sleeve'], 'long')
+        self.assertTrue(first['pocket'])
+        # ไซส์มาตรฐานครบทุก key (0 ถ้าไม่มี) + label นอกมาตรฐานคงไว้
+        self.assertEqual(first['sizes']['M'], 8)
+        self.assertEqual(first['sizes']['S'], 0)
+        self.assertEqual(first['sizes']['4XL'], 0)
+        self.assertEqual(first['sizes']['เด็ก S'], 1)
+
+        second = p['items'][1]
+        self.assertFalse(second['pocket'])
+        # "คอกีฬา" ไม่เข้า pattern -> ติด uncertain ให้ popup ถาม (แบบ index 1)
+        self.assertEqual(data['uncertain'],
+                         [{'index': 1, 'field': 'collar',
+                           'raw': 'คอกีฬา', 'guess': 'round'}])
+
+    def test_blank_design_gets_empty_filename(self):
+        """design ว่าง -> filename ว่าง (JS ฝั่งหน้าเว็บเตือน "ยังไม่ผูกใบงานออกแบบ" ไม่ export)"""
+        from .production_export import build_production_export
+        data = build_production_export(self._worker_order(design=''))
+        self.assertEqual(data['filename'], '')
+        self.assertEqual(data['payload']['design'], '')
+
+    def test_detail_context_only_for_worker_source(self):
+        """หน้า detail: เสื้อคนงาน -> มี production_export + ปุ่ม; เพจอื่น -> ไม่มี"""
+        user = User.objects.create_user('staff-x', password='x')
+        self.client.force_login(user)
+
+        worker = self._worker_order()
+        resp = self.client.get(reverse('order_detail', args=[worker.pk]))
+        self.assertIsNotNone(resp.context['production_export'])
+        self.assertContains(resp, 'ส่งเข้าผลิต (.json)')
+
+        other = Order.objects.create(
+            created_date=timezone.localdate(), source='หน้าร้าน',
+            customer_name='ป้าแดง', shirt_name='งานอื่น')
+        resp = self.client.get(reverse('order_detail', args=[other.pk]))
+        self.assertIsNone(resp.context['production_export'])
+        self.assertNotContains(resp, 'ส่งเข้าผลิต (.json)')

@@ -24,6 +24,11 @@
         border-bottom: 2px solid #f0d585;
         padding-bottom: 5px;
     }
+
+    /* กระเป๋าหน้าอก — โชว์เฉพาะ source=เพจเสื้อคนงาน (JS toggle .show-pocket บน body
+       ใน toggleFabric) — ใช้ CSS class เพื่อครอบคลุม variant ที่ clone เพิ่มทีหลังด้วย */
+    .pocket-wrap { display: none; }
+    body.show-pocket .pocket-wrap { display: block; }
 </style>
 <h4 class="mb-3">{{ title }}</h4>
 
@@ -313,7 +318,15 @@
                                     <label class="form-label small mb-0">สี</label>
                                     {{ vform.color }}
                                 </div>
-                                <div class="col-md-6">
+                                {# กระเป๋าหน้าอก — โชว์เฉพาะ source=เพจเสื้อคนงาน (toggle class show-pocket บน body) #}
+                                <div class="col-md-2 pocket-wrap">
+                                    <label class="form-label small mb-0">&nbsp;</label>
+                                    <div class="form-check">
+                                        {{ vform.pocket }}
+                                        <label class="form-check-label small" for="{{ vform.pocket.id_for_label }}">กระเป๋าหน้าอก</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
                                     <label class="form-label small mb-0">โน้ตแบบนี้</label>
                                     {{ vform.note }}
                                 </div>
@@ -564,7 +577,14 @@
             <label class="form-label small mb-0">สี</label>
             <input type="text" name="items-__iprefix__-variants-__vprefix__-color" id="id_items-__iprefix__-variants-__vprefix__-color" class="form-control form-control-sm" placeholder="ระบุสี (ถ้ามี)">
         </div>
-        <div class="col-md-6">
+        <div class="col-md-2 pocket-wrap">
+            <label class="form-label small mb-0">&nbsp;</label>
+            <div class="form-check">
+                <input type="checkbox" name="items-__iprefix__-variants-__vprefix__-pocket" id="id_items-__iprefix__-variants-__vprefix__-pocket" class="form-check-input">
+                <label class="form-check-label small" for="id_items-__iprefix__-variants-__vprefix__-pocket">กระเป๋าหน้าอก</label>
+            </div>
+        </div>
+        <div class="col-md-4">
             <label class="form-label small mb-0">โน้ตแบบนี้</label>
             <input type="text" name="items-__iprefix__-variants-__vprefix__-note" id="id_items-__iprefix__-variants-__vprefix__-note" class="form-control form-control-sm" placeholder="โน้ต (ถ้ามี)">
         </div>
@@ -676,6 +696,8 @@ toggleShipping();
 const sourceField = document.getElementById('id_source');
 const fabricRow = document.getElementById('fabric-spec-row');
 const fabricField = document.getElementById('id_fabric_spec');
+// checkbox กระเป๋าหน้าอก (.pocket-wrap ในทุก variant รวมที่ clone ทีหลัง) โชว์เฉพาะ
+// เพจเสื้อคนงาน — toggle class บน body ให้ CSS จัดการ ครอบคลุม variant ใหม่อัตโนมัติ
 function toggleFabric() {
     const isKonNgan = sourceField.value === 'เพจเสื้อคนงาน';
     fabricRow.style.display = isKonNgan ? '' : 'none';
@@ -683,6 +705,7 @@ function toggleFabric() {
         fabricField.value = 'ผ้า 120 แกรม';
     }
     fabricField.style.border = isKonNgan ? '2px solid red' : '';
+    document.body.classList.toggle('show-pocket', isKonNgan);
 }
 sourceField.addEventListener('change', toggleFabric);
 toggleFabric();

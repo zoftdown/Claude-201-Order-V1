@@ -96,7 +96,7 @@ class ShirtVariantForm(BootstrapMixin, forms.ModelForm):
 
     class Meta:
         model = ShirtVariant
-        fields = ['collar', 'sleeve', 'color', 'note']
+        fields = ['collar', 'sleeve', 'color', 'pocket', 'note']
         widgets = {
             'collar': forms.TextInput(attrs={'list': 'collar-suggestions', 'placeholder': 'ระบุประเภทคอ *'}),
             'sleeve': forms.TextInput(attrs={'list': 'sleeve-suggestions', 'placeholder': 'ระบุประเภทแขน *'}),
