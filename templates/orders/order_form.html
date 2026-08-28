@@ -948,7 +948,7 @@ if (briefIdField.value) {
 
 // หน้าแก้ไข: ใบงานผูกโปรไฟล์อยู่แล้ว → โชว์ลิงก์โปรไฟล์ + ราคา (inject จาก view) ทันที
 if (customerIdField.value) {
-    linkedView.href = customerDetailUrl(customerIdField.value);
+    if (linkedView) linkedView.href = customerDetailUrl(customerIdField.value);  // ลิงก์โปรไฟล์มีเฉพาะ admin — non-admin เป็น null ห้ามอ้างตรงๆ (JS ทั้งบล็อกตาย รวมปุ่มวางรูป/เพิ่มช่องรูปมาสเตอร์)
     linkedNote.style.display = '';
     const initPrices = document.getElementById('customer-prices-data');
     if (initPrices) {
