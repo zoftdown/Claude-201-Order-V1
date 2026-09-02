@@ -1080,7 +1080,21 @@ def order_print(request, pk):
         'qr_svg': qr_svg,
         'update_url': update_url,
         'group_orders': order.group_orders(),
+        'print_by_label': _print_by_label(request),
     })
+
+
+def _print_by_label(request):
+    """ชื่อสำหรับ footer "พิมพ์โดย ..." ท้ายใบงาน A4 — ใครเป็นคนสั่งพิมพ์/บันทึกภาพ
+    ตอน render นี้ (ไม่ใช่ printed_by ที่เก็บตอนกดปุ่ม "พิมพ์ใบงานแล้ว").
+
+    - login user → username
+    - viewer จาก cookie แผนก (AnonymousUser) → "แผนก<ชื่อแผนก>" เช่น แผนกพิมพ์
+    """
+    if request.user.is_authenticated:
+        return request.user.username
+    dept = get_department(request.COOKIES.get(DEPT_COOKIE_NAME))
+    return f"แผนก{dept['name']}" if dept else 'แผนก'
 
 
 @login_required
@@ -1089,7 +1103,8 @@ def order_mark_printed(request, pk):
     """Mark the work-order sheet as printed (from the print page button)."""
     order = get_object_or_404(Order, pk=pk)
     order.printed_at = timezone.now()
-    order.save(update_fields=['printed_at'])
+    order.printed_by = request.user
+    order.save(update_fields=['printed_at', 'printed_by'])
     return redirect('order_print', pk=order.pk)
 
 

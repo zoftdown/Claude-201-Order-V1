@@ -371,6 +371,13 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **ใบ A4 (order_print):** รายการที่มีเลขของตัวเอง → กรอบน้ำเงิน "🎨 D-xxx" มุมขวาของ `item-block-header`; รายการ fallback ไม่โชว์ซ้ำ (เลขระดับใบอยู่หัวใบงานแล้ว) — ใบลายเดียวหน้าตาเดิมเป๊ะ
 - **tests +5 เคส** (`MultiDesignTests`: fallback / export ต่อ item + ระดับบนคงเดิม / ใบลายเดียวไม่เปลี่ยน / A4 โชว์เฉพาะมีเลขเอง / ฟอร์ม save) — รวม 47 เคส
 
+**เพิ่มล่าสุด (V4.2 · 2026-09-02): footer "พิมพ์โดย" ท้ายใบ A4 + `Order.printed_by`**
+- **`Order.printed_by`** (FK→auth.User SET_NULL null/blank, related_name `printed_orders`, migration 0031 AddField อย่างเดียว ไม่ backfill) — เซ็ตคู่ `printed_at` ใน `order_mark_printed` (`update_fields` ทั้งคู่); badge "✓ พิมพ์แล้ว dd/mm/yyyy HH:MM" ต่อท้าย "โดย <username>" เมื่อมีค่า (ใบเก่า null = แสดงแค่วันเวลาเหมือนเดิม)
+- **footer `.print-footer`** ใน `order_print.html`: "พิมพ์โดย {ชื่อ} {วันเวลา ณ ตอน render}" (`{% now %}` เวลาไทย — **ไม่ใช่** printed_at) ตัวเทา 8pt ชิดขวาล่าง — `display:none` บนจอ · `@media print` = `position:absolute` ใน `.page-a4` (position:relative, min-height 297mm) ไม่กินความสูง flow → ไม่เพิ่ม sheet · html2canvas ใช้ `onclone` ใส่ class `.inline` ให้ footer โผล่ต่อท้าย "รวมทั้งหมด" ใน DOM ที่ clone (PNG ยัง auto-crop ได้ ไม่ติดหางขาว)
+- **ชื่อใน footer** จาก `_print_by_label(request)` ใน views.py: login = `username` · viewer cookie แผนก (AnonymousUser) = "แผนก<ชื่อแผนก>" เช่น แผนกพิมพ์ (map จาก `departments.py`)
+- ไม่แตะใบมาสเตอร์/ใบคัด · กล่องยอดเงินยัง gate `user|is_admin` เดิม
+- **tests +4 เคส** (`PrintFooterTests`) — รวม 51 เคส
+
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)

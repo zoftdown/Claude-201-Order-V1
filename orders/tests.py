@@ -818,3 +818,46 @@ class MultiDesignTests(TestCase):
         item = Order.objects.latest('id').items.first()
         self.assertEqual(item.design_doc_number, 'D-2001')
         self.assertEqual(item.effective_design_doc, 'D-2001')
+
+
+class PrintFooterTests(TestCase):
+    """footer "พิมพ์โดย" ท้ายใบ A4 (ค่า ณ ตอน render) + Order.printed_by (migration 0031)
+    เซ็ตคู่ printed_at ตอนกดปุ่ม "พิมพ์ใบงานแล้ว\""""
+
+    def setUp(self):
+        self.user = User.objects.create_user('printer-a', password='x')
+        self.order = make_order(timezone.localdate())
+
+    def test_mark_printed_sets_printed_by(self):
+        self.client.force_login(self.user)
+        resp = self.client.post(reverse('order_mark_printed', args=[self.order.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.order.refresh_from_db()
+        self.assertIsNotNone(self.order.printed_at)
+        self.assertEqual(self.order.printed_by, self.user)
+        # badge "✓ พิมพ์แล้ว" ต่อท้ายชื่อคนกด
+        resp = self.client.get(reverse('order_print', args=[self.order.pk]))
+        self.assertContains(resp, 'โดย printer-a</span>')
+
+    def test_legacy_printed_without_user_shows_time_only(self):
+        """ใบเก่า printed_at มีค่าแต่ printed_by null → badge แสดงแค่วันเวลาเหมือนเดิม"""
+        self.order.printed_at = timezone.now()
+        self.order.save(update_fields=['printed_at'])
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse('order_print', args=[self.order.pk]))
+        self.assertContains(resp, '✓ พิมพ์แล้ว')
+        self.assertNotContains(resp, 'โดย printer-a</span>')  # footer มี "โดย" ได้ แต่ badge ไม่มี
+
+    def test_footer_uses_login_username(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse('order_print', args=[self.order.pk]))
+        self.assertContains(resp, 'class="print-footer">พิมพ์โดย printer-a ')
+
+    def test_footer_uses_department_for_viewer_cookie(self):
+        from .decorators import DEPT_COOKIE_NAME, DEPT_PIN_HASH_COOKIE
+        from .models import DepartmentPIN
+        self.client.cookies[DEPT_COOKIE_NAME] = 'print'
+        self.client.cookies[DEPT_PIN_HASH_COOKIE] = DepartmentPIN.current_hash()
+        resp = self.client.get(reverse('order_print', args=[self.order.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'class="print-footer">พิมพ์โดย แผนกพิมพ์ ')

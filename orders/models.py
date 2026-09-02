@@ -276,6 +276,11 @@ class Order(models.Model):
     # Work-order printed flag (null = ยังไม่พิมพ์). Backfilled = created_date
     # for legacy orders so they don't show "ยังไม่พิมพ์ใบงาน".
     printed_at = models.DateTimeField('พิมพ์ใบงานเมื่อ', null=True, blank=True)
+    # Who pressed "พิมพ์ใบงานแล้ว" (set together with printed_at). Nullable —
+    # legacy orders and the backfilled printed_at have no user → shown as "-".
+    printed_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='printed_orders',
+                                   verbose_name='คนกดพิมพ์ใบงาน')
 
     # Signed copy: photo of the master sheet after every dept reviewed + signed.
     # 1 per order (all signatures on one sheet). nullable — legacy orders have

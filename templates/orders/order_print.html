@@ -85,6 +85,30 @@
             border-top: 2px solid #000;
             text-align: right;
         }
+        /* Footer "พิมพ์โดย ..." — only on paper + in the html2canvas PNG (hidden on
+           screen). Absolute inside .page-a4 (position:relative, min-height 297mm)
+           so it pins to the sheet's bottom-right without adding flow height →
+           never pushes content onto a 2nd sheet. Print-media rule is below. */
+        .print-footer {
+            display: none;
+            position: absolute;
+            right: 15mm;
+            bottom: 6mm;
+            font-size: 8pt;
+            font-weight: 600;
+            color: #888;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        /* html2canvas capture (onclone adds .inline): drop back into normal flow
+           right after the grand total so the auto-crop keeps the PNG compact
+           instead of keeping the whole white tail down to the sheet bottom. */
+        .print-footer.inline {
+            display: block;
+            position: static;
+            text-align: right;
+            margin-top: 6px;
+        }
         .order-grand-total .grand-pill {
             display: inline-block;
             font-size: 22pt;
@@ -618,6 +642,8 @@
                 color: #fff !important;
             }
 
+            .print-footer { display: block; right: 6mm; bottom: 4mm; }
+
             /* Trim header rhythm to claw back vertical space. */
             .header { margin-bottom: 6px; padding-bottom: 4px; }
             .shirt-info { margin-bottom: 6px; padding-bottom: 4px; }
@@ -646,7 +672,7 @@
         </form>
         {% endif %}
     {% else %}
-        <span class="printed-note">✓ พิมพ์แล้ว {{ order.printed_at|date:"d/m/Y H:i" }}</span>
+        <span class="printed-note">✓ พิมพ์แล้ว {{ order.printed_at|date:"d/m/Y H:i" }}{% if order.printed_by %} โดย {{ order.printed_by.username }}{% endif %}</span>
     {% endif %}
     {% endif %}
     <button class="btn-back" onclick="window.location.href='{% url 'order_detail' order.pk %}'">กลับ</button>
@@ -801,6 +827,8 @@
         <span class="grand-pill">รวมทั้งหมด {{ order.total_qty }} ตัว</span>
     </div>
     {% endif %}
+    {# footer: ใครสั่งพิมพ์/บันทึกภาพ + เวลา ณ ตอน render (ไม่ใช่ printed_at) — โชว์เฉพาะพิมพ์/PNG #}
+    <div class="print-footer">พิมพ์โดย {{ print_by_label }} {% now "d/m/Y H:i" %}</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -819,7 +847,13 @@ function saveWorkOrderImage(btn) {
         useCORS: true,
         allowTaint: true,
         scale: SCALE,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        // Footer is display:none on screen; in the cloned DOM (capture only)
+        // show it inline after the grand total so the PNG carries "พิมพ์โดย".
+        onclone: function (doc) {
+            var f = doc.querySelector('.print-footer');
+            if (f) { f.classList.add('inline'); }
+        }
     }).then(function (canvas) {
         // Auto-crop the empty white margins around the content. .page-a4 is a
         // full A4 sheet, so short orders leave a long white tail at the bottom
