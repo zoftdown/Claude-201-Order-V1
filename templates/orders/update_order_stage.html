@@ -38,6 +38,25 @@
         }
         .change-btn:hover { background: rgba(255, 255, 255, 0.35); color: #fff; }
 
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            background: #ecf0f1;
+            color: #34495e;
+            border: 1px solid #cfd6db;
+            border-radius: 10px;
+            padding: 0.55rem 0.9rem;
+            margin-bottom: 1rem;
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            box-sizing: border-box;
+            min-height: 44px;
+            line-height: 1.2;
+            cursor: pointer;
+        }
+        .back-btn:hover { background: #e2e6ea; color: #34495e; }
+
         .order-card {
             background: #fff;
             border-radius: 12px;
@@ -224,6 +243,9 @@
             </h1>
             <a href="{% url 'clear_department' %}" class="change-btn">เปลี่ยนแผนก</a>
         </div>
+
+        <a href="{% url 'dept_dashboard' slug=dept.slug %}" class="back-btn"
+           onclick="if (window.history.length > 1) { window.history.back(); return false; }">← กลับ</a>
 
         <div class="order-card">
             {% if first_item.design_image %}
