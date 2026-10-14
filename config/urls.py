@@ -13,6 +13,7 @@ urlpatterns = [
     path('login/classic/', auth_views.LoginView.as_view(
         template_name='registration/login_classic.html'), name='login_classic'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('linebot/', include('line_bot.urls')),  # LINE webhook → /order/linebot/webhook/
     path('', include('orders.urls')),
 ]
 

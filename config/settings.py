@@ -34,6 +34,11 @@ BRIEF_PUBLIC_BASE = os.environ.get('BRIEF_PUBLIC_BASE', 'http://127.0.0.1:8600')
 # เพราะเป็นข้อมูลยอดขายรวมของร้าน. ใส่ถูกครั้งเดียวจำใน session.
 STATS_PIN = os.environ.get('STATS_PIN', '265424')
 
+# --- LINE Messaging API (app line_bot — webhook ที่ /linebot/webhook/) ---
+# ทั้งคู่ได้จาก LINE Developers console > Messaging API; ว่าง = ลายเซ็นไม่ผ่าน/ไม่ reply
+LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
+
 # --- Authentication redirects ---
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'order_list'
@@ -54,6 +59,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.humanize',
     'orders',
+    'line_bot',  # label 'linebot' (ชื่อโฟลเดอร์เลี่ยงชนกับ package linebot ของ SDK)
 ]
 
 MIDDLEWARE = [
@@ -148,3 +154,18 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     X_FRAME_OPTIONS = 'DENY'
+
+# --- Logging: log ของ line_bot (INFO) ออก stderr → gunicorn → journalctl -u order ---
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {'format': '[%(asctime)s] %(levelname)s %(name)s: %(message)s'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
+    },
+    'loggers': {
+        'line_bot': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
