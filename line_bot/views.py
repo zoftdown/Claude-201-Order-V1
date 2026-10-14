@@ -1,5 +1,6 @@
 """
-Webhook รับ event จาก LINE Messaging API — ขั้น 4.1: อ่านใบงานจากรูป → รอข้อความยืนยัน → ติ๊ก "รีด+แพ็ค"
+Webhook รับ event จาก LINE Messaging API — ขั้น 4.1 (อ่านใบงานจากรูป → ยืนยัน → ติ๊ก "รีด+แพ็ค")
++ ขั้น 5 (ถาม-ตอบด้วย LLM tool calling)
 
 views.py ทำแค่ route event:
 - image → ดาวน์โหลด + LLM อ่านเลขออร์เดอร์ (services.py) → **ไม่ตอบ** เก็บเข้า "รายการรอ"
@@ -9,7 +10,12 @@ views.py ทำแค่ route event:
           "บอท ยกเลิก" → ล้างรายการรอของคนนั้น → "ยกเลิกแล้ว"
           "บอท เสร็จ 6910-171 6910-172" → ติ๊กเลขที่ระบุทันที (ไม่ต้องมีรูป)
           มีคำว่า "ครบ"/"เสร็จ" + คนเดิมในกลุ่มเดิมมีรายการรอ → ติ๊กทุกใบ ล้างรายการ
-            reply ข้อความเดียวสรุปทุกใบ (orders.py) · อื่นๆ เงียบ
+            reply ข้อความเดียวสรุปทุกใบ (orders.py)
+          ขึ้นต้นด้วย "บอท"/"หมอนทอง" หรือ mention บอท (event.message.mention is_self)
+            และไม่ตรงคำสั่งด้านบน → ถาม-ตอบด้วย LLM + tools อ่านอย่างเดียว (services.answer_question)
+            พร้อมบริบท 6 ข้อความล่าสุดของ (groupId, userId) (history.py) ·
+            LLM พัง/timeout → "ขอโทษ ตอบไม่ได้ตอนนี้" ไม่เงียบ · ข้อความอื่นเงียบ
+          ลำดับความสำคัญ: คำสั่งเดิม > ยืนยันรายการรอ (เฉพาะคนที่มีรายการรออยู่) > ถาม-ตอบ
 - join  → ทักทาย
 - ทุก event log groupId/userId ของผู้ส่ง (INFO) ไว้เก็บ id ใส่ LINE_ADMIN_USER_IDS
 
@@ -44,7 +50,7 @@ from linebot.v3.webhooks import (
 )
 
 from . import orders as bot_orders
-from . import pending, services
+from . import history, pending, services
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +61,11 @@ CANCEL_TEXT = 'บอท ยกเลิก'
 DONE_COMMAND_PREFIX = 'บอท เสร็จ'
 CONFIRM_WORDS = ('ครบ', 'เสร็จ')
 JOIN_GREETING = 'สวัสดี น้องหมอนทองพร้อมใช้งาน'
+QA_PREFIXES = ('บอท', 'หมอนทอง')
+QA_FAIL_TEXT = 'ขอโทษ ตอบไม่ได้ตอนนี้'
+QA_EMPTY_TEXT = ('ถามได้เลย เช่น "บอท วันนี้มีกี่ใบ" · "บอท 6910-116 ถึงไหนแล้ว" · '
+                 '"บอท งานของคุณเอถึงไหน" · "บอท ใบไหนค้างเกิน 7 วัน"')
+LINE_TEXT_MAX = 4900  # LINE จำกัด 5000 ตัวอักษร/ข้อความ
 
 ORDER_NUMBER_IN_TEXT_RE = re.compile(r'(?<!\d)\d{4}-\d{1,3}(?!\d)')
 
@@ -116,6 +127,45 @@ def _reply_done(event, numbers, note):
     _reply(event.reply_token, [_admin_mention_message(text)])
 
 
+def _self_mention_spans(message):
+    """ช่วง (index, length) ของ mention ที่ชี้มาที่บอทเอง (is_self) ในข้อความ"""
+    mention = getattr(message, 'mention', None)
+    spans = []
+    for m in (getattr(mention, 'mentionees', None) or []):
+        if getattr(m, 'is_self', False):
+            spans.append((getattr(m, 'index', 0) or 0, getattr(m, 'length', 0) or 0))
+    return spans
+
+
+def _qa_question(message, text):
+    """ข้อความนี้เป็นคำถามถึงบอทไหม → คืนคำถามที่ตัด prefix/mention แล้ว หรือ None
+    trigger: ขึ้นต้นด้วย "บอท"/"หมอนทอง" หรือ mention บอท"""
+    spans = _self_mention_spans(message)
+    if spans:
+        raw = message.text or ''
+        for index, length in sorted(spans, reverse=True):
+            raw = raw[:index] + ' ' + raw[index + length:]
+        return raw.strip()
+    for prefix in QA_PREFIXES:
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return None
+
+
+def _answer_qa(event, question):
+    group_id, user_id = _source_ids(event)
+    if not question:
+        _reply_text(event.reply_token, QA_EMPTY_TEXT)
+        return
+    answer = services.answer_question(question, history=history.get_history(group_id, user_id))
+    if not answer:
+        _reply_text(event.reply_token, QA_FAIL_TEXT)
+        return
+    answer = answer[:LINE_TEXT_MAX]
+    history.append_history(group_id, user_id, question, answer)
+    _reply_text(event.reply_token, answer)
+
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def on_text_message(event):
     text = event.message.text.strip()
@@ -138,14 +188,25 @@ def on_text_message(event):
         if numbers:
             _reply_done(event, numbers, note='บอท LINE คำสั่ง "บอท เสร็จ" (%s)' % src)
             return
-        # ไม่มีเลข → ตกไปเช็ครายการรอด้านล่าง (ข้อความมีคำว่า "เสร็จ")
+        # ไม่มีเลข → ใช้เป็นข้อความยืนยันรายการรอ (มีคำว่า "เสร็จ") ไม่ส่งเข้าถาม-ตอบ
+        numbers = pending.get_pending(group_id, user_id)
+        if numbers:
+            pending.clear_pending(group_id, user_id)
+            _reply_done(event, numbers, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src))
+        return
 
-    # ข้อความยืนยัน "ครบ"/"เสร็จ" จากคนเดิมในกลุ่มเดิมที่มีรายการรอ
+    # ข้อความยืนยัน "ครบ"/"เสร็จ" จากคนเดิมในกลุ่มเดิมที่มีรายการรอ (กลไกเดิม มาก่อนถาม-ตอบ)
     if any(w in text for w in CONFIRM_WORDS):
         numbers = pending.get_pending(group_id, user_id)
         if numbers:
             pending.clear_pending(group_id, user_id)
             _reply_done(event, numbers, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src))
+            return
+
+    # ถาม-ตอบ: "บอท ..." / "หมอนทอง ..." / mention บอท
+    question = _qa_question(event.message, text)
+    if question is not None:
+        _answer_qa(event, question)
 
 
 @handler.add(MessageEvent, message=ImageMessageContent)

@@ -462,3 +462,300 @@ class BotOrdersTests(TestCase):
         self.assertEqual(bot_orders._money(Decimal('1500.00')), '1,500')
         self.assertEqual(bot_orders._money(Decimal('1500.50')), '1,500.50')
         self.assertEqual(bot_orders._money(None), '0')
+
+
+# ---------------------------------------------------------------------------
+# ขั้น 5 — ถาม-ตอบด้วย LLM tool calling
+# ---------------------------------------------------------------------------
+
+from . import history, tools  # noqa: E402
+
+
+def _tool_call(name, args, call_id='call-1'):
+    tc = mock.MagicMock()
+    tc.id = call_id
+    tc.function.name = name
+    tc.function.arguments = json.dumps(args, ensure_ascii=False)
+    return tc
+
+
+def _llm_response(content=None, tool_calls=None, prompt_tokens=100, completion_tokens=20):
+    msg = mock.MagicMock()
+    msg.content = content
+    msg.tool_calls = tool_calls
+    resp = mock.MagicMock()
+    resp.choices = [mock.MagicMock(message=msg)]
+    resp.usage = mock.MagicMock(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                                total_tokens=prompt_tokens + completion_tokens)
+    return resp
+
+
+def _fake_llm(*responses, error=None):
+    client = mock.MagicMock()
+    if error:
+        client.chat.completions.create.side_effect = error
+    else:
+        client.chat.completions.create.side_effect = list(responses)
+    return client
+
+
+class QaTriggerTests(WebhookBase):
+    """trigger: "บอท ..." / "หมอนทอง ..." / mention บอท → answer_question · ข้อความธรรมดาเงียบ"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        p = mock.patch.object(services, 'answer_question', return_value='วันนี้มี 2 ใบ')
+        self.qa_mock = p.start()
+        self.addCleanup(p.stop)
+
+    def _post_text(self, text, mention=None):
+        ev = _text_event(text)
+        if mention is not None:
+            ev['message']['mention'] = mention
+        resp = self._post({'destination': 'x', 'events': [ev]})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_plain_text_not_sent_to_llm(self):
+        self._post_text('วันนี้มีกี่ใบ')
+        self.qa_mock.assert_not_called()
+        self.reply_mock.assert_not_called()
+
+    def test_bot_prefix_triggers(self):
+        self._post_text('บอท วันนี้มีกี่ใบ')
+        self.qa_mock.assert_called_once()
+        self.assertEqual(self.qa_mock.call_args[0][0], 'วันนี้มีกี่ใบ')
+        self.assertEqual(self._replied_message().text, 'วันนี้มี 2 ใบ')
+
+    def test_monthong_prefix_triggers(self):
+        self._post_text('หมอนทอง 6910-116 ถึงไหนแล้ว')
+        self.assertEqual(self.qa_mock.call_args[0][0], '6910-116 ถึงไหนแล้ว')
+
+    def test_self_mention_triggers_and_strips(self):
+        text = '@น้องหมอนทอง งานคุณเอถึงไหน'
+        mention = {'mentionees': [{'type': 'user', 'index': 0, 'length': len('@น้องหมอนทอง'),
+                                   'userId': 'Ubot', 'isSelf': True}]}
+        self._post_text(text, mention=mention)
+        self.assertEqual(self.qa_mock.call_args[0][0], 'งานคุณเอถึงไหน')
+
+    def test_other_user_mention_does_not_trigger(self):
+        mention = {'mentionees': [{'type': 'user', 'index': 0, 'length': 5,
+                                   'userId': 'Uxyz', 'isSelf': False}]}
+        self._post_text('@สมชาย งานถึงไหน', mention=mention)
+        self.qa_mock.assert_not_called()
+        self.reply_mock.assert_not_called()
+
+    def test_empty_question_gets_hint(self):
+        self._post_text('บอท')
+        self.qa_mock.assert_not_called()
+        self.assertEqual(self._replied_message().text, views.QA_EMPTY_TEXT)
+
+    def test_llm_failure_replies_apology(self):
+        self.qa_mock.return_value = None
+        self._post_text('บอท วันนี้มีกี่ใบ')
+        self.assertEqual(self._replied_message().text, views.QA_FAIL_TEXT)
+
+    def test_old_commands_take_precedence(self):
+        make_order()
+        self._post_text('บอท ping')
+        self._post_text('บอท เสร็จ 6910-116')
+        self._post_text('บอท ยกเลิก')
+        self.qa_mock.assert_not_called()
+        self.assertEqual(self.reply_mock.call_count, 3)
+
+    def test_confirm_pending_wins_over_qa(self):
+        make_order()
+        pending.add_pending('G1', 'U123', '6910-116')
+        self._post_text('บอท ครบแล้ว')
+        self.qa_mock.assert_not_called()
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
+
+    def test_history_kept_per_user_and_passed(self):
+        self._post_text('บอท วันนี้มีกี่ใบ')
+        self.qa_mock.return_value = 'เมื่อวานมี 1 ใบ'
+        self._post_text('บอท เมื่อวานล่ะ')
+        hist = self.qa_mock.call_args[1]['history']
+        self.assertEqual(hist, [{'role': 'user', 'content': 'วันนี้มีกี่ใบ'},
+                                {'role': 'assistant', 'content': 'วันนี้มี 2 ใบ'}])
+        self.assertEqual(len(history.get_history('G1', 'U123')), 4)
+        self.assertEqual(history.get_history('G1', 'U999'), [])
+
+    def test_history_capped_at_six(self):
+        for i in range(5):
+            history.append_history('G1', 'U1', 'q%d' % i, 'a%d' % i)
+        hist = history.get_history('G1', 'U1')
+        self.assertEqual(len(hist), 6)
+        self.assertEqual(hist[0]['content'], 'q2')
+
+
+@override_settings(RUNNINGHUB_API_KEY='k')
+class AnswerQuestionLoopTests(TestCase):
+    """services.answer_question: mock LLM คืน tool_call → tool ถูกเรียกด้วย args ถูก → คำตอบสุดท้าย"""
+
+    def test_tool_call_then_answer(self):
+        client = _fake_llm(
+            _llm_response(tool_calls=[_tool_call('search_orders', {'customer_name': 'คุณเอ'})]),
+            _llm_response(content='เจอ 1 ใบ: 6910-116'),
+        )
+        with mock.patch('openai.OpenAI', return_value=client), \
+                mock.patch.object(tools, 'search_orders',
+                                  return_value={'orders': [], 'total_count': 0}) as tool_mock, \
+                self.assertLogs('line_bot.services', level='INFO') as logs:
+            answer = services.answer_question('งานคุณเอถึงไหน')
+        self.assertEqual(answer, 'เจอ 1 ใบ: 6910-116')
+        tool_mock.assert_called_once_with(customer_name='คุณเอ')
+
+        calls = client.chat.completions.create.call_args_list
+        self.assertEqual(len(calls), 2)
+        first = calls[0][1]
+        self.assertEqual(first['temperature'], 0)
+        self.assertEqual(first['tools'], tools.TOOL_SCHEMAS)
+        self.assertIn('วันนี้คือ', first['messages'][0]['content'])
+        # รอบ 2 ต้องมี assistant tool_calls + tool result ต่อท้าย
+        second_msgs = calls[1][1]['messages']
+        self.assertEqual(second_msgs[-2]['role'], 'assistant')
+        self.assertEqual(second_msgs[-2]['tool_calls'][0]['function']['name'], 'search_orders')
+        self.assertEqual(second_msgs[-1]['role'], 'tool')
+        self.assertEqual(second_msgs[-1]['tool_call_id'], 'call-1')
+        joined = '\n'.join(logs.output)
+        self.assertIn('search_orders', joined)
+        self.assertIn('tokens', joined)
+        self.assertIn('งานคุณเอถึงไหน', joined)
+
+    def test_history_prepended(self):
+        client = _fake_llm(_llm_response(content='เมื่อวานมี 0 ใบ'))
+        hist = [{'role': 'user', 'content': 'วันนี้มีกี่ใบ'},
+                {'role': 'assistant', 'content': 'วันนี้มี 2 ใบ'}]
+        with mock.patch('openai.OpenAI', return_value=client):
+            services.answer_question('เมื่อวานล่ะ', history=hist)
+        msgs = client.chat.completions.create.call_args[1]['messages']
+        self.assertEqual(msgs[1:3], hist)
+        self.assertEqual(msgs[-1], {'role': 'user', 'content': 'เมื่อวานล่ะ'})
+
+    def test_timeout_returns_none(self):
+        client = _fake_llm(error=TimeoutError('slow'))
+        with mock.patch('openai.OpenAI', return_value=client), \
+                self.assertLogs('line_bot.services', level='ERROR'):
+            self.assertIsNone(services.answer_question('บอท วันนี้มีกี่ใบ'))
+
+    def test_max_rounds_stops(self):
+        looping = [_llm_response(tool_calls=[_tool_call('overdue_orders', {})])
+                   for _ in range(services.QA_MAX_ROUNDS + 2)]
+        client = _fake_llm(*looping)
+        with mock.patch('openai.OpenAI', return_value=client):
+            self.assertIsNone(services.answer_question('ค้างกี่ใบ'))
+        self.assertEqual(client.chat.completions.create.call_count, services.QA_MAX_ROUNDS)
+
+    def test_unknown_tool_reported_not_crash(self):
+        client = _fake_llm(
+            _llm_response(tool_calls=[_tool_call('get_profit', {})]),
+            _llm_response(content='ทำไม่ได้'),
+        )
+        with mock.patch('openai.OpenAI', return_value=client):
+            self.assertEqual(services.answer_question('กำไรเท่าไหร่'), 'ทำไม่ได้')
+        tool_msg = client.chat.completions.create.call_args[1]['messages'][-1]
+        self.assertIn('unknown tool', tool_msg['content'])
+
+    @override_settings(RUNNINGHUB_API_KEY='')
+    def test_no_key_is_none(self):
+        self.assertIsNone(services.answer_question('x'))
+
+
+class QaToolsTests(TestCase):
+    """tools อ่านอย่างเดียว: search ตามชื่อลูกค้าเจอ/ไม่เจอ · daily_summary/overdue ตรงกับหน้ารายงาน"""
+
+    def test_search_by_customer_found(self):
+        make_order('6910-116')
+        make_order('6910-117', qtys=(2,))
+        Order.objects.filter(order_number='6910-117').update(customer_name='คุณบี')
+        res = tools.search_orders(customer_name='ทดสอบ')
+        self.assertEqual(res['total_count'], 1)
+        self.assertFalse(res['truncated'])
+        row = res['orders'][0]
+        self.assertEqual(row['order_number'], '6910-116')
+        self.assertEqual(row['total_qty'], 10)
+        self.assertEqual(row['total_price'], 1500)
+        self.assertEqual(row['balance'], 1000)
+        self.assertEqual(row['current_stage'], 'ยังไม่เริ่ม')
+
+    def test_search_by_customer_not_found(self):
+        make_order()
+        res = tools.search_orders(customer_name='ไม่มีคนนี้')
+        self.assertEqual(res, {'orders': [], 'total_count': 0, 'truncated': False})
+
+    def test_search_limit_and_total_count(self):
+        for i in range(12):
+            make_order('6910-%d' % (200 + i), qtys=(1,))
+        res = tools.search_orders(limit=10)
+        self.assertEqual(len(res['orders']), 10)
+        self.assertEqual(res['total_count'], 12)
+        self.assertTrue(res['truncated'])
+
+    def test_search_stage_and_balance(self):
+        o = make_order('6910-116')
+        o.print_done_at = timezone.now()
+        o.save()
+        make_order('6910-117', qtys=(1,))
+        Order.objects.filter(order_number='6910-117').update(deposit=Decimal('1500'))
+        self.assertEqual([r['order_number'] for r in tools.search_orders(stage='printed')['orders']],
+                         ['6910-116'])
+        self.assertEqual([r['order_number'] for r in tools.search_orders(stage='not_started')['orders']],
+                         ['6910-117'])
+        self.assertEqual([r['order_number'] for r in tools.search_orders(has_balance=True)['orders']],
+                         ['6910-116'])
+
+    def test_get_order_detail_and_progress(self):
+        o = make_order()
+        views_orders.mark_pack_done(o, note='t')
+        data = tools.get_order('6910-116')
+        self.assertTrue(data['found'])
+        self.assertEqual(len(data['items']), 2)
+        self.assertEqual(data['items'][0]['shirt_type'], 'แขนสั้น')
+        self.assertEqual(data['items'][0]['variants'][0]['sizes'], {'M': 5, 'L': 1})
+        progress = {p['stage']: p['done_at'] for p in data['progress']}
+        self.assertIsNone(progress['พิมพ์'])
+        self.assertIsNotNone(progress['รีด+แพ็ค'])
+        self.assertEqual(data['current_stage'], 'รีด+แพ็คแล้ว')
+        self.assertEqual(tools.get_order('0000-1'), {'found': False, 'order_number': '0000-1'})
+
+    def test_daily_summary_matches_report(self):
+        make_order('6910-116')
+        make_order('6910-117', qtys=(2,))
+        old = make_order('6909-1', qtys=(7,))
+        Order.objects.filter(pk=old.pk).update(created_date=timezone.localdate() - timedelta(days=1))
+
+        today = timezone.localdate()
+        ctx = views_orders._daily_summary_context(
+            mock.Mock(GET={'date': today.isoformat()}))
+        res = tools.daily_summary(today.isoformat())
+        self.assertEqual(res['order_count'], ctx['order_count'])
+        self.assertEqual(res['total_qty'], ctx['total_qty'])
+        self.assertEqual([r['order_number'] for r in res['orders']],
+                         [o.order_number for o in ctx['orders']])
+        self.assertEqual(res['order_count'], 2)
+        # default = วันนี้ · เมื่อวาน = ใบเก่า
+        self.assertEqual(tools.daily_summary()['order_count'], 2)
+        yesterday = tools.daily_summary((today - timedelta(days=1)).isoformat())
+        self.assertEqual([r['order_number'] for r in yesterday['orders']], ['6909-1'])
+
+    def test_overdue_matches_report(self):
+        stuck = make_order('6909-5', qtys=(1,))
+        Order.objects.filter(pk=stuck.pk).update(created_date=timezone.localdate() - timedelta(days=10))
+        make_order('6910-116')
+        res = tools.overdue_orders()
+        rows = views_orders._report_stuck_rows(sort='date_asc')
+        self.assertEqual([r['order_number'] for r in res['orders']],
+                         [r['order'].order_number for r in rows])
+        self.assertEqual(res['count'], 1)
+        self.assertEqual(res['orders'][0]['days_stuck'], 10)
+
+    def test_run_tool_bad_args_and_unknown(self):
+        self.assertIn('error', tools.run_tool('search_orders', {'nope': 1}))
+        self.assertIn('error', tools.run_tool('get_profit', {}))
+        self.assertEqual(tools.run_tool('overdue_orders', None)['count'], 0)
+
+    def test_schema_names_match_functions(self):
+        for name in tools.TOOL_NAMES:
+            self.assertTrue(callable(getattr(tools, name)))
+        self.assertNotIn('profit', ' '.join(tools.TOOL_NAMES))

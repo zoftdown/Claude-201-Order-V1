@@ -1,15 +1,18 @@
 """
-services — ส่วนที่คุยกับโลกภายนอก: ดาวน์โหลดรูปจาก LINE + ให้ LLM อ่านเลขออร์เดอร์
+services — ส่วนที่คุยกับโลกภายนอก: ดาวน์โหลดรูปจาก LINE + LLM (อ่านเลขจากรูป / ถาม-ตอบด้วย tools)
 
-ไม่แตะ DB เลย (ส่วนค้น/อัปเดตออร์เดอร์อยู่ใน line_bot/orders.py)
-ทุกฟังก์ชันคืน None เมื่อล้มเหลว + log — ให้ views ตัดสินใจเงียบได้โดยไม่ต้อง try/except ซ้ำ
+ไม่แตะ DB เองโดยตรง (ส่วนค้น/อัปเดตออร์เดอร์อยู่ใน line_bot/orders.py; tools อ่านอย่างเดียวอยู่ใน
+line_bot/tools.py ซึ่ง answer_question เรียกผ่าน run_tool)
+ทุกฟังก์ชันคืน None เมื่อล้มเหลว + log — ให้ views ตัดสินใจเองโดยไม่ต้อง try/except ซ้ำ
 """
 import base64
 import json
 import logging
 import re
+import time
 
 from django.conf import settings
+from django.utils import timezone
 
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApiBlob
 
@@ -30,6 +33,24 @@ LLM_TIMEOUT = 20
 # → ส่ง reasoning_effort='none' (ตอบ ~15 token) + เผื่อเพดาน 300 กันกรณี provider ไม่รับ flag
 LLM_MAX_TOKENS = 300
 LLM_EXTRA_BODY = {'reasoning_effort': 'none'}
+
+
+def _client(timeout=LLM_TIMEOUT):
+    """OpenAI-compatible client ชี้ RunningHub (None เมื่อไม่มี key / ไม่มี package)"""
+    if not settings.RUNNINGHUB_API_KEY:
+        logger.warning('RUNNINGHUB_API_KEY ว่าง — ปิดการใช้ LLM')
+        return None
+    try:
+        from openai import OpenAI
+    except ImportError:
+        logger.error('ไม่มี package openai — pip install openai')
+        return None
+    return OpenAI(
+        api_key=settings.RUNNINGHUB_API_KEY,
+        base_url=settings.RUNNINGHUB_BASE_URL,
+        timeout=timeout,
+        max_retries=0,
+    )
 
 
 def download_line_image(message_id):
@@ -77,23 +98,12 @@ def parse_order_number(raw_text):
 def read_order_number(image_bytes, mime='image/jpeg'):
     """ส่งรูปให้ LLM (OpenAI-compatible) หาเลขออร์เดอร์ที่หัวใบ
     → '6910-116' / None (ไม่เจอ หรือ LLM พัง/timeout → log ERROR แล้ว None)"""
-    if not settings.RUNNINGHUB_API_KEY:
-        logger.warning('RUNNINGHUB_API_KEY ว่าง — ข้ามการอ่านรูปด้วย LLM')
-        return None
-    try:
-        from openai import OpenAI
-    except ImportError:
-        logger.error('ไม่มี package openai — pip install openai')
+    client = _client()
+    if client is None:
         return None
 
     data_url = 'data:%s;base64,%s' % (mime, base64.b64encode(image_bytes).decode('ascii'))
     try:
-        client = OpenAI(
-            api_key=settings.RUNNINGHUB_API_KEY,
-            base_url=settings.RUNNINGHUB_BASE_URL,
-            timeout=LLM_TIMEOUT,
-            max_retries=0,
-        )
         resp = client.chat.completions.create(
             model=settings.RUNNINGHUB_MODEL,
             temperature=0,
@@ -115,3 +125,123 @@ def read_order_number(image_bytes, mime='image/jpeg'):
     number = parse_order_number(raw)
     logger.info('LLM ตอบ %r → order_number=%s', raw, number)
     return number
+
+
+# ---------------------------------------------------------------------------
+# ขั้น 5 — ถาม-ตอบด้วย tool calling
+# ---------------------------------------------------------------------------
+
+QA_MAX_ROUNDS = 5          # รอบเรียก LLM สูงสุด (วนจนไม่มี tool_call)
+QA_MAX_TOKENS = 1000       # คำตอบยาวกว่าอ่านเลขจากรูป
+QA_TOTAL_DEADLINE = 60     # วินาทีรวมทุกรอบ — reply_token ของ LINE หมดอายุ ~1 นาที
+QA_TOOL_RESULT_MAX = 12000  # ตัดผล tool ที่ยาวเกิน กัน context บวม
+
+THAI_WEEKDAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
+
+
+def qa_system_prompt(today=None):
+    today = today or timezone.localdate()
+    return (
+        'คุณคือผู้ช่วยของร้านพิมพ์เสื้อ ชื่อ "น้องหมอนทอง" ตอบคำถามพนักงานเรื่องใบออร์เดอร์ในกลุ่ม LINE\n'
+        'วันนี้คือวัน%s ที่ %s (เวลาไทย Asia/Bangkok) — ใช้คำนวณ "เมื่อวาน/สัปดาห์นี้/เดือนนี้"\n'
+        'กติกา:\n'
+        '- ตอบภาษาไทย สั้น กระชับ เป็นข้อความธรรมดา ห้ามใช้ markdown (ไม่มี ** # ` หรือตาราง) เพราะ LINE ไม่แสดงผล\n'
+        '- ตอบเฉพาะจากผลของ tool เท่านั้น ห้ามเดาหรือแต่งข้อมูล ถ้ายังไม่ได้เรียก tool ให้เรียกก่อน\n'
+        '- ถ้าผลค้นหาเกิน 10 ใบ ให้บอกจำนวนทั้งหมดแล้วขอเงื่อนไขเพิ่ม (ชื่อลูกค้า/ช่วงวัน/เพจ) แทนการไล่ทั้งหมด\n'
+        '- ถ้าไม่เจอ ให้บอกว่าไม่เจอตรงๆ\n'
+        '- เลขออร์เดอร์รูปแบบ 6910-116 (ปปดด-ลำดับ) · ตัวเลขเงินให้ใส่หน่วยบาท\n'
+        '- เมื่อแสดงหลายใบ ให้ 1 บรรทัดต่อใบ: เลขออร์เดอร์ ชื่องาน จำนวนตัว ขั้นปัจจุบัน'
+    ) % (THAI_WEEKDAYS[today.weekday()], today.strftime('%Y-%m-%d'))
+
+
+def _usage_tuple(resp):
+    usage = getattr(resp, 'usage', None)
+    if usage is None:
+        return (None, None, None)
+    return (getattr(usage, 'prompt_tokens', None),
+            getattr(usage, 'completion_tokens', None),
+            getattr(usage, 'total_tokens', None))
+
+
+def _parse_tool_args(raw):
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw or '{}')
+    except (ValueError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def answer_question(question, history=None, today=None):
+    """ถาม-ตอบด้วย LLM + tools (line_bot.tools) แบบ OpenAI tool calling
+    วนจนกว่า LLM จะไม่เรียก tool (สูงสุด QA_MAX_ROUNDS) · temperature 0 · timeout 20 วิ/รอบ
+    history = list ของ {'role','content'} ก่อนหน้า (จาก line_bot.history)
+    → ข้อความคำตอบ (str) หรือ None เมื่อ LLM พัง/timeout/เกินรอบโดยไม่มีคำตอบ (views ตอบขอโทษ)
+    log ทุกรอบ: คำถาม, tool ที่เรียก+args, จำนวน tokens (INFO)"""
+    from . import tools  # import ที่นี่ กัน import ฝั่ง DB ตอนโหลด module
+
+    client = _client()
+    if client is None:
+        return None
+
+    logger.info('QA คำถาม: %r (history %d ข้อความ)', question, len(history or []))
+    messages = [{'role': 'system', 'content': qa_system_prompt(today)}]
+    messages.extend(history or [])
+    messages.append({'role': 'user', 'content': question})
+
+    started = time.monotonic()
+    last_content = None
+    for round_no in range(1, QA_MAX_ROUNDS + 1):
+        if time.monotonic() - started > QA_TOTAL_DEADLINE:
+            logger.warning('QA เกินเวลารวม %ds ที่รอบ %d', QA_TOTAL_DEADLINE, round_no)
+            break
+        try:
+            resp = client.chat.completions.create(
+                model=settings.RUNNINGHUB_MODEL,
+                temperature=0,
+                max_tokens=QA_MAX_TOKENS,
+                extra_body=LLM_EXTRA_BODY,
+                tools=tools.TOOL_SCHEMAS,
+                tool_choice='auto',
+                messages=messages,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception('QA เรียก LLM รอบ %d ไม่สำเร็จ', round_no)
+            return None
+
+        msg = resp.choices[0].message
+        tool_calls = list(getattr(msg, 'tool_calls', None) or [])
+        content = (getattr(msg, 'content', None) or '').strip()
+        prompt_t, completion_t, total_t = _usage_tuple(resp)
+        logger.info('QA รอบ %d: tool_calls=%d tokens prompt=%s completion=%s total=%s',
+                    round_no, len(tool_calls), prompt_t, completion_t, total_t)
+
+        if not tool_calls:
+            if content:
+                logger.info('QA คำตอบ: %r', content)
+                return content
+            logger.warning('QA รอบ %d ไม่มีทั้ง tool_call และ content', round_no)
+            return None
+
+        last_content = content or last_content
+        messages.append({
+            'role': 'assistant',
+            'content': content,
+            'tool_calls': [{
+                'id': tc.id,
+                'type': 'function',
+                'function': {'name': tc.function.name, 'arguments': tc.function.arguments or '{}'},
+            } for tc in tool_calls],
+        })
+        for tc in tool_calls:
+            args = _parse_tool_args(tc.function.arguments)
+            logger.info('QA tool %s args=%s', tc.function.name, json.dumps(args, ensure_ascii=False))
+            result = tools.run_tool(tc.function.name, args)
+            payload = json.dumps(result, ensure_ascii=False, default=str)
+            if len(payload) > QA_TOOL_RESULT_MAX:
+                payload = payload[:QA_TOOL_RESULT_MAX] + '…(ตัด)'
+            messages.append({'role': 'tool', 'tool_call_id': tc.id, 'content': payload})
+
+    logger.warning('QA ครบ %d รอบแล้วยังไม่ได้คำตอบสุดท้าย', QA_MAX_ROUNDS)
+    return last_content or None
