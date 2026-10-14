@@ -58,15 +58,24 @@ def format_done_summary(order):
 
 
 def process_order_number(order_number, note=''):
-    """เลขที่อ่านได้จากรูป → ข้อความตอบกลับ (ไม่มี prefix mention)
+    """เลขออร์เดอร์ 1 ใบ → ข้อความสรุปของใบนั้น (ไม่มี prefix mention)
     - ไม่พบ → "อ่านได้เลข {n} แต่ไม่พบในระบบ"
-    - ติ๊กรีด+แพ็คไว้แล้ว → "{n} รีด+แพ็คแล้วอยู่แล้ว"
+    - ติ๊กรีด+แพ็คไว้แล้ว → "{n} ติ๊กแล้วอยู่แล้ว (รีด+แพ็ค)"
     - อื่น → ติ๊กขั้นรีด+แพ็ค + สรุปใบ"""
     order = find_order(order_number)
     if order is None:
         logger.info('อ่านได้เลข %s แต่ไม่พบในระบบ', order_number)
         return 'อ่านได้เลข %s แต่ไม่พบในระบบ' % order_number
     if is_pack_done(order):
-        return '%s รีด+แพ็คแล้วอยู่แล้ว' % order.order_number
+        return '%s ติ๊กแล้วอยู่แล้ว (รีด+แพ็ค)' % order.order_number
     mark_done(order, note=note)
     return format_done_summary(order)
+
+
+SEPARATOR = '──────────'
+
+
+def process_order_numbers(order_numbers, note=''):
+    """หลายใบ → ข้อความเดียว: สรุปต่อใบ format เดิม คั่นด้วยเส้น (เรียงตามลำดับที่ส่งมา)"""
+    parts = [process_order_number(n, note=note) for n in order_numbers]
+    return ('\n%s\n' % SEPARATOR).join(parts)

@@ -125,6 +125,17 @@ else:
         }
     }
 
+# --- Cache ---
+# DatabaseCache แทน LocMem (default) เพราะ gunicorn รัน 2 worker — บอท LINE เก็บ "รายการรอ"
+# (รูปใบงานที่อ่านเลขได้ รอข้อความยืนยัน) ไว้ใน cache ต้องเห็นกันข้าม worker.
+# ตารางสร้างด้วย `manage.py createcachetable` (ไม่ใช่ migration) — ต้องรันบน VPS ตอน deploy
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+    }
+}
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},

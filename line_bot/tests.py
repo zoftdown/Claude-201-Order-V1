@@ -6,6 +6,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -14,7 +15,7 @@ from orders import views as views_orders
 from orders.models import Order, OrderItem, ShirtVariant, StageLog
 
 from . import orders as bot_orders
-from . import services, views
+from . import pending, services, views
 
 SECRET = b'test-secret'
 
@@ -147,10 +148,12 @@ class LineWebhookBasicTests(WebhookBase):
 
 
 class ImageOrderFlowTests(WebhookBase):
-    """ข้อ 3 c/d/e/f — mock ดาวน์โหลดรูป + LLM ไม่ยิง network"""
+    """flow รูป → รายการรอ → ข้อความยืนยัน — mock ดาวน์โหลดรูป + LLM ไม่ยิง network"""
 
     def setUp(self):
         super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
         dl = mock.patch.object(services, 'download_line_image', return_value=b'img')
         dl.start()
         self.addCleanup(dl.stop)
@@ -158,8 +161,19 @@ class ImageOrderFlowTests(WebhookBase):
         self.llm_mock = self.llm.start()
         self.addCleanup(self.llm.stop)
 
-    def _post_image(self):
-        resp = self._post({'destination': 'x', 'events': [_image_event()]})
+    def _post_image(self, number=None, **src):
+        if number is not None:
+            self.llm_mock.return_value = number
+        ev = _image_event()
+        ev['source'].update(src)
+        resp = self._post({'destination': 'x', 'events': [ev]})
+        self.assertEqual(resp.status_code, 200)
+        return resp
+
+    def _post_text(self, text, **src):
+        ev = _text_event(text)
+        ev['source'].update(src)
+        resp = self._post({'destination': 'x', 'events': [ev]})
         self.assertEqual(resp.status_code, 200)
         return resp
 
@@ -167,6 +181,7 @@ class ImageOrderFlowTests(WebhookBase):
         self.llm_mock.return_value = None
         self._post_image()
         self.reply_mock.assert_not_called()
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
 
     def test_download_failed_silent(self):
         with mock.patch.object(services, 'download_line_image', return_value=None):
@@ -174,8 +189,123 @@ class ImageOrderFlowTests(WebhookBase):
         self.reply_mock.assert_not_called()
         self.llm_mock.assert_not_called()
 
+    def test_image_alone_does_not_tick(self):
+        """รูปอย่างเดียว ไม่มีข้อความยืนยัน → ไม่ reply ไม่ติ๊ก แค่เข้ารายการรอ"""
+        order = make_order()
+        self._post_image()
+        self.reply_mock.assert_not_called()
+        order.refresh_from_db()
+        self.assertIsNone(order.packed_at)
+        self.assertEqual(StageLog.objects.count(), 0)
+        self.assertEqual(pending.get_pending('G1', 'U123'), ['6910-116'])
+
+    def test_three_images_then_confirm_one_reply(self):
+        """รูป 3 ใบ (ใบหนึ่งส่งซ้ำ) + "ครบครับ" → ติ๊ก 3 ใบ สรุปข้อความเดียว mention ครั้งเดียว"""
+        orders = [make_order('6910-1', qtys=(1,)), make_order('6910-2', qtys=(2,)),
+                  make_order('6910-3', qtys=(3,))]
+        for n in ('6910-1', '6910-2', '6910-1', '6910-3'):
+            self._post_image(n)
+        self.reply_mock.assert_not_called()
+        self._post_text('ครบครับ')
+        msg = self._replied_message()
+        self.assertEqual(msg.text.count('@แอดมิน'), 1)
+        self.assertEqual(msg.text.count('✅'), 3)
+        self.assertEqual(msg.text.count(bot_orders.SEPARATOR), 2)
+        self.assertLess(msg.text.index('6910-1 '), msg.text.index('6910-2 '))
+        self.assertLess(msg.text.index('6910-2 '), msg.text.index('6910-3 '))
+        for o in orders:
+            o.refresh_from_db()
+            self.assertIsNotNone(o.packed_at)
+        self.assertEqual(StageLog.objects.filter(action='pack_done').count(), 3)
+        self.assertIn('ยืนยันจากข้อความ', StageLog.objects.first().note)
+        # รายการรอถูกล้าง — พิมพ์ "ครบ" ซ้ำไม่ตอบอะไรอีก
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
+        self.reply_mock.reset_mock()
+        self._post_text('ครบ')
+        self.reply_mock.assert_not_called()
+
+    def test_confirm_word_in_sentence(self):
+        make_order()
+        self._post_image()
+        self._post_text('อันนี้เสร็จแล้วนะ')
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
+
+    def test_other_user_confirm_does_not_tick(self):
+        """คนละคนพิมพ์ครบ → ไม่ติ๊กของอีกคน และรายการรอของคนเดิมยังอยู่"""
+        order = make_order()
+        self._post_image()
+        self._post_text('ครบครับ', userId='U999')
+        self.reply_mock.assert_not_called()
+        order.refresh_from_db()
+        self.assertIsNone(order.packed_at)
+        self.assertEqual(pending.get_pending('G1', 'U123'), ['6910-116'])
+
+    def test_other_group_confirm_does_not_tick(self):
+        make_order()
+        self._post_image()
+        self._post_text('ครบครับ', groupId='G2')
+        self.reply_mock.assert_not_called()
+        self.assertEqual(pending.get_pending('G1', 'U123'), ['6910-116'])
+
+    def test_pending_expires(self):
+        """รายการรอหมดอายุ (10 นาที) → "ครบ" ไม่ติ๊กอะไร"""
+        order = make_order()
+        with mock.patch.object(pending, 'PENDING_TTL', 0):
+            self._post_image()
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
+        self._post_text('ครบครับ')
+        self.reply_mock.assert_not_called()
+        order.refresh_from_db()
+        self.assertIsNone(order.packed_at)
+
+    def test_cancel_clears_pending(self):
+        order = make_order()
+        self._post_image()
+        self._post_text('บอท ยกเลิก')
+        self.assertEqual(self._replied_message().text, 'ยกเลิกแล้ว')
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
+        self.reply_mock.reset_mock()
+        self._post_text('ครบครับ')
+        self.reply_mock.assert_not_called()
+        order.refresh_from_db()
+        self.assertIsNone(order.packed_at)
+
+    def test_direct_command_without_image(self):
+        """"บอท เสร็จ 6910-171 6910-172" → ติ๊กทันที หลายเลขคั่นช่องว่าง"""
+        a, b = make_order('6910-171', qtys=(1,)), make_order('6910-172', qtys=(2,))
+        self._post_text('บอท เสร็จ 6910-171 6910-172')
+        msg = self._replied_message()
+        self.assertEqual(msg.text.count('✅'), 2)
+        self.assertEqual(msg.text.count(bot_orders.SEPARATOR), 1)
+        for o in (a, b):
+            o.refresh_from_db()
+            self.assertIsNotNone(o.packed_at)
+        self.assertIn('บอท เสร็จ', StageLog.objects.first().note)
+        self.llm_mock.assert_not_called()
+
+    def test_direct_command_not_found_and_already(self):
+        order = make_order('6910-5', qtys=(1,))
+        Order.objects.filter(pk=order.pk).update(packed_at=timezone.now())
+        self._post_text('บอท เสร็จ 6910-5 6910-6')
+        msg = self._replied_message()
+        self.assertEqual(msg.text, '\n'.join([
+            '@แอดมิน 6910-5 ติ๊กแล้วอยู่แล้ว (รีด+แพ็ค)',
+            bot_orders.SEPARATOR,
+            'อ่านได้เลข 6910-6 แต่ไม่พบในระบบ',
+        ]))
+        self.assertEqual(StageLog.objects.count(), 0)
+
+    def test_direct_command_does_not_consume_pending(self):
+        """คำสั่งตรงไม่แตะรายการรอของคนนั้น"""
+        make_order('6910-1', qtys=(1,))
+        make_order('6910-2', qtys=(1,))
+        self._post_image('6910-1')
+        self._post_text('บอท เสร็จ 6910-2')
+        self.assertEqual(pending.get_pending('G1', 'U123'), ['6910-1'])
+
     def test_d_not_found(self):
         self._post_image()
+        self._post_text('ครบ')
         msg = self._replied_message()
         self.assertEqual(msg.text, '@แอดมิน อ่านได้เลข 6910-116 แต่ไม่พบในระบบ')
         self.assertEqual(StageLog.objects.count(), 0)
@@ -186,7 +316,9 @@ class ImageOrderFlowTests(WebhookBase):
         packed = timezone.now() - timedelta(days=1)
         Order.objects.filter(pk=order.pk).update(packed_at=packed)
         self._post_image()
-        self.assertEqual(self._replied_message().text, '@แอดมิน 6910-116 รีด+แพ็คแล้วอยู่แล้ว')
+        self._post_text('เสร็จ')
+        self.assertEqual(self._replied_message().text,
+                         '@แอดมิน 6910-116 ติ๊กแล้วอยู่แล้ว (รีด+แพ็ค)')
         self.assertEqual(StageLog.objects.count(), 0)
         order.refresh_from_db()
         self.assertEqual(order.packed_at, packed)
@@ -195,12 +327,14 @@ class ImageOrderFlowTests(WebhookBase):
         """status เป็น "เสร็จแล้ว" ไม่ใช่ตัวตัดสิน — ดูที่ขั้นรีด+แพ็คเท่านั้น"""
         make_order(status='เสร็จแล้ว')
         self._post_image()
+        self._post_text('ครบ')
         self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
         self.assertEqual(StageLog.objects.filter(action='pack_done').count(), 1)
 
     def test_f_mark_pack_done_and_summary(self):
         order = make_order()
         self._post_image()
+        self._post_text('ครบครับ')
         order.refresh_from_db()
         # ติ๊กขั้นรีด+แพ็คผ่านกลไกเดียวกับปุ่มแผนกแพ็ค — status ไม่ถูกแตะ
         self.assertIsNotNone(order.packed_at)
@@ -224,6 +358,7 @@ class ImageOrderFlowTests(WebhookBase):
     def test_f_mention_admins_textv2(self):
         make_order()
         self._post_image()
+        self._post_text('ครบครับ')
         msg = self._replied_message()
         self.assertIsInstance(msg, views.TextMessageV2)
         self.assertTrue(msg.text.startswith('{admin0} {admin1} ✅ 6910-116'))
@@ -320,7 +455,7 @@ class BotOrdersTests(TestCase):
         log = StageLog.objects.get(order=order)
         self.assertEqual((log.department, log.action, log.note), ('pack', 'pack_done', ''))
         self.assertEqual(bot_orders.process_order_number('6910-116'),
-                         '6910-116 รีด+แพ็คแล้วอยู่แล้ว')
+                         '6910-116 ติ๊กแล้วอยู่แล้ว (รีด+แพ็ค)')
         self.assertEqual(StageLog.objects.count(), 1)
 
     def test_money_format(self):
