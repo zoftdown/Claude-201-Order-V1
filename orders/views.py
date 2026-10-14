@@ -1503,6 +1503,19 @@ def _completed_for_dept(order, dept_slug):
     return completed
 
 
+def mark_pack_done(order, note='', now=None):
+    """ติ๊กขั้น "รีด+แพ็ค" = เซ็ต packed_at + StageLog('pack','pack_done') — กลไกเดียว
+    ที่ใช้ร่วมกันระหว่างปุ่มแผนกแพ็ค (_apply_action) และบอท LINE (line_bot.orders).
+    คืน False ถ้าติ๊กไว้แล้ว (packed_at มีค่า) โดยไม่เขียนอะไร.
+    note = ใครเป็นคนบันทึก (บอทใส่ "บอท LINE ..."; ปุ่มเว็บเว้นว่างตามเดิม)."""
+    if order.packed_at:
+        return False
+    order.packed_at = now or timezone.now()
+    order.save(update_fields=['packed_at'])
+    StageLog.objects.create(order=order, department='pack', action='pack_done', note=note)
+    return True
+
+
 def _apply_action(order, dept_slug, action, request):
     """Mutate order based on action. Returns (success, message)."""
     now = timezone.now()
@@ -1577,11 +1590,8 @@ def _apply_action(order, dept_slug, action, request):
         return True, f'✓ ส่งให้คนเย็บแล้ว ({names})'
 
     if dept_slug == 'pack' and action == 'pack_done':
-        if order.packed_at:
+        if not mark_pack_done(order, now=now):
             return False, 'รายการนี้ถูกบันทึกไปแล้ว'
-        order.packed_at = now
-        order.save(update_fields=['packed_at'])
-        StageLog.objects.create(order=order, department='pack', action='pack_done')
         return True, '✓ บันทึก "รีดแพ็คแล้ว" แล้ว'
 
     if dept_slug == 'pack' and action == 'pack_shipped':

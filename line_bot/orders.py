@@ -1,20 +1,20 @@
 """
-orders — ฝั่งข้อมูลออร์เดอร์ของบอท: ค้นใบงาน / เปลี่ยนสถานะเป็น "เสร็จแล้ว" / จัดข้อความสรุป
+orders — ฝั่งข้อมูลออร์เดอร์ของบอท: ค้นใบงาน / ติ๊กขั้น "รีด+แพ็ค" / จัดข้อความสรุป
 
-เปลี่ยนสถานะผ่าน StageLog (department='linebot') เหมือน dept dashboard
-เพื่อให้ประวัติการเปลี่ยนสถานะครบ — ไม่มี endpoint/model ใหม่
+ติ๊กขั้นผ่าน `orders.views.mark_pack_done` ตัวเดียวกับปุ่ม "รีดแพ็คแล้ว" ของแผนกแพ็ค
+(เซ็ต `Order.packed_at` + `StageLog(department='pack', action='pack_done')`) — หน้า detail
+แสดงแถบความคืบหน้าจาก timestamp เหล่านี้ จึงเห็นว่าบอททำอะไร. ไม่แตะ `Order.status`.
 """
 import logging
 
 from django.db import transaction
 
-from orders.models import Order, StageLog
+from orders.models import Order
+from orders.views import mark_pack_done
 
 logger = logging.getLogger(__name__)
 
-DONE_STATUSES = ('เสร็จแล้ว', 'ส่งแล้ว')
-LINEBOT_DEPARTMENT = 'linebot'
-ACTION_MARK_DONE = 'status_done'
+BOT_NOTE = 'บอท LINE อ่านใบงานจากรูป'
 
 
 def find_order(order_number):
@@ -22,16 +22,20 @@ def find_order(order_number):
             .prefetch_related('items__variants').first())
 
 
+def is_pack_done(order):
+    """ขั้น "รีด+แพ็ค" ติ๊กแล้วหรือยัง — ใช้ packed_at ตัวเดียวกับที่ปุ่มเว็บ/timeline ใช้
+    (ใบเก่าที่ backfill มี packed_at แต่ไม่มีแถว StageLog จึงเช็คจาก StageLog อย่างเดียวไม่ได้)"""
+    return order.packed_at is not None
+
+
 def mark_done(order, note=''):
-    """เปลี่ยน status → เสร็จแล้ว + เขียน StageLog (กลไกเดิมของระบบ)"""
+    """ติ๊กขั้น "รีด+แพ็ค" ด้วยกลไกเดียวกับหน้าเว็บ (packed_at + StageLog pack_done) พร้อม
+    หมายเหตุว่ามาจากบอท LINE. คืน False ถ้าติ๊กไว้แล้ว."""
     with transaction.atomic():
-        order.status = 'เสร็จแล้ว'
-        order.save(update_fields=['status', 'updated_at'])
-        StageLog.objects.create(
-            order=order, department=LINEBOT_DEPARTMENT, action=ACTION_MARK_DONE,
-            note=note or 'บอท LINE อ่านใบงานจากรูป',
-        )
-    logger.info('ออร์เดอร์ %s → เสร็จแล้ว (ผ่านบอท LINE)', order.order_number)
+        ok = mark_pack_done(order, note=note or BOT_NOTE)
+    if ok:
+        logger.info('ออร์เดอร์ %s → ติ๊ก "รีด+แพ็ค" (ผ่านบอท LINE)', order.order_number)
+    return ok
 
 
 def _money(value):
@@ -56,13 +60,13 @@ def format_done_summary(order):
 def process_order_number(order_number, note=''):
     """เลขที่อ่านได้จากรูป → ข้อความตอบกลับ (ไม่มี prefix mention)
     - ไม่พบ → "อ่านได้เลข {n} แต่ไม่พบในระบบ"
-    - เสร็จ/ส่งแล้วอยู่แล้ว → "{n} เสร็จอยู่แล้ว"
-    - อื่น → เปลี่ยนเป็นเสร็จแล้ว + สรุปใบ"""
+    - ติ๊กรีด+แพ็คไว้แล้ว → "{n} รีด+แพ็คแล้วอยู่แล้ว"
+    - อื่น → ติ๊กขั้นรีด+แพ็ค + สรุปใบ"""
     order = find_order(order_number)
     if order is None:
         logger.info('อ่านได้เลข %s แต่ไม่พบในระบบ', order_number)
         return 'อ่านได้เลข %s แต่ไม่พบในระบบ' % order_number
-    if order.status in DONE_STATUSES:
-        return '%s เสร็จอยู่แล้ว' % order.order_number
+    if is_pack_done(order):
+        return '%s รีด+แพ็คแล้วอยู่แล้ว' % order.order_number
     mark_done(order, note=note)
     return format_done_summary(order)

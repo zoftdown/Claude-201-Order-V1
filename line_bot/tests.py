@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+from datetime import timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -9,6 +10,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from orders import views as views_orders
 from orders.models import Order, OrderItem, ShirtVariant, StageLog
 
 from . import orders as bot_orders
@@ -178,24 +180,36 @@ class ImageOrderFlowTests(WebhookBase):
         self.assertEqual(msg.text, '@แอดมิน อ่านได้เลข 6910-116 แต่ไม่พบในระบบ')
         self.assertEqual(StageLog.objects.count(), 0)
 
-    def test_e_already_done(self):
-        for status in ('เสร็จแล้ว', 'ส่งแล้ว'):
-            with self.subTest(status=status):
-                StageLog.objects.all().delete()
-                Order.objects.all().delete()
-                self.reply_mock.reset_mock()
-                make_order(status=status)
-                self._post_image()
-                self.assertEqual(self._replied_message().text, '@แอดมิน 6910-116 เสร็จอยู่แล้ว')
-                self.assertEqual(StageLog.objects.count(), 0)
+    def test_e_already_packed(self):
+        """ติ๊กรีด+แพ็คไว้แล้ว (packed_at มีค่า — รวมใบเก่าที่ backfill ไม่มี StageLog) → ไม่ติ๊กซ้ำ"""
+        order = make_order()
+        packed = timezone.now() - timedelta(days=1)
+        Order.objects.filter(pk=order.pk).update(packed_at=packed)
+        self._post_image()
+        self.assertEqual(self._replied_message().text, '@แอดมิน 6910-116 รีด+แพ็คแล้วอยู่แล้ว')
+        self.assertEqual(StageLog.objects.count(), 0)
+        order.refresh_from_db()
+        self.assertEqual(order.packed_at, packed)
 
-    def test_f_mark_done_and_summary(self):
+    def test_e_status_done_but_not_packed_still_ticks(self):
+        """status เป็น "เสร็จแล้ว" ไม่ใช่ตัวตัดสิน — ดูที่ขั้นรีด+แพ็คเท่านั้น"""
+        make_order(status='เสร็จแล้ว')
+        self._post_image()
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
+        self.assertEqual(StageLog.objects.filter(action='pack_done').count(), 1)
+
+    def test_f_mark_pack_done_and_summary(self):
         order = make_order()
         self._post_image()
         order.refresh_from_db()
-        self.assertEqual(order.status, 'เสร็จแล้ว')
+        # ติ๊กขั้นรีด+แพ็คผ่านกลไกเดียวกับปุ่มแผนกแพ็ค — status ไม่ถูกแตะ
+        self.assertIsNotNone(order.packed_at)
+        self.assertEqual(order.status, 'รอดำเนินการ')
+        self.assertIsNone(order.shipped_at)
+        self.assertIsNone(order.awaiting_pickup_at)
         log = StageLog.objects.get(order=order)
-        self.assertEqual((log.department, log.action), ('linebot', 'status_done'))
+        self.assertEqual((log.department, log.action), ('pack', 'pack_done'))
+        self.assertIn('บอท LINE', log.note)
         self.assertIn('G1', log.note)
         msg = self._replied_message()
         self.assertEqual(msg.text, '\n'.join([
@@ -286,6 +300,28 @@ class BotOrdersTests(TestCase):
     def test_process_unknown(self):
         self.assertEqual(bot_orders.process_order_number('6901-1'),
                          'อ่านได้เลข 6901-1 แต่ไม่พบในระบบ')
+
+    def test_detail_timeline_shows_pack_done(self):
+        """สิ่งที่ผู้ใช้เห็น: แถบความคืบหน้าหน้า detail ติ๊ก "รีด+แพ็ค" หลังบอททำงาน"""
+        order = make_order()
+        bot_orders.process_order_number('6910-116')
+        order.refresh_from_db()
+        timeline = {s['label']: s['state'] for s in views_orders._build_detail_timeline(order)}
+        self.assertEqual(timeline['รีด+แพ็ค'], 'done')
+        # ขั้นก่อนหน้าไม่ถูกแตะ — ขั้นว่างแรก (พิมพ์) ยังเป็น current ตาม logic เดิมของหน้า detail
+        self.assertEqual(timeline['พิมพ์'], 'current')
+        self.assertEqual(timeline['ส่งของ'], 'pending')
+
+    def test_web_pack_button_uses_same_helper(self):
+        """ปุ่ม "รีดแพ็คแล้ว" ของแผนกแพ็คกับบอทใช้ mark_pack_done ตัวเดียว → log หน้าตาเดียวกัน"""
+        order = make_order()
+        ok, _ = views_orders._apply_action(order, 'pack', 'pack_done', None)
+        self.assertTrue(ok)
+        log = StageLog.objects.get(order=order)
+        self.assertEqual((log.department, log.action, log.note), ('pack', 'pack_done', ''))
+        self.assertEqual(bot_orders.process_order_number('6910-116'),
+                         '6910-116 รีด+แพ็คแล้วอยู่แล้ว')
+        self.assertEqual(StageLog.objects.count(), 1)
 
     def test_money_format(self):
         self.assertEqual(bot_orders._money(Decimal('1500.00')), '1,500')
