@@ -38,6 +38,16 @@ STATS_PIN = os.environ.get('STATS_PIN', '265424')
 # ทั้งคู่ได้จาก LINE Developers console > Messaging API; ว่าง = ลายเซ็นไม่ผ่าน/ไม่ reply
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET', '')
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
+# userId ของแอดมินที่บอทจะ mention ตอนแจ้งผลอ่านใบงาน (comma-separated; ว่าง = ใช้ "@แอดมิน" ธรรมดา)
+# เก็บ userId ได้จาก log 'line_bot' (INFO) ทุก event จะพิมพ์ groupId/userId ของผู้ส่ง
+LINE_ADMIN_USER_IDS = [
+    x.strip() for x in os.environ.get('LINE_ADMIN_USER_IDS', '').split(',') if x.strip()
+]
+
+# LLM อ่านเลขออร์เดอร์จากรูปใบงาน (RunningHub, OpenAI-compatible API) — ว่าง = ปิดการอ่านรูป
+RUNNINGHUB_API_KEY = os.environ.get('RUNNINGHUB_API_KEY', '')
+RUNNINGHUB_BASE_URL = os.environ.get('RUNNINGHUB_BASE_URL', 'https://llm.runninghub.ai/v1')
+RUNNINGHUB_MODEL = os.environ.get('RUNNINGHUB_MODEL', 'qwen/qwen3.8-flash-next')
 
 # --- Authentication redirects ---
 LOGIN_URL = 'login'
