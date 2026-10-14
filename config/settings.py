@@ -43,6 +43,12 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '')
 LINE_ADMIN_USER_IDS = [
     x.strip() for x in os.environ.get('LINE_ADMIN_USER_IDS', '').split(',') if x.strip()
 ]
+# groupId ของกลุ่ม LINE ที่อนุญาตให้บอททำงาน (comma-separated) — **fail-closed**:
+# ว่าง = บล็อกทุกกลุ่ม (log ERROR ตอน start ใน line_bot/apps.py) · กลุ่มนอกลิสต์ = เงียบ, JoinEvent → ออกจากกลุ่มทันที
+# 1:1 chat (source.type=user) และ room ไม่ประมวลผลเสมอ · เก็บ groupId ได้จาก log 'line_bot' เหมือน userId
+LINE_ALLOWED_GROUP_IDS = [
+    x.strip() for x in os.environ.get('LINE_ALLOWED_GROUP_IDS', '').split(',') if x.strip()
+]
 
 # LLM อ่านเลขออร์เดอร์จากรูปใบงาน (RunningHub, OpenAI-compatible API) — ว่าง = ปิดการอ่านรูป
 RUNNINGHUB_API_KEY = os.environ.get('RUNNINGHUB_API_KEY', '')

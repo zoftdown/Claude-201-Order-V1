@@ -16,6 +16,7 @@ from orders.models import Order, OrderItem, ShirtVariant, StageLog
 
 from . import orders as bot_orders
 from . import pending, services, views
+from .apps import check_allowed_groups_configured
 
 SECRET = b'test-secret'
 
@@ -64,7 +65,10 @@ def make_order(number='6910-116', status='รอดำเนินการ', qt
     return order
 
 
+@override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
 class WebhookBase(TestCase):
+    """กลุ่ม G1 = กลุ่มที่อนุญาต (guard fail-closed — ไม่ตั้งจะเงียบทุก event; ดู GroupGuardTests)"""
+
     def setUp(self):
         self.url = reverse('linebot_webhook')
         p = mock.patch.object(views.handler.parser.signature_validator, 'channel_secret', SECRET)
@@ -240,6 +244,7 @@ class ImageOrderFlowTests(WebhookBase):
         self.assertIsNone(order.packed_at)
         self.assertEqual(pending.get_pending('G1', 'U123'), ['6910-116'])
 
+    @override_settings(LINE_ALLOWED_GROUP_IDS=['G1', 'G2'])
     def test_other_group_confirm_does_not_tick(self):
         make_order()
         self._post_image()
@@ -759,3 +764,117 @@ class QaToolsTests(TestCase):
         for name in tools.TOOL_NAMES:
             self.assertTrue(callable(getattr(tools, name)))
         self.assertNotIn('profit', ' '.join(tools.TOOL_NAMES))
+
+
+def _join_event(**src):
+    source = {'type': 'group', 'groupId': 'G1'}
+    source.update(src)
+    return _event({'type': 'join', 'source': source})
+
+
+class GroupGuardTests(WebhookBase):
+    """guard กลุ่ม (fail-closed): ทำงานเฉพาะ group ที่อยู่ใน LINE_ALLOWED_GROUP_IDS
+    กลุ่มอื่น/1:1/room เงียบ · join กลุ่มแปลก → leave · ลิสต์ว่าง = บล็อกหมด"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.leave_patcher = mock.patch.object(views, '_leave_group')
+        self.leave_mock = self.leave_patcher.start()
+        self.addCleanup(self.leave_patcher.stop)
+
+    def _post_from(self, text, **src):
+        ev = _text_event(text)
+        ev['source'] = src
+        with self.assertLogs('line_bot.views', level='WARNING') as cm:
+            resp = self._post({'destination': 'x', 'events': [ev]})
+        self.assertEqual(resp.status_code, 200)
+        return '\n'.join(cm.output)
+
+    def test_unlisted_group_silent_with_warning(self):
+        log = self._post_from('บอท ping', type='group', groupId='G9', userId='U123')
+        self.reply_mock.assert_not_called()
+        self.assertIn('WARNING', log)
+        self.assertIn('groupId=G9', log)
+
+    def test_unlisted_group_image_not_processed(self):
+        with mock.patch.object(services, 'download_line_image') as dl:
+            ev = _image_event()
+            ev['source']['groupId'] = 'G9'
+            resp = self._post({'destination': 'x', 'events': [ev]})
+        self.assertEqual(resp.status_code, 200)
+        dl.assert_not_called()
+        self.reply_mock.assert_not_called()
+
+    def test_join_unlisted_group_leaves(self):
+        with self.assertLogs('line_bot.views', level='WARNING'):
+            resp = self._post({'destination': 'x', 'events': [_join_event(groupId='G9')]})
+        self.assertEqual(resp.status_code, 200)
+        self.leave_mock.assert_called_once_with('G9')
+        self.reply_mock.assert_not_called()
+
+    def test_join_allowed_group_greets_and_stays(self):
+        resp = self._post({'destination': 'x', 'events': [_join_event()]})
+        self.assertEqual(resp.status_code, 200)
+        self.leave_mock.assert_not_called()
+        self.assertEqual(self._replied_message().text, views.JOIN_GREETING)
+
+    def test_dm_silent(self):
+        self._post_from('บอท ping', type='user', userId='U123')
+        self.reply_mock.assert_not_called()
+
+    def test_room_silent(self):
+        self._post_from('บอท ping', type='room', roomId='R1', userId='U123')
+        self.reply_mock.assert_not_called()
+        self.leave_mock.assert_not_called()
+
+    @override_settings(LINE_ALLOWED_GROUP_IDS=[])
+    def test_empty_allowlist_blocks_everything(self):
+        log = self._post_from('บอท ping', type='group', groupId='G1', userId='U123')
+        self.reply_mock.assert_not_called()
+        self.assertIn('LINE_ALLOWED_GROUP_IDS ว่าง', log)
+
+    @override_settings(LINE_ALLOWED_GROUP_IDS=[])
+    def test_startup_check_logs_error_when_empty(self):
+        with self.assertLogs('line_bot.apps', level='ERROR') as cm:
+            self.assertFalse(check_allowed_groups_configured())
+        self.assertIn('LINE_ALLOWED_GROUP_IDS ว่าง', '\n'.join(cm.output))
+
+    def test_startup_check_ok_when_set(self):
+        self.assertTrue(check_allowed_groups_configured())
+
+    def test_leave_group_calls_api_best_effort(self):
+        self.leave_patcher.stop()
+        self.addCleanup(self.leave_patcher.start)
+        with mock.patch.object(views, 'MessagingApi') as api, \
+                mock.patch.object(views.settings, 'LINE_CHANNEL_ACCESS_TOKEN', 'tok'):
+            views._leave_group('G9')
+            api.return_value.leave_from_group.assert_called_once_with('G9')
+            # API พัง → log ไม่ raise
+            api.return_value.leave_from_group.side_effect = RuntimeError('boom')
+            views._leave_group('G9')
+
+
+class FixThaiSpacingTests(TestCase):
+    """services.fix_thai_spacing — ลบช่องว่างที่ LLM แทรกระหว่างอักษรไทยกับสระ/วรรณยุกต์"""
+
+    def test_space_before_mark_removed(self):
+        self.assertEqual(services.fix_thai_spacing('เสื ้อทีมงาน ส ีแดง'), 'เสื้อทีมงาน สีแดง')
+        self.assertEqual(services.fix_thai_spacing('ชื่ อ คุณเอ'), 'ชื่อ คุณเอ')  # ช่องว่างหลัง อ (พยัญชนะ) คงไว้
+
+    def test_space_after_mark_before_thai_removed(self):
+        self.assertEqual(services.fix_thai_spacing('ที่ นี่ มี งาน'), 'ที่นี่มีงาน')  # มี ลงท้ายสระอี → ช่องว่างถัดมาก็ถูกลบ
+        self.assertEqual(services.fix_thai_spacing('สี\tแดง'), 'สีแดง')  # tab ก็นับ
+
+    def test_legit_spacing_untouched(self):
+        text = 'วันนี้ 2 ใบ\nรวม 10 ตัว · 6910-116 เสื้อทีมงาน 8 ตัว ขั้นพิมพ์\nยอด 1,500 บาท'
+        self.assertEqual(services.fix_thai_spacing(text), text)
+        self.assertEqual(services.fix_thai_spacing(''), '')
+        self.assertIsNone(services.fix_thai_spacing(None))
+
+    @override_settings(RUNNINGHUB_API_KEY='k')
+    def test_answer_question_applies_fix(self):
+        client = _fake_llm(_llm_response(content='ชื่ องาน เสื้ อทีม'))
+        with mock.patch('openai.OpenAI', return_value=client):
+            self.assertEqual(services.answer_question('งานอะไร'), 'ชื่องาน เสื้อทีม')

@@ -150,8 +150,29 @@ def qa_system_prompt(today=None):
         '- ถ้าผลค้นหาเกิน 10 ใบ ให้บอกจำนวนทั้งหมดแล้วขอเงื่อนไขเพิ่ม (ชื่อลูกค้า/ช่วงวัน/เพจ) แทนการไล่ทั้งหมด\n'
         '- ถ้าไม่เจอ ให้บอกว่าไม่เจอตรงๆ\n'
         '- เลขออร์เดอร์รูปแบบ 6910-116 (ปปดด-ลำดับ) · ตัวเลขเงินให้ใส่หน่วยบาท\n'
-        '- เมื่อแสดงหลายใบ ให้ 1 บรรทัดต่อใบ: เลขออร์เดอร์ ชื่องาน จำนวนตัว ขั้นปัจจุบัน'
+        '- เมื่อแสดงหลายใบ ให้ 1 บรรทัดต่อใบ: เลขออร์เดอร์ ชื่องาน จำนวนตัว ขั้นปัจจุบัน\n'
+        '- คำถามเชิงจำนวน/ยอดรวม (เช่น "กี่ตัว" "กี่ใบ" "เท่าไหร่") ให้ตอบตัวเลขสรุป 1-2 บรรทัด '
+        'ไม่ต้องแจกแจงรายใบ เว้นแต่ถูกถามว่า "มีอะไรบ้าง" หรือขอ "รายการ"\n'
+        '- ชื่องาน ชื่อลูกค้า และเลขออร์เดอร์ ต้องคัดลอกตรงจากผล tool ทุกตัวอักษร '
+        'ห้ามแก้สะกด ห้ามย่อ ห้ามแปล ห้ามเติมหรือตัดช่องว่าง'
     ) % (THAI_WEEKDAYS[today.weekday()], today.strftime('%Y-%m-%d'))
+
+
+# สระบน/ล่าง + วรรณยุกต์ (combining marks) ที่ LLM บางตัวแทรกช่องว่างคั่นจากพยัญชนะ เช่น "เสื้ อ" / "ชื่ อ"
+_THAI_MARKS = '\u0e31\u0e34-\u0e3a\u0e47-\u0e4e'
+_THAI_ANY = '\u0e00-\u0e7f'
+# ช่องว่าง (space/tab ไม่รวม newline) ระหว่าง อักษรไทย → mark  หรือ  mark → อักษรไทย
+_THAI_SPACE_BEFORE_MARK_RE = re.compile('(?<=[%s])[ \t]+(?=[%s])' % (_THAI_ANY, _THAI_MARKS))
+_THAI_SPACE_AFTER_MARK_RE = re.compile('(?<=[%s])[ \t]+(?=[%s])' % (_THAI_MARKS, _THAI_ANY))
+
+
+def fix_thai_spacing(text):
+    """ลบช่องว่างที่ LLM แทรกระหว่างอักษรไทยกับสระ/วรรณยุกต์ (ติดกับ U+0E31, U+0E34–3A, U+0E47–4E
+    ทั้งสองข้าง) — "เสื้ อ" → "เสื้อ", "ที่ นี่" → "ที่นี่" · ไม่แตะช่องว่างที่ติดตัวเลข/ละติน/ขึ้นบรรทัดใหม่"""
+    if not text:
+        return text
+    text = _THAI_SPACE_BEFORE_MARK_RE.sub('', text)
+    return _THAI_SPACE_AFTER_MARK_RE.sub('', text)
 
 
 def _usage_tuple(resp):
@@ -220,7 +241,7 @@ def answer_question(question, history=None, today=None):
         if not tool_calls:
             if content:
                 logger.info('QA คำตอบ: %r', content)
-                return content
+                return fix_thai_spacing(content)
             logger.warning('QA รอบ %d ไม่มีทั้ง tool_call และ content', round_no)
             return None
 
@@ -244,4 +265,4 @@ def answer_question(question, history=None, today=None):
             messages.append({'role': 'tool', 'tool_call_id': tc.id, 'content': payload})
 
     logger.warning('QA ครบ %d รอบแล้วยังไม่ได้คำตอบสุดท้าย', QA_MAX_ROUNDS)
-    return last_content or None
+    return fix_thai_spacing(last_content) if last_content else None

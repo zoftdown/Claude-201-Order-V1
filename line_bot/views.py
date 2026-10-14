@@ -17,7 +17,12 @@ views.py ทำแค่ route event:
             LLM พัง/timeout → "ขอโทษ ตอบไม่ได้ตอนนี้" ไม่เงียบ · ข้อความอื่นเงียบ
           ลำดับความสำคัญ: คำสั่งเดิม > ยืนยันรายการรอ (เฉพาะคนที่มีรายการรออยู่) > ถาม-ตอบ
 - join  → ทักทาย
-- ทุก event log groupId/userId ของผู้ส่ง (INFO) ไว้เก็บ id ใส่ LINE_ADMIN_USER_IDS
+- ทุก event log groupId/userId ของผู้ส่ง (INFO) ไว้เก็บ id ใส่ LINE_ADMIN_USER_IDS / LINE_ALLOWED_GROUP_IDS
+
+- **guard กลุ่ม (fail-closed):** ทุก handler เรียก `_allowed(event)` ก่อน — ทำงานเฉพาะ source.type=group
+  ที่ groupId อยู่ใน settings.LINE_ALLOWED_GROUP_IDS · กลุ่มอื่น/1:1 chat (user)/room → ไม่ตอบ
+  ไม่ประมวลผล log WARNING · JoinEvent จากกลุ่มนอกลิสต์ → leave_from_group ออกทันที ·
+  ลิสต์ว่าง = บล็อกทุกกลุ่ม (apps.py log ERROR ตอน start)
 
 - ตรวจลายเซ็น X-Line-Signature ด้วย WebhookHandler ของ line-bot-sdk v3
 - ตอบ 200 เสมอเมื่อลายเซ็นถูก แม้ events ว่าง (ปุ่ม Verify ใน LINE console)
@@ -122,6 +127,37 @@ def _source_ids(event):
     return (getattr(src, 'group_id', None), getattr(src, 'user_id', None))
 
 
+def _allowed(event):
+    """event นี้มาจากกลุ่มที่อนุญาตไหม (fail-closed):
+    - source.type ต้องเป็น group และ groupId อยู่ใน LINE_ALLOWED_GROUP_IDS
+    - 1:1 chat (user) / room / กลุ่มนอกลิสต์ / ลิสต์ว่าง → False + log WARNING"""
+    src = getattr(event, 'source', None)
+    src_type = getattr(src, 'type', None)
+    group_id = getattr(src, 'group_id', None)
+    if src_type == 'group' and group_id and group_id in settings.LINE_ALLOWED_GROUP_IDS:
+        return True
+    if not settings.LINE_ALLOWED_GROUP_IDS:
+        logger.warning('LINE_ALLOWED_GROUP_IDS ว่าง — บล็อก event %s จาก %s',
+                       getattr(event, 'type', '?'), _source_label(event))
+    else:
+        logger.warning('ไม่อนุญาต event %s จาก %s (ไม่ใช่กลุ่มในลิสต์)',
+                       getattr(event, 'type', '?'), _source_label(event))
+    return False
+
+
+def _leave_group(group_id):
+    """ออกจากกลุ่มที่ไม่อนุญาต — best-effort เหมือน _reply"""
+    if not settings.LINE_CHANNEL_ACCESS_TOKEN:
+        logger.warning('LINE_CHANNEL_ACCESS_TOKEN ว่าง — ออกจากกลุ่ม %s ไม่ได้', group_id)
+        return
+    try:
+        config = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
+        with ApiClient(config) as api_client:
+            MessagingApi(api_client).leave_from_group(group_id)
+    except Exception:  # noqa: BLE001
+        logger.exception('ออกจากกลุ่ม %s ไม่สำเร็จ', group_id)
+
+
 def _reply_done(event, numbers, note):
     text = bot_orders.process_order_numbers(numbers, note=note)
     _reply(event.reply_token, [_admin_mention_message(text)])
@@ -168,6 +204,8 @@ def _answer_qa(event, question):
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def on_text_message(event):
+    if not _allowed(event):
+        return
     text = event.message.text.strip()
     src = _source_label(event)
     logger.info('LINE text จาก %s: %r', src, text)
@@ -211,6 +249,8 @@ def on_text_message(event):
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def on_image_message(event):
+    if not _allowed(event):
+        return
     src = _source_label(event)
     logger.info('LINE image จาก %s (id=%s)', src, event.message.id)
 
@@ -230,6 +270,12 @@ def on_image_message(event):
 
 @handler.add(JoinEvent)
 def on_join(event):
+    if not _allowed(event):
+        group_id, _ = _source_ids(event)
+        if group_id:
+            logger.warning('ถูกเชิญเข้ากลุ่มนอกลิสต์ %s → ออกจากกลุ่ม', group_id)
+            _leave_group(group_id)
+        return
     logger.info('LINE บอทถูกเชิญเข้า %s', _source_label(event))
     _reply_text(event.reply_token, JOIN_GREETING)
 
@@ -237,6 +283,8 @@ def on_join(event):
 @handler.default()
 def on_other_event(event):
     # event อื่น (follow/unfollow/leave/sticker/postback ฯลฯ) — แค่ log ไม่ตอบอะไร
+    if not _allowed(event):
+        return  # log WARNING แล้วใน _allowed
     logger.info('LINE event อื่น: %s จาก %s', event.type, _source_label(event))
 
 
