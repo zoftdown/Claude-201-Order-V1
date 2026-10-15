@@ -255,6 +255,108 @@ def read_order_number(image_bytes, mime='image/jpeg', tier=None, only=False):
 
 
 # ---------------------------------------------------------------------------
+# ตีความคำสั่ง (intent) ด้วย LLM — ใช้เมื่อ regex ใน stage_cmd จับไม่ได้ (views ส่งมาเฉพาะข้อความ
+# ที่มีเลขออร์เดอร์หรือคำขาน/mention) · ผลเข้า flow ทวนก่อนทำเดิม จึงยอมให้ LLM เดาได้
+# ---------------------------------------------------------------------------
+
+INTENT_MAX_TOKENS = 100
+INTENT_COMMANDS = ('stage_done', 'close_job', 'question', 'unknown')
+INTENT_STAGES = ('print', 'roll', 'cut', 'sort', 'sew', 'pack', 'pickup', 'shipped')
+_INTENT_ORDER_RE = re.compile(r'(?<!\d)\d{4}-\d{1,3}(?!\d)')
+
+INTENT_EXAMPLES = [
+    ('พิม 6910-156', {'command': 'stage_done', 'stage': 'print', 'order_numbers': ['6910-156']}),
+    ('6910-156 พิมแล้วนะ', {'command': 'stage_done', 'stage': 'print', 'order_numbers': ['6910-156']}),
+    ('ตัดเสร็จ 6910-1 6910-2', {'command': 'stage_done', 'stage': 'cut', 'order_numbers': ['6910-1', '6910-2']}),
+    ('เลเซอร์เรียบร้อย 6910-9', {'command': 'stage_done', 'stage': 'cut', 'order_numbers': ['6910-9']}),
+    ('รีดแพ็คแล้วค้าบ 6910-3', {'command': 'stage_done', 'stage': 'pack', 'order_numbers': ['6910-3']}),
+    ('ปิดงาน 6910-7 ด้วยนะ', {'command': 'close_job', 'stage': None, 'order_numbers': ['6910-7']}),
+    ('6910-156 ถึงไหนแล้ว', {'command': 'question', 'stage': None, 'order_numbers': ['6910-156']}),
+    ('วันนี้มีกี่ใบ', {'command': 'question', 'stage': None, 'order_numbers': []}),
+    ('6910-156', {'command': 'unknown', 'stage': None, 'order_numbers': ['6910-156']}),
+]
+
+
+def intent_system_prompt():
+    examples = '\n'.join('  "%s" → %s' % (t, json.dumps(j, ensure_ascii=False)) for t, j in INTENT_EXAMPLES)
+    return (
+        'คุณตีความข้อความจากพนักงานร้านพิมพ์เสื้อในกลุ่ม LINE ว่าเป็นคำสั่งอะไรถึงบอท "หมอนทอง" '
+        'ตอบเป็น JSON บรรทัดเดียวเท่านั้น ห้ามมีข้อความอื่น:\n'
+        '{"command": "stage_done"|"close_job"|"question"|"unknown", "stage": <key หรือ null>, '
+        '"order_numbers": [<เลขออร์เดอร์ที่ปรากฏ รูปแบบ 6910-116>]}\n'
+        'คำสั่งที่บอทมีจริง:\n%s\n'
+        'command:\n'
+        '- stage_done = แจ้งว่าทำขั้นผลิตเสร็จ/ให้ติ๊กขั้น (มีเลขออร์เดอร์) · stage ใช้ key: '
+        'print=พิมพ์/ปริ้น, roll=โรล, cut=ตัด/เลเซอร์, sort=คัด, sew=ส่งเย็บ/เย็บ, pack=รีด/แพ็ค/รีดแพ็ค, '
+        'pickup=ลูกค้ารับ/มารับ, shipped=ส่งของ/ส่งแล้ว(ขนส่ง)\n'
+        '- close_job = ปิดงาน/จบงาน/เสร็จหมดทุกขั้น (มีเลขออร์เดอร์)\n'
+        '- question = ถามข้อมูล/สถานะ/ยอด/ลิงก์ (ไม่ใช่สั่งให้บันทึก)\n'
+        '- unknown = ตีความไม่ได้หรือกำกวม (เช่น มีแค่เลขออร์เดอร์)\n'
+        'กติกา: คำสะกดผิด/ภาษาพูด/คำลงท้าย (นะ ค่ะ ครับ ค้าบ เรียบร้อย เสร็จ) ให้ตีความตามเจตนา · '
+        'ไม่แน่ใจระหว่างขั้น → unknown · order_numbers ต้องเป็นเลขที่อยู่ในข้อความจริงเท่านั้น\n'
+        'ตัวอย่าง:\n%s'
+    ) % (commands.commands_for_prompt(), examples)
+
+
+def parse_intent(raw_text, text=''):
+    """แกะ JSON intent แบบทนทาน (ตัด ```fence / หยิบก้อน {…} แรก) + validate
+    → {'command','stage','order_numbers'} หรือ None เมื่อ parse ไม่ได้
+    order_numbers: ใช้ของ LLM เฉพาะที่อยู่ในข้อความจริง ถ้าว่างเติมจาก regex ของข้อความ"""
+    if not raw_text:
+        return None
+    t = raw_text.strip()
+    t = re.sub(r'^```(?:json)?\s*', '', t)
+    t = re.sub(r'\s*```$', '', t).strip()
+    try:
+        data = json.loads(t)
+    except (ValueError, TypeError):
+        m = re.search(r'\{.*?\}', t, re.DOTALL)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(data, dict):
+        return None
+    command = data.get('command')
+    if command not in INTENT_COMMANDS:
+        command = 'unknown'
+    stage = data.get('stage')
+    if stage not in INTENT_STAGES:
+        stage = None
+    in_text = _INTENT_ORDER_RE.findall(text or '')
+    raw_numbers = data.get('order_numbers') or []
+    numbers = [n for n in raw_numbers if isinstance(n, str) and n in in_text] if isinstance(raw_numbers, list) else []
+    if not numbers:
+        numbers = list(dict.fromkeys(in_text))
+    if command == 'stage_done' and not stage:
+        command = 'unknown'
+    return {'command': command, 'stage': stage, 'order_numbers': list(dict.fromkeys(numbers))}
+
+
+def classify_command(text):
+    """ส่งข้อความ + รายการคำสั่ง (commands.py) ให้ LLM ตีความ → dict intent หรือ None เมื่อ LLM พัง/ไม่มี LLM
+    temperature 0 · max_tokens 100 · ลำดับชั้น LLM เดียวกับ Q&A (chat_create)"""
+    if not llm_tiers():
+        logger.warning('ไม่มี LLM ตั้งค่า — ตีความคำสั่งไม่ได้')
+        return None
+    messages = [
+        {'role': 'system', 'content': intent_system_prompt()},
+        {'role': 'user', 'content': text},
+    ]
+    try:
+        resp, used = chat_create(messages, max_tokens=INTENT_MAX_TOKENS)
+        raw = resp.choices[0].message.content
+    except Exception:  # noqa: BLE001
+        logger.exception('ตีความคำสั่ง (intent) ไม่สำเร็จ: %r', text)
+        return None
+    intent = parse_intent(raw, text)
+    logger.info('intent (%s) %r → %r → %s', tier_label(used), text, raw, json.dumps(intent, ensure_ascii=False))
+    return intent
+
+
+# ---------------------------------------------------------------------------
 # ขั้น 5 — ถาม-ตอบด้วย tool calling
 # ---------------------------------------------------------------------------
 

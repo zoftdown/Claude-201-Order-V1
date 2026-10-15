@@ -1929,3 +1929,153 @@ class ConfirmRaceTests(WebhookBase):
         with mock.patch.object(pending.time, 'sleep', side_effect=image_finishes, autospec=True):
             self._post_text('บอท เสร็จ')
         self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
+
+
+@override_settings(LINE_ALLOWED_GROUP_IDS=['G1'], RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m',
+                   RUNNINGHUB_FALLBACK_MODEL='', ANTHROPIC_API_KEY='')
+class IntentTests(WebhookBase):
+    """LLM ตีความคำสั่งเมื่อ regex จับไม่ได้ (mock LLM) — regex มาก่อน · stage_done/close_job เข้า flow ทวน
+    · question → Q&A · unknown+มีเลข → ไม่เงียบ · ไม่มีเลข/คำขาน → เงียบ"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        qa = mock.patch.object(services, 'answer_question', return_value='llm-answer', autospec=True)
+        self.qa_mock = qa.start()
+        self.addCleanup(qa.stop)
+        self.intent_by_text = {}
+        self.llm_client = mock.MagicMock()
+
+        def fake_create(**kwargs):
+            user_text = kwargs['messages'][-1]['content']
+            self.assertEqual(kwargs['max_tokens'], services.INTENT_MAX_TOKENS)
+            self.assertEqual(kwargs['temperature'], 0)
+            self.assertIn('ตีความ', kwargs['messages'][0]['content'])
+            payload = self.intent_by_text[user_text]
+            if isinstance(payload, Exception):
+                raise payload
+            return _llm_response(content=payload)
+        self.llm_client.chat.completions.create.side_effect = fake_create
+        p = mock.patch('openai.OpenAI', return_value=self.llm_client, autospec=True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _post_text(self, text):
+        self.reply_mock.reset_mock()
+        resp = self._post({'destination': 'x', 'events': [_text_event(text)]})
+        self.assertEqual(resp.status_code, 200)
+        return self.reply_mock.call_args[0][1][0].text if self.reply_mock.called else None
+
+    def test_five_examples_confirm_correct_stage_and_numbers(self):
+        for n in ('6910-156', '6910-1', '6910-2', '6910-9', '6910-3'):
+            make_order(n)
+        cases = [
+            # (ข้อความจริง, JSON ที่ LLM ตอบ (None = regex จับเองไม่ถึง LLM), stage, เลข)
+            ('พิม 6910-156', None, 'print', ['6910-156']),
+            ('6910-156 พิมแล้วนะ', '{"command":"stage_done","stage":"print","order_numbers":["6910-156"]}',
+             'print', ['6910-156']),
+            ('ตัดเสร็จ 6910-1 6910-2', '{"command":"stage_done","stage":"cut","order_numbers":["6910-1","6910-2"]}',
+             'cut', ['6910-1', '6910-2']),
+            ('เลเซอร์เรียบร้อย 6910-9', '```json\n{"command":"stage_done","stage":"cut","order_numbers":["6910-9"]}\n```',
+             'cut', ['6910-9']),
+            ('รีดแพ็คแล้วค้าบ 6910-3', '{"command":"stage_done","stage":"pack","order_numbers":["6910-3"]}',
+             'pack', ['6910-3']),
+        ]
+        for text, llm_json, stage, numbers in cases:
+            self.llm_client.chat.completions.create.reset_mock()
+            stage_cmd.clear_pending('G1', 'U123')
+            if llm_json is not None:
+                self.intent_by_text[text] = llm_json
+            reply = self._post_text(text)
+            label = stage_cmd.stage_label(stage)
+            self.assertIsNotNone(reply, text)
+            if llm_json is None:
+                self.llm_client.chat.completions.create.assert_not_called()  # regex จับได้ ไม่เสียค่า LLM
+                self.assertTrue(reply.startswith('ติ๊ก %s · ' % label), (text, reply))
+            else:
+                self.llm_client.chat.completions.create.assert_called_once()
+                self.assertTrue(reply.startswith('หมอนทองเข้าใจว่าให้ ติ๊ก %s ค่ะ\nติ๊ก %s' % (label, label)), (text, reply))
+            for n in numbers:
+                self.assertIn(n, reply, text)
+            self.assertTrue(reply.endswith('ใช่ไหม? ตอบ ใช่ / ไม่'), text)
+            pend = stage_cmd.get_pending('G1', 'U123')
+            self.assertEqual((pend['stage'], pend['numbers']), (stage, numbers), text)
+        self.qa_mock.assert_not_called()
+
+    def test_close_job_intent(self):
+        make_order('6910-7')
+        self.intent_by_text['ปิดงาน 6910-7 ด้วยนะ'] = '{"command":"close_job","stage":null,"order_numbers":["6910-7"]}'
+        reply = self._post_text('ปิดงาน 6910-7 ด้วยนะ')
+        self.assertTrue(reply.startswith('หมอนทองเข้าใจว่าให้ ปิดงาน ค่ะ\nปิดงาน · 6910-7'))
+        self.assertEqual(stage_cmd.get_pending('G1', 'U123')['stage'], stage_cmd.CLOSE)
+        self._post_text('ใช่')
+        self.assertIsNotNone(Order.objects.get(order_number='6910-7').packed_at)
+
+    def test_unknown_with_number_is_not_silent(self):
+        make_order('6910-156')
+        self.intent_by_text['6910-156'] = '{"command":"unknown","stage":null,"order_numbers":["6910-156"]}'
+        self.assertEqual(self._post_text('6910-156'), views.UNSURE_TEXT % '6910-156')
+        self.assertIn('ช่วย', views.UNSURE_TEXT)
+        self.qa_mock.assert_not_called()
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+
+    def test_regex_runs_before_llm(self):
+        make_order('6910-156')
+        reply = self._post_text('6910-156 พิมพ์แล้ว')
+        self.llm_client.chat.completions.create.assert_not_called()
+        self.assertTrue(reply.startswith('ติ๊ก พิมพ์ · 6910-156'))
+
+    def test_plain_chat_without_number_or_prefix_silent(self):
+        self.assertIsNone(self._post_text('ตัดเสร็จแล้วนะทุกคน ไปกินข้าวกัน'))
+        self.llm_client.chat.completions.create.assert_not_called()
+        self.qa_mock.assert_not_called()
+
+    def test_question_intent_goes_to_qa(self):
+        make_order('6910-156')
+        self.intent_by_text['6910-156 ค้างเท่าไหร่'] = '{"command":"question","stage":null,"order_numbers":["6910-156"]}'
+        self.assertEqual(self._post_text('6910-156 ค้างเท่าไหร่'), 'llm-answer')
+        self.qa_mock.assert_called_once()
+        self.assertEqual(self.qa_mock.call_args[0][0], '6910-156 ค้างเท่าไหร่')
+        # มีคำขาน + question
+        self.intent_by_text['วันนี้มีกี่ใบ'] = '{"command":"question","stage":null,"order_numbers":[]}'
+        self.assertEqual(self._post_text('หมอนทอง วันนี้มีกี่ใบ'), 'llm-answer')
+
+    def test_llm_failure_falls_back(self):
+        make_order('6910-156')
+        self.intent_by_text['6910-156 เอาไงดี'] = RuntimeError('boom')
+        with self.assertLogs('line_bot.services', level='ERROR'):
+            # มีคำขาน → Q&A ตามเดิม
+            self.assertEqual(self._post_text('หมอนทอง 6910-156 เอาไงดี'), 'llm-answer')
+        with self.assertLogs('line_bot.services', level='ERROR'):
+            # มีแค่เลข → ไม่เงียบ
+            self.assertEqual(self._post_text('6910-156 เอาไงดี'), views.UNSURE_TEXT % '6910-156')
+
+    def test_stage_done_without_stage_or_numbers_treated_unknown(self):
+        make_order('6910-156')
+        self.intent_by_text['6910-156 เสร็จหมดเลย'] = '{"command":"stage_done","stage":"???","order_numbers":[]}'
+        self.assertEqual(self._post_text('6910-156 เสร็จหมดเลย'), views.UNSURE_TEXT % '6910-156')
+
+
+class ParseIntentTests(BotTestCase):
+    def test_parse_and_validate(self):
+        P = services.parse_intent
+        self.assertEqual(P('{"command":"stage_done","stage":"print","order_numbers":["6910-1"]}', 'พิม 6910-1'),
+                         {'command': 'stage_done', 'stage': 'print', 'order_numbers': ['6910-1']})
+        # เลขที่ LLM แต่งเองไม่อยู่ในข้อความ → ตัด แล้วเติมจาก regex ของข้อความ
+        self.assertEqual(P('{"command":"stage_done","stage":"cut","order_numbers":["6910-99"]}', 'ตัด 6910-1 6910-2')
+                         ['order_numbers'], ['6910-1', '6910-2'])
+        self.assertEqual(P('คำตอบ: {"command":"question"} ครับ', 'x')['command'], 'question')
+        self.assertEqual(P('{"command":"stage_done","stage":"fly","order_numbers":[]}', '6910-1')['command'], 'unknown')
+        self.assertEqual(P('{"command":"bogus"}', '6910-1')['command'], 'unknown')
+        self.assertIsNone(P('not json', '6910-1'))
+        self.assertIsNone(P('', '6910-1'))
+
+    def test_prompt_has_commands_and_examples(self):
+        from . import commands
+        prompt = services.intent_system_prompt()
+        for example, _ in commands.COMMANDS:
+            self.assertIn(example, prompt)
+        for text, _ in services.INTENT_EXAMPLES:
+            self.assertIn(text, prompt)
+        self.assertIn('"stage_done"', prompt)

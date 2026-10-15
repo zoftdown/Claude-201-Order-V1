@@ -23,8 +23,11 @@ views.py ทำแค่ route event:
             และไม่ตรงคำสั่งด้านบน → ถาม-ตอบด้วย LLM + tools อ่านอย่างเดียว (services.answer_question)
             พร้อมบริบท 6 ข้อความล่าสุดของ (groupId, userId) (history.py) ·
             LLM พัง/timeout → "ขอโทษ ตอบไม่ได้ตอนนี้" ไม่เงียบ · ข้อความอื่นเงียบ
-          ลำดับความสำคัญ: คำสั่งเดิม > ช่วย > คำสั่งติ๊กขั้น > ตอบทวน ใช่/ไม่ (เฉพาะคนที่มีรายการทวน)
-            > ยืนยันรายการรอรูป (เฉพาะคนที่มีรายการรออยู่) > ถาม-ตอบ
+          ลำดับความสำคัญ: คำสั่งเดิม > ช่วย > คำสั่งติ๊กขั้น (regex) > ตอบทวน ใช่/ไม่ (เฉพาะคนที่มีรายการทวน)
+            > ยืนยันรายการรอรูป (เฉพาะคนที่มีรายการรออยู่) > **LLM ตีความ** (services.classify_command —
+            เฉพาะข้อความที่มีเลขออร์เดอร์ หรือคำขาน/mention): stage_done/close_job → flow ทวน (ขึ้นต้น
+            "หมอนทองเข้าใจว่าให้ …") · question → ถาม-ตอบ · unknown+มีเลข → "ไม่แน่ใจ…" ไม่เงียบ
+            · ไม่มีเลขและไม่มีคำขาน → เงียบ (คุยกันปกติ)
 - join  → ทักทาย
 - ทุก event log groupId/userId ของผู้ส่ง (INFO) ไว้เก็บ id ใส่ LINE_ADMIN_USER_IDS / LINE_ALLOWED_GROUP_IDS
 
@@ -77,6 +80,8 @@ CONFIRM_WORDS = ('ครบ', 'เสร็จ')
 JOIN_GREETING = 'สวัสดี น้องหมอนทองพร้อมใช้งาน'
 QA_PREFIXES = ('บอท', 'หมอนทอง')
 QA_FAIL_TEXT = 'ขอโทษ ตอบไม่ได้ตอนนี้'
+UNSURE_TEXT = ('หมอนทองไม่แน่ใจว่าจะให้ทำอะไรกับ %s คะ ติ๊กขั้นไหน หรือถามอะไรดีคะ (พิมพ์ ช่วย ดูคำสั่ง)')
+INTENT_PREFIX = 'หมอนทองเข้าใจว่าให้ %s ค่ะ'
 QA_EMPTY_TEXT = ('ถามได้เลย เช่น "บอท วันนี้มีกี่ใบ" · "บอท 6910-116 ถึงไหนแล้ว" · '
                  '"บอท งานของคุณเอถึงไหน" · "บอท ใบไหนค้างเกิน 7 วัน"')
 LINE_TEXT_MAX = 4900  # LINE จำกัด 5000 ตัวอักษร/ข้อความ
@@ -319,9 +324,42 @@ def on_text_message(event):
             return
 
     # ถาม-ตอบ: "บอท ..." / "หมอนทอง ..." / mention บอท
+    # regex จับไม่ได้ → ให้ LLM ตีความ (เฉพาะข้อความที่มีเลขออร์เดอร์ หรือมีคำขาน/mention)
+    # ข้อความที่ไม่มีทั้งสองอย่าง = คุยกันปกติ → เงียบ
     question = _qa_question(event.message, text)
+    plain = stage_cmd.strip_prefix(cmd_text)
+    numbers_in_text = list(dict.fromkeys(ORDER_NUMBER_IN_TEXT_RE.findall(plain)))
+    if question is None and not numbers_in_text:
+        return
+    if question is not None and not question:
+        _answer_qa(event, question)  # "บอท" เปล่าๆ → ข้อความแนะนำ
+        return
+    _dispatch_intent(event, plain, question, numbers_in_text, src)
+
+
+def _dispatch_intent(event, plain, question, numbers_in_text, src):
+    """ผล classify_command → stage_done/close_job เข้า flow ทวน · question → Q&A · unknown+มีเลข → ตอบไม่แน่ใจ
+    LLM พัง (None): มีคำขาน → Q&A ตามเดิม · มีแค่เลข → ตอบไม่แน่ใจ (ห้ามเงียบ)"""
+    group_id, user_id = _source_ids(event)
+    intent = services.classify_command(plain)
+    cmd = (intent or {}).get('command')
+    numbers = (intent or {}).get('order_numbers') or numbers_in_text
+
+    if cmd in ('stage_done', 'close_job') and numbers:
+        stage = stage_cmd.CLOSE if cmd == 'close_job' else intent['stage']
+        logger.info('intent → %s %s %s จาก %s', cmd, stage, numbers, src)
+        confirm = stage_cmd.start_confirm(group_id, user_id, stage, numbers)
+        label = stage_cmd.stage_label(stage) if stage == stage_cmd.CLOSE else 'ติ๊ก %s' % stage_cmd.stage_label(stage)
+        _reply_text(event.reply_token, '%s\n%s' % (INTENT_PREFIX % label, confirm))
+        return
+    if cmd == 'question' or (intent is None and question is not None):
+        _answer_qa(event, question if question else plain)
+        return
+    if numbers_in_text:
+        _reply_text(event.reply_token, UNSURE_TEXT % numbers_in_text[0])
+        return
     if question is not None:
-        _answer_qa(event, question)
+        _answer_qa(event, question)  # มีคำขานแต่ LLM ว่า unknown และไม่มีเลข → ให้ Q&A ตอบ
 
 
 @handler.add(MessageEvent, message=ImageMessageContent)
