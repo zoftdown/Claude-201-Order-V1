@@ -33,7 +33,20 @@ TEST_ENV = {
     'RUNNINGHUB_FALLBACK_MODEL': '',
     'ANTHROPIC_API_KEY': '',
     'ANTHROPIC_MODEL': 'claude-test',
+    'ORDER_PUBLIC_BASE': 'https://dr89.cloud/order',
 }
+
+
+def done_block(order, suffix='', prefix=''):
+    """ข้อความสรุปต่อใบที่คาดหวัง (format เดียวกับ bot_orders.format_done_summary)"""
+    first = ('%s✅ %s %s' % (prefix, order.order_number, order.shirt_name or '')).rstrip()
+    if suffix:
+        first += ' ' + suffix
+    balance = order.remaining or 0
+    paid = 'ชำระครบแล้ว' if balance <= 0 else 'ค้างชำระ {:,} บาท'.format(int(balance))
+    return '\n'.join([first,
+                      'ลูกค้า: %s · %d ตัว · %s' % (order.customer_name, order.total_qty, order.delivery_method),
+                      paid, 'https://dr89.cloud/order/%d/' % order.pk])
 
 
 @override_settings(**TEST_ENV)
@@ -371,13 +384,23 @@ class ImageOrderFlowTests(WebhookBase):
         self.assertIn('บอท LINE', log.note)
         self.assertIn('G1', log.note)
         msg = self._replied_message()
-        self.assertEqual(msg.text, '\n'.join([
+        self.assertEqual(msg.text, done_block(order, prefix='@แอดมิน '))
+        self.assertEqual(msg.text.split('\n'), [
             '@แอดมิน ✅ 6910-116 เสื้อทีมงาน',
-            'ลูกค้า: คุณทดสอบ',
-            'รวม 10 ตัว',
-            'ยอด 1,500 มัดจำ 500 ค้าง 1,000',
-            'ส่ง',
-        ]))
+            'ลูกค้า: คุณทดสอบ · 10 ตัว · ส่ง',
+            'ค้างชำระ 1,000 บาท',
+            'https://dr89.cloud/order/%d/' % order.pk,
+        ])
+
+    def test_summary_paid_in_full_and_link_unshortened(self):
+        order = make_order('6910-117')
+        order.deposit = order.total_price
+        order.save()
+        text = bot_orders.format_done_summary(order)
+        self.assertEqual(text.split('\n')[2], 'ชำระครบแล้ว')
+        self.assertTrue(text.endswith('\nhttps://dr89.cloud/order/%d/' % order.pk))
+        with override_settings(ORDER_PUBLIC_BASE='http://127.0.0.1:8000/'):
+            self.assertTrue(bot_orders.format_done_summary(order).endswith('http://127.0.0.1:8000/%d/' % order.pk))
 
     @override_settings(LINE_ADMIN_USER_IDS=['Uaaa', 'Ubbb'])
     def test_f_mention_admins_textv2(self):
@@ -1390,7 +1413,7 @@ class StageCommandFlowTests(WebhookBase):
         self.assertIsNone(self.order.print_done_at)  # ยังไม่ติ๊กจนกว่าจะตอบ ใช่
 
         self._post_text('ใช่ครับ')
-        self.assertEqual(self._reply_text(), '✓ 6910-167 คิชฌกูฏลายพราง 10 ตัว → พิมพ์แล้ว')
+        self.assertEqual(self._reply_text(), done_block(self.order, suffix='→ พิมพ์แล้ว'))  # ไม่ mention แอดมิน
         self.order.refresh_from_db()
         self.assertIsNotNone(self.order.print_done_at)
         self.assertEqual(self.order.progress_label, 'พิมพ์แล้ว')
@@ -1455,7 +1478,7 @@ class StageCommandFlowTests(WebhookBase):
         ]))
         self.assertEqual(stage_cmd.get_pending('G1', 'U123')['numbers'], ['6910-167'])
         self._post_text('ค่ะ')
-        self.assertEqual(self._reply_text(), '✓ 6910-167 คิชฌกูฏลายพราง 10 ตัว → พิมพ์แล้ว')
+        self.assertEqual(self._reply_text(), done_block(self.order, suffix='→ พิมพ์แล้ว'))
         self.assertEqual(StageLog.objects.filter(order=other, action='print_done').count(), 1)
 
     def test_two_valid_orders_listed(self):
@@ -1466,8 +1489,8 @@ class StageCommandFlowTests(WebhookBase):
         self.assertEqual(self._reply_text(), '\n'.join([
             'ติ๊ก ตัด', '· 6910-167 คิชฌกูฏลายพราง 10 ตัว', '· 6910-168 งานสอง 10 ตัว', 'ใช่ไหม? ตอบ ใช่ / ไม่']))
         self._post_text('ใช่')
-        self.assertEqual(self._reply_text(), '\n'.join([
-            '✓ 6910-167 คิชฌกูฏลายพราง 10 ตัว → ตัดแล้ว', '✓ 6910-168 งานสอง 10 ตัว → ตัดแล้ว']))
+        self.assertEqual(self._reply_text(), ('\n%s\n' % bot_orders.SEPARATOR).join([
+            done_block(self.order, suffix='→ ตัดแล้ว'), done_block(other, suffix='→ ตัดแล้ว')]))
 
     def test_all_problem_orders_no_question(self):
         views_orders.mark_stage_done(self.order, 'print')
@@ -1613,7 +1636,9 @@ class CloseJobCommandTests(WebhookBase):
         self.assertIsNone(order.sort_done_at)
 
         text = self._post_text('ใช่ค่ะ')
-        self.assertEqual(text, '✓ 6910-122 เสื้อกินเจ 10 ตัว → ปิดงานแล้ว (ติ๊ก: คัด, ส่งเย็บ, ลูกค้ารับ)')
+        # ปิดงาน = จบงาน → mention แอดมินต้นข้อความ (ไม่มี LINE_ADMIN_USER_IDS → "@แอดมิน ")
+        self.assertEqual(text, done_block(order, suffix='→ ปิดงานแล้ว (ติ๊ก: คัด, ส่งเย็บ, ลูกค้ารับ)', prefix='@แอดมิน '))
+        self.assertIn('\nhttps://dr89.cloud/order/%d/' % order.pk, text)
         order.refresh_from_db()
         self.assertIsNotNone(order.sort_done_at)
         self.assertIsNotNone(order.sent_to_tailors_at)

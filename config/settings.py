@@ -29,6 +29,8 @@ FORCE_SCRIPT_NAME = os.environ.get('FORCE_SCRIPT_NAME', '')  # '/order' in produ
 BRIEF_API_BASE = os.environ.get('BRIEF_API_BASE', 'http://127.0.0.1:8600')
 BRIEF_API_TOKEN = os.environ.get('BRIEF_API_TOKEN', '')
 BRIEF_PUBLIC_BASE = os.environ.get('BRIEF_PUBLIC_BASE', 'http://127.0.0.1:8600')
+# ORDER_PUBLIC_BASE: URL หน้าเว็บระบบนี้ที่คนในกลุ่ม LINE กดเปิดได้ — บอทต่อ /<pk>/ เป็นลิงก์ใบงานท้ายข้อความสรุป
+ORDER_PUBLIC_BASE = os.environ.get('ORDER_PUBLIC_BASE', 'https://dr89.cloud/order')
 
 # รหัสเข้าหน้า "สถิติร้าน" (tab stats ใน /reports/) — ชั้นเพิ่มจาก login/admin
 # เพราะเป็นข้อมูลยอดขายรวมของร้าน. ใส่ถูกครั้งเดียวจำใน session.

@@ -24,7 +24,7 @@ from django.db import transaction
 from orders.views import STAGE_DONE_SPECS, STAGE_NEED_PACK, mark_stage_done, stage_is_done
 
 from . import commands
-from .orders import find_order
+from .orders import SEPARATOR, find_order, format_done_summary
 
 logger = logging.getLogger(__name__)
 
@@ -187,12 +187,12 @@ def apply_stage(stage, numbers, note=''):
             reason = mark_stage_done(order, stage, note=note)
         if reason is None:
             logger.info('ออร์เดอร์ %s → ติ๊ก "%s" (%s)', n, label, note)
-            lines.append('✓ %s → %sแล้ว' % (_order_line(order), label))
+            lines.append(format_done_summary(order, suffix='→ %sแล้ว' % label))
         elif reason == STAGE_NEED_PACK:
             lines.append('%s ต้องรีด+แพ็คก่อน' % n)
         else:
             lines.append('%s ติ๊กแล้วอยู่แล้ว (%s)' % (n, label))
-    return '\n'.join(lines)
+    return ('\n%s\n' % SEPARATOR).join(lines)  # คั่นต่อใบเหมือน flow รูป+ครบ
 
 
 def _close_order(order):
@@ -205,16 +205,17 @@ def _close_order(order):
             mark_stage_done(order, s, note=CLOSE_NOTE)
     labels = ', '.join(STAGE_DONE_SPECS[s]['label'] for s in missing)
     logger.info('ออร์เดอร์ %s → ปิดงาน ติ๊ก %s (%s)', order.order_number, labels, CLOSE_NOTE)
-    return '✓ %s → ปิดงานแล้ว (ติ๊ก: %s)' % (_order_line(order), labels)
+    return format_done_summary(order, suffix='→ ปิดงานแล้ว (ติ๊ก: %s)' % labels)
 
 
 def confirm(group_id, user_id, note=''):
-    """คนเดิมตอบ "ใช่" → ติ๊กรายการที่รอ ล้างรายการ → ข้อความสรุป (None เมื่อไม่มีรายการรอ)"""
+    """คนเดิมตอบ "ใช่" → ติ๊กรายการที่รอ ล้างรายการ → (ข้อความสรุป, stage) หรือ (None, None) เมื่อไม่มีรายการรอ
+    stage == CLOSE → views ใส่ mention แอดมินต้นข้อความ (ติ๊กขั้นระหว่างทางไม่ mention)"""
     pend = get_pending(group_id, user_id)
     if not pend:
-        return None
+        return None, None
     clear_pending(group_id, user_id)
-    return apply_stage(pend['stage'], pend['numbers'], note=note)
+    return apply_stage(pend['stage'], pend['numbers'], note=note), pend['stage']
 
 
 HELP_TEXT = commands.help_text()  # ตาราง COMMANDS เดียวกับ system prompt (line_bot/commands.py)

@@ -14,7 +14,8 @@ views.py ทำแค่ route event:
           **คำสั่งติ๊กขั้น (regex ไม่ผ่าน LLM — stage_cmd.py):** "6910-167 พิมพ์แล้ว" / "ตัดแล้ว 6910-167 6910-168"
             (มี/ไม่มี "บอท"/"หมอนทอง"/mention นำหน้าก็ได้) → ทวน "ติ๊ก พิมพ์ · … ใช่ไหม?" เก็บรอ 2 นาที
             → คนเดิมตอบ ใช่/ครับ/ค่ะ → ติ๊กผ่าน orders.views.mark_stage_done (helper เดียวกับปุ่มเว็บ)
-            → ตอบ ไม่/ยกเลิก หรือหมดเวลา → ไม่ทำ
+            → ตอบ ไม่/ยกเลิก หรือหมดเวลา → ไม่ทำ · ข้อความสรุปต่อใบ = orders.format_done_summary
+            (✅ เลข ชื่อ / ลูกค้า · ตัว · วิธีรับ / ค้างชำระ / ลิงก์ใบงาน) · ปิดงาน mention แอดมิน ติ๊กขั้นไม่ mention
           "ช่วย" / "บอท ช่วย" / "หมอนทอง ช่วย" → รายการคำสั่ง (stage_cmd.HELP_TEXT)
           ขึ้นต้นด้วย "บอท"/"หมอนทอง" หรือ mention บอท (event.message.mention is_self)
             และไม่ตรงคำสั่งด้านบน → ถาม-ตอบด้วย LLM + tools อ่านอย่างเดียว (services.answer_question)
@@ -265,8 +266,11 @@ def on_text_message(event):
     # ตอบทวน ใช่/ไม่ — เฉพาะคนเดิมในกลุ่มเดิมที่มีรายการทวนค้างอยู่ (หมดอายุ 2 นาที)
     if stage_cmd.get_pending(group_id, user_id):
         if stage_cmd.is_yes(cmd_text):
-            result = stage_cmd.confirm(group_id, user_id, note='บอท LINE โดย %s' % (user_id or '-'))
-            _reply_text(event.reply_token, result)
+            result, stage = stage_cmd.confirm(group_id, user_id, note='บอท LINE โดย %s' % (user_id or '-'))
+            if stage == stage_cmd.CLOSE:
+                _reply(event.reply_token, [_admin_mention_message(result)])  # ปิดงาน = จบงาน แจ้งแอดมิน
+            else:
+                _reply_text(event.reply_token, result)  # ติ๊กขั้นระหว่างทาง ไม่ mention
             return
         if stage_cmd.is_no(cmd_text):
             stage_cmd.clear_pending(group_id, user_id)

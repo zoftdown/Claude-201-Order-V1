@@ -7,6 +7,7 @@ orders — ฝั่งข้อมูลออร์เดอร์ของบ
 """
 import logging
 
+from django.conf import settings
 from django.db import transaction
 
 from orders.models import Order
@@ -46,15 +47,29 @@ def _money(value):
     return '{:,.2f}'.format(value)
 
 
-def format_done_summary(order):
+def order_url(order):
+    """ลิงก์หน้า detail ของใบงานบนเว็บ (settings.ORDER_PUBLIC_BASE + /<pk>/) — ส่งเต็มเส้น LINE ทำเป็นลิงก์กดได้เอง"""
+    base = (getattr(settings, 'ORDER_PUBLIC_BASE', '') or '').rstrip('/')
+    return '%s/%d/' % (base, order.pk)
+
+
+def format_done_summary(order, suffix=''):
+    """ข้อความสรุปต่อใบ (ใช้ร่วมทุก flow: ครบ/เสร็จ · บอท เสร็จ · ติ๊กขั้น · ปิดงาน):
+    ✅ 6910-171 ช่างเอกรีโนเวท[ suffix เช่น "→ พิมพ์แล้ว"]
+    ลูกค้า: บ่าว เอก · 19 ตัว · รับเอง
+    ค้างชำระ 1,110 บาท   (0 → ชำระครบแล้ว)
+    https://dr89.cloud/order/2521/   (ลิงก์เต็ม บรรทัดของตัวเอง)"""
+    first = ('✅ %s %s' % (order.order_number, order.shirt_name or '')).rstrip()
+    if suffix:
+        first = '%s %s' % (first, suffix)
+    balance = order.remaining or 0
+    paid = 'ชำระครบแล้ว' if balance <= 0 else 'ค้างชำระ %s บาท' % _money(balance)
     return '\n'.join([
-        '✅ %s %s' % (order.order_number, order.shirt_name or ''),
-        'ลูกค้า: %s' % (order.customer_name or '-'),
-        'รวม %d ตัว' % order.total_qty,
-        'ยอด %s มัดจำ %s ค้าง %s' % (
-            _money(order.total_price), _money(order.deposit), _money(order.remaining)),
-        order.delivery_method or '',
-    ]).rstrip()
+        first,
+        'ลูกค้า: %s · %d ตัว · %s' % (order.customer_name or '-', order.total_qty, order.delivery_method or '-'),
+        paid,
+        order_url(order),
+    ])
 
 
 def process_order_number(order_number, note=''):
