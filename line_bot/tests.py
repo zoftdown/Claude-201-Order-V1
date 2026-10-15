@@ -1795,3 +1795,137 @@ class PickupLabelTests(BotTestCase):
         for stage in ('pack', 'shipped'):
             views_orders.mark_stage_done(order, stage)
         self.assertEqual(tools.get_order('6910-130')['current_stage'], 'ส่งแล้ว')
+
+
+@override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
+class ConfirmRaceTests(WebhookBase):
+    """race "ครบ" แซงรูปสุดท้าย (2026-10-15 09:18/09:33): counter กำลังอ่าน + รอก่อนติ๊ก
+    + นับรูปอ่านเลขไม่ได้ท้ายสรุป · ไม่มีอะไรรอ = เงียบเหมือนเดิม"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        dl = mock.patch.object(services, 'download_line_image', return_value=b'img', autospec=True)
+        self.dl_mock = dl.start()
+        self.addCleanup(dl.stop)
+        llm = mock.patch.object(services, 'read_order_number', return_value='6910-116', autospec=True)
+        self.llm_mock = llm.start()
+        self.addCleanup(llm.stop)
+
+    def _post_image(self, number='6910-116'):
+        self.llm_mock.return_value = number
+        resp = self._post({'destination': 'x', 'events': [_image_event()]})
+        self.assertEqual(resp.status_code, 200)
+
+    def _post_text(self, text):
+        self.reply_mock.reset_mock()
+        resp = self._post({'destination': 'x', 'events': [_text_event(text)]})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_confirm_waits_for_inflight_image_then_ticks(self):
+        """ครบ มาตอนรูปสุดท้ายยังอ่านอยู่ (counter=1, รายการรอว่าง) → รอ → รูปอ่านเสร็จเข้ารายการ → ติ๊ก"""
+        order = make_order()
+        pending.inflight_start('G1', 'U123')  # จำลอง worker อีกตัวกำลังอ่านรูป
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
+
+        def image_finishes(_seconds):  # เกิดระหว่างที่ "ครบ" รออยู่
+            pending.add_pending('G1', 'U123', '6910-116')
+            pending.inflight_done('G1', 'U123')
+
+        with mock.patch.object(pending.time, 'sleep', side_effect=image_finishes, autospec=True) as sleep, \
+                self.assertLogs('line_bot.views', level='INFO') as logs:
+            self._post_text('@Pnr.♡ ครบค่ะ')
+        self.assertGreaterEqual(sleep.call_count, 1)
+        self.assertIn('มาก่อนรูปอ่านเสร็จ', '\n'.join(logs.output))
+        text = self._replied_message().text
+        self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
+        self.assertNotIn('ยังอ่านไม่เสร็จ', text)
+        order.refresh_from_db()
+        self.assertIsNotNone(order.packed_at)
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
+        self.assertEqual(pending.inflight_count('G1', 'U123'), 0)
+
+    def test_confirm_timeout_ticks_what_it_has_and_asks_again(self):
+        """รอเกิน WAIT_TIMEOUT แล้ว counter ยัง > 0 → ติ๊กที่มี + บอกส่ง ครบ อีกครั้ง"""
+        order = make_order()
+        pending.add_pending('G1', 'U123', '6910-116')
+        pending.inflight_start('G1', 'U123')  # ค้าง ไม่มีใครลด
+        with mock.patch.object(pending, 'WAIT_TIMEOUT', 0.05), \
+                mock.patch.object(pending, 'WAIT_INTERVAL', 0.01), \
+                self.assertLogs('line_bot.views', level='WARNING') as logs:
+            self._post_text('ครบ')
+        self.assertIn('เกิน', '\n'.join(logs.output))
+        text = self._replied_message().text
+        self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
+        self.assertTrue(text.endswith('\n' + views.STILL_READING_TEXT % 1))
+        order.refresh_from_db()
+        self.assertIsNotNone(order.packed_at)
+        self.assertEqual(pending.get_pending('G1', 'U123'), [])
+        # รูปที่ค้างอ่านเสร็จทีหลัง → เข้ารายการใหม่ → "ครบ" อีกครั้งติ๊กได้
+        pending.inflight_done('G1', 'U123')
+        make_order('6910-117')
+        self._post_image('6910-117')
+        self._post_text('ครบ')
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-117'))
+
+    def test_unreadable_images_counted_in_summary(self):
+        make_order()
+        self._post_image(None)
+        self._post_image(None)
+        self._post_image('6910-116')
+        self.reply_mock.assert_not_called()
+        self.assertEqual(pending.inflight_count('G1', 'U123'), 0)
+        self._post_text('ครบ')
+        text = self._replied_message().text
+        self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
+        self.assertTrue(text.endswith('\n' + views.UNREADABLE_TEXT % 2))
+        # นับถูกล้างแล้ว — ชุดถัดไปไม่โผล่
+        make_order('6910-117')
+        self._post_image('6910-117')
+        self._post_text('ครบ')
+        self.assertNotIn('อ่านเลขไม่ได้', self._replied_message().text)
+
+    def test_inflight_counter_balanced_on_every_outcome(self):
+        make_order()
+        self._post_image('6910-116')          # อ่านได้
+        self.assertEqual(pending.inflight_count('G1', 'U123'), 0)
+        self._post_image(None)                # อ่านไม่ได้
+        self.assertEqual(pending.inflight_count('G1', 'U123'), 0)
+        self.dl_mock.return_value = None      # ดาวน์โหลดพัง (ไม่นับเป็นอ่านไม่ได้)
+        self._post_image('6910-116')
+        self.assertEqual(pending.inflight_count('G1', 'U123'), 0)
+        self.dl_mock.return_value = b'img'
+        self.llm_mock.side_effect = RuntimeError('boom')  # LLM พังกลางทาง ก็ต้องลด counter
+        try:  # exception หลุดจาก handler → test client โยนต่อ (prod gunicorn ตอบ 500 ให้ LINE retry)
+            self._post({'destination': 'x', 'events': [_image_event()]})
+        except RuntimeError:
+            pass
+        self.assertEqual(pending.inflight_count('G1', 'U123'), 0)
+        self.llm_mock.side_effect = None
+        self._post_text('ครบ')
+        text = self._replied_message().text
+        self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
+        self.assertTrue(text.endswith('\n' + views.UNREADABLE_TEXT % 1))
+
+    def test_nothing_pending_nothing_inflight_stays_silent(self):
+        """คน tag เพื่อน "ครบค่ะ" โดยไม่มีรูป → เงียบเหมือนเดิม และล้างนับอ่านไม่ได้ของชุดเก่า"""
+        self._post_image(None)
+        self._post_text('@Pnr.♡ @taii_1489 ครบค่ะ')
+        self.reply_mock.assert_not_called()
+        make_order()
+        self._post_image('6910-116')
+        self._post_text('ครบ')
+        self.assertNotIn('อ่านเลขไม่ได้', self._replied_message().text)
+
+    def test_bot_done_without_numbers_also_waits(self):
+        make_order()
+        pending.inflight_start('G1', 'U123')
+
+        def image_finishes(_seconds):
+            pending.add_pending('G1', 'U123', '6910-116')
+            pending.inflight_done('G1', 'U123')
+
+        with mock.patch.object(pending.time, 'sleep', side_effect=image_finishes, autospec=True):
+            self._post_text('บอท เสร็จ')
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))

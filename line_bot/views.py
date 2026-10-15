@@ -5,6 +5,8 @@ Webhook รับ event จาก LINE Messaging API — ขั้น 4.1 (อ�
 views.py ทำแค่ route event:
 - image → ดาวน์โหลด + LLM อ่านเลขออร์เดอร์ (services.py) → **ไม่ตอบ** เก็บเข้า "รายการรอ"
           ของ (groupId, userId) ใน cache (pending.py) หมดอายุ 10 นาที
+          ระหว่างอ่าน counter "กำลังอ่าน" +1/-1 (pending.inflight_*) · อ่านไม่ได้นับ "อ่านเลขไม่ได้" ของชุด
+          "ครบ" ที่มาก่อนรูปสุดท้ายอ่านเสร็จ → รอ (สูงสุด 15 วิ) ค่อยติ๊ก (_confirm_pending)
           อ่านไม่เจอ หรือ LLM/ดาวน์โหลดพัง → เงียบ แค่ log (รูปเสื้อธรรมดาในกลุ่ม)
 - text  → "บอท ping" → "pong"
           "บอท ยกเลิก" → ล้างรายการรอของคนนั้น → "ยกเลิกแล้ว"
@@ -170,6 +172,43 @@ def _reply_done(event, numbers, note):
     _reply(event.reply_token, [_admin_mention_message(text)])
 
 
+UNREADABLE_TEXT = 'อ่านเลขไม่ได้ %d รูป (ถ้าเป็นใบงาน ถ่ายให้เห็นหัวใบชัด ๆ แล้วส่งใหม่)'
+STILL_READING_TEXT = 'มี %d รูปยังอ่านไม่เสร็จ ส่ง ครบ อีกครั้งนะคะ'
+
+
+def _confirm_pending(event, group_id, user_id, note):
+    """ข้อความยืนยัน "ครบ/เสร็จ" ของคนเดิมในกลุ่มเดิม:
+    - ไม่มีทั้งรายการรอและไม่มีรูปกำลังอ่าน → False (เงียบ — คนใช้ tag เพื่อนกันปกติ)
+    - มีรูปกำลังอ่าน (counter > 0) → รอจนอ่านครบ (สูงสุด WAIT_TIMEOUT) ค่อยติ๊ก กัน "ครบ" แซงรูปสุดท้าย
+    - ติ๊กทุกใบในรายการรอ + บรรทัดท้าย: รูปอ่านเลขไม่ได้ N รูป / ยังอ่านไม่เสร็จ N รูป (เกินเวลา) → True"""
+    numbers = pending.get_pending(group_id, user_id)
+    inflight = pending.inflight_count(group_id, user_id)
+    if not numbers and not inflight:
+        pending.pop_unreadable(group_id, user_id)  # ล้างนับรูปอ่านไม่ได้ของชุดเก่า ไม่ให้ไปโผล่ชุดหน้า
+        return False
+    timed_out = False
+    if inflight:
+        logger.info('"ครบ" มาก่อนรูปอ่านเสร็จ (กำลังอ่าน %d รูป) → รอ', inflight)
+        timed_out = not pending.wait_inflight(group_id, user_id)
+        numbers = pending.get_pending(group_id, user_id)
+    still = pending.inflight_count(group_id, user_id) if timed_out else 0
+    unreadable = pending.pop_unreadable(group_id, user_id)
+    pending.clear_pending(group_id, user_id)
+
+    parts = []
+    if numbers:
+        parts.append(bot_orders.process_order_numbers(numbers, note=note))
+    if unreadable:
+        parts.append(UNREADABLE_TEXT % unreadable)
+    if timed_out:
+        logger.warning('รอรูปอ่านเสร็จเกิน %ds (ยังค้าง %d รูป) → ติ๊กที่มี', pending.WAIT_TIMEOUT, still)
+        parts.append(STILL_READING_TEXT % max(still, 1))
+    if not parts:
+        return False
+    _reply(event.reply_token, [_admin_mention_message('\n'.join(parts))])
+    return True
+
+
 def _self_mention_spans(message):
     """ช่วง (index, length) ของ mention ที่ชี้มาที่บอทเอง (is_self) ในข้อความ"""
     mention = getattr(message, 'mention', None)
@@ -249,10 +288,7 @@ def on_text_message(event):
             _reply_done(event, numbers, note='บอท LINE คำสั่ง "บอท เสร็จ" (%s)' % src)
             return
         # ไม่มีเลข → ใช้เป็นข้อความยืนยันรายการรอ (มีคำว่า "เสร็จ") ไม่ส่งเข้าถาม-ตอบ
-        numbers = pending.get_pending(group_id, user_id)
-        if numbers:
-            pending.clear_pending(group_id, user_id)
-            _reply_done(event, numbers, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src))
+        _confirm_pending(event, group_id, user_id, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src))
         return
 
     # คำสั่งติ๊กขั้น "6910-167 พิมพ์แล้ว" → ทวนก่อน (ต้องจับก่อนส่งเข้า LLM)
@@ -279,10 +315,7 @@ def on_text_message(event):
 
     # ข้อความยืนยัน "ครบ"/"เสร็จ" จากคนเดิมในกลุ่มเดิมที่มีรายการรอ (กลไกเดิม มาก่อนถาม-ตอบ)
     if any(w in text for w in CONFIRM_WORDS):
-        numbers = pending.get_pending(group_id, user_id)
-        if numbers:
-            pending.clear_pending(group_id, user_id)
-            _reply_done(event, numbers, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src))
+        if _confirm_pending(event, group_id, user_id, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src)):
             return
 
     # ถาม-ตอบ: "บอท ..." / "หมอนทอง ..." / mention บอท
@@ -297,19 +330,24 @@ def on_image_message(event):
         return
     src = _source_label(event)
     logger.info('LINE image จาก %s (id=%s)', src, event.message.id)
-
-    image = services.download_line_image(event.message.id)
-    if image is None:
-        return  # log แล้วใน services
-    number = services.read_order_number(image)
-    if number is None:
-        logger.info('รูป %s ไม่พบเลขออร์เดอร์ — ไม่ตอบ', event.message.id)
-        return
-
     group_id, user_id = _source_ids(event)
-    numbers = pending.add_pending(group_id, user_id, number)
-    logger.info('รูป %s อ่านได้เลข %s → เข้ารายการรอ (%d ใบ) รอข้อความยืนยัน',
-                event.message.id, number, len(numbers))
+
+    # counter "กำลังอ่าน" ครอบทั้งดาวน์โหลด+LLM — ให้ "ครบ" ที่มาระหว่างนี้รอก่อน (กันแซงรูปสุดท้าย)
+    pending.inflight_start(group_id, user_id)
+    try:
+        image = services.download_line_image(event.message.id)
+        if image is None:
+            return  # log แล้วใน services (ไม่นับเป็นรูปอ่านไม่ได้ — ดาวน์โหลดพัง)
+        number = services.read_order_number(image)
+        if number is None:
+            n = pending.add_unreadable(group_id, user_id)
+            logger.info('รูป %s ไม่พบเลขออร์เดอร์ — ไม่ตอบ (อ่านไม่ได้ในชุดนี้ %d รูป)', event.message.id, n)
+            return
+        numbers = pending.add_pending(group_id, user_id, number)
+        logger.info('รูป %s อ่านได้เลข %s → เข้ารายการรอ (%d ใบ) รอข้อความยืนยัน',
+                    event.message.id, number, len(numbers))
+    finally:
+        pending.inflight_done(group_id, user_id)
 
 
 @handler.add(JoinEvent)
