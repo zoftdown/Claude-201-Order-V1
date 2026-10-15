@@ -449,6 +449,8 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 
 **เพิ่มล่าสุด (V4.9.1 · 2026-10-15): tools ส่ง `customer_link` + `shipping_address`** — **deploy prod + merge main แล้ว 2026-10-15** (branch `fix/linebot-customer-link` ff เข้า main หลังทดสอบกลุ่มจริงผ่าน · smoke 3/3 ก่อน restart · branch ลบแล้ว) · `_order_row` (ใช้ร่วม search_orders/daily_summary/overdue_orders และ get_order) เพิ่ม 2 ฟิลด์ · system prompt เพิ่มกติกา: ถามลิงก์/เบอร์/ที่อยู่ลูกค้า → ตอบค่าตรงจากฟิลด์ทั้งค่า URL ส่งทั้งเส้นห้ามย่อ · test +1 (`CustomerLinkToolTests`) รวม 178 · *หมายเหตุ privacy: บอทอยู่ในกลุ่มที่ allow เท่านั้น (V4.7) ข้อมูลนี้จึงเห็นเฉพาะคนในกลุ่มร้าน*
 
+**เพิ่มล่าสุด (V4.9.2 · 2026-10-15): คำขั้นรับคำสะกดผิด/ย่อ** — **branch `fix/linebot-stage-regex` push แล้ว ยังไม่ merge main** (deploy VPS แล้วตามกติกา smoke) · ต้นตอ: พนักงานพิมพ์ "6910-156 พิมแล้ว" (ไม่มีการันต์) → ไม่ตรง `STAGE_WORDS` เป๊ะ → ไม่มีคำขาน=เงียบ / มีคำขาน=หลุดไป LLM (โครงสร้าง สลับลำดับ/คำขาน/"แล้ว" ทำงานอยู่แล้ว) → เพิ่มคำพ้อง: พิม/พิมพ/ปริ้น/ปริ้นท์/print · โรว/roll · เลเซอ/cut · แพค/แพ๊ค/รีดแพค/pack (เทียบ lower-case) · กติกาคงเดิม: เลข ≥1 + คำขั้น 1 คำ (+แล้ว) ไม่มีคำอื่น — "พิมพ์แล้วหรือยัง" ยังไป LLM · tests +4 (`StageCommandRealMessageTests` ใช้ข้อความจริง) รวม 182
+
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)

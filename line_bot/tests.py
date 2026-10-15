@@ -1532,3 +1532,46 @@ class CustomerLinkToolTests(BotTestCase):
         self.assertIn('customer_link', prompt)
         self.assertIn('shipping_address', prompt)
         self.assertIn('ห้ามย่อ', prompt)
+
+
+@override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
+class StageCommandRealMessageTests(WebhookBase):
+    """ข้อความจริงจากพนักงาน 2026-10-15 10:15-10:16 ที่เคยไม่จับ: "พิมแล้ว" (ไม่มีการันต์)
+    + เคสมีคำอื่นปน ต้องไป LLM ตามเดิม"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        p = mock.patch.object(services, 'answer_question', return_value='llm', autospec=True)
+        self.qa_mock = p.start()
+        self.addCleanup(p.stop)
+        self.order = make_order('6910-156')
+
+    def _post_text(self, text):
+        self.reply_mock.reset_mock()
+        resp = self._post({'destination': 'x', 'events': [_text_event(text)]})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_real_message_without_prefix(self):
+        self._post_text('6910-156 พิมแล้ว')
+        self.reply_mock.assert_called_once()
+        self.assertIn('ติ๊ก พิมพ์ · 6910-156', self.reply_mock.call_args[0][1][0].text)
+        self.qa_mock.assert_not_called()
+
+    def test_real_message_with_prefix(self):
+        self._post_text('หมอนทอง 6910-156 พิมแล้ว')
+        self.reply_mock.assert_called_once()
+        self.assertIn('ติ๊ก พิมพ์ · 6910-156', self.reply_mock.call_args[0][1][0].text)
+        self.qa_mock.assert_not_called()
+
+    def test_extra_words_go_to_llm(self):
+        self._post_text('หมอนทอง 6910-156 พิมพ์แล้วหรือยัง')
+        self.qa_mock.assert_called_once()
+        self.assertEqual(self.qa_mock.call_args[0][0], '6910-156 พิมพ์แล้วหรือยัง')
+        self.assertEqual(self.reply_mock.call_args[0][1][0].text, 'llm')
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+
+    def test_order_and_stage_swapped_without_laew(self):
+        for text in ('พิม 6910-156', '6910-156 พิมพ์', 'บอท โรว 6910-156', 'แพค 6910-156'):
+            self.assertIsNotNone(stage_cmd.parse_stage_command(text), text)

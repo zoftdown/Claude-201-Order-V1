@@ -29,13 +29,17 @@ ORDER_NUMBER_RE = re.compile(r'(?<!\d)\d{4}-\d{1,3}(?!\d)')
 PREFIX_RE = re.compile(r'^(?:หมอนทอง|บอท)\s*')
 
 # คำขั้น (หลังตัดเลข/ช่องว่าง/"แล้ว" ออก ต้องเหลือตรงกับ key นี้เป๊ะ) → stage key ของ STAGE_DONE_SPECS
+# กติกา: ข้อความ = เลข 6910-xxx ≥1 ตัว + คำขั้น 1 คำ (+ "แล้ว" หรือไม่ก็ได้) เท่านั้น สลับลำดับได้
+# มีคำอื่นปน (เช่น "พิมพ์แล้วหรือยัง") = ไม่ใช่คำสั่ง → ไปถาม-ตอบ LLM ตามเดิม
+# รวมคำสะกดผิด/ย่อที่พนักงานพิมพ์จริง: 2026-10-15 "6910-156 พิมแล้ว" (ไม่มีการันต์) → เงียบ/หลุดไป LLM
 STAGE_WORDS = {
-    'พิมพ์': 'print',
-    'โรล': 'roll',
-    'ตัด': 'cut', 'เลเซอร์': 'cut',
+    'พิมพ์': 'print', 'พิม': 'print', 'พิมพ': 'print', 'ปริ้น': 'print', 'ปริ้นท์': 'print', 'print': 'print',
+    'โรล': 'roll', 'โรว': 'roll', 'roll': 'roll',
+    'ตัด': 'cut', 'เลเซอร์': 'cut', 'เลเซอ': 'cut', 'cut': 'cut',
     'คัด': 'sort',
     'ส่งเย็บ': 'sew', 'เย็บ': 'sew',
-    'รีด': 'pack', 'แพ็ค': 'pack', 'รีดแพ็ค': 'pack', 'รีด+แพ็ค': 'pack',
+    'รีด': 'pack', 'แพ็ค': 'pack', 'แพค': 'pack', 'แพ๊ค': 'pack', 'รีดแพ็ค': 'pack', 'รีดแพค': 'pack',
+    'รีด+แพ็ค': 'pack', 'pack': 'pack',
     'ลูกค้ารับ': 'pickup', 'รับ': 'pickup',  # "รับแล้ว" → ตัด "แล้ว" เหลือ "รับ"
 }
 YES_WORDS = {'ใช่', 'ใช่ครับ', 'ใช่ค่ะ', 'ใช่คับ', 'ใช่ค่า', 'ค่ะ', 'ครับ', 'คับ', 'ค่า'}
@@ -59,7 +63,7 @@ def parse_stage_command(text):
         return None
     rest = ORDER_NUMBER_RE.sub(' ', t)
     rest = rest.replace('แล้ว', '').replace(' ', '').replace('\t', '').strip()
-    stage = STAGE_WORDS.get(rest)
+    stage = STAGE_WORDS.get(rest.lower())
     if stage is None:
         return None
     return stage, numbers
