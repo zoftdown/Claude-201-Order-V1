@@ -1507,3 +1507,28 @@ class StageCommandFlowTests(WebhookBase):
         self.order.refresh_from_db()
         self.assertIsNotNone(self.order.packed_at)
         self.reply_mock.assert_called_once()
+
+
+class CustomerLinkToolTests(BotTestCase):
+    """get_order + search_orders ส่ง customer_link / shipping_address ทั้งค่า (URL เต็มไม่ย่อ)
+    + system prompt สั่งให้ตอบตรงจากฟิลด์"""
+
+    def test_fields_present_and_prompt_rule(self):
+        order = make_order()
+        link = 'https://www.facebook.com/messages/t/100012345678901?entry_point=page_cta&ref=abc'
+        order.customer_link = link
+        order.shipping_address = '99/9 หมู่ 1 ต.ท่าใหม่ อ.ท่าใหม่ จ.จันทบุรี 22120'
+        order.save(update_fields=['customer_link', 'shipping_address'])
+
+        detail = tools.get_order(order.order_number)
+        self.assertEqual(detail['customer_link'], link)
+        self.assertEqual(detail['shipping_address'], order.shipping_address)
+
+        rows = tools.search_orders(order_number=order.order_number)['orders']
+        self.assertEqual(rows[0]['customer_link'], link)
+        self.assertEqual(rows[0]['shipping_address'], order.shipping_address)
+
+        prompt = services.qa_system_prompt()
+        self.assertIn('customer_link', prompt)
+        self.assertIn('shipping_address', prompt)
+        self.assertIn('ห้ามย่อ', prompt)

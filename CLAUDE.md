@@ -447,6 +447,8 @@ deploy/           # nginx.conf, gunicorn.conf.py, order.service, setup.sh
 - **งานบ้าน tests:** `line_bot/tests.py` ทุก class สืบทอด `BotTestCase` = `override_settings(**TEST_ENV)` ครอบทุก env ที่ line_bot ใช้ (LINE_*, RUNNINGHUB_*, ANTHROPIC_*) → ผลเท่ากันไม่ว่า .env จริงจะมีอะไร (ทดสอบรันพร้อม source .env แล้ว) · `mock.patch` ทุกตัวที่ไม่ได้ส่ง `new` ใช้ `autospec=True` (ห้าม patch ซ้อนบน mock ที่ autospec แล้ว — ใช้ `return_value` ของตัวเดิมแทน) · **`.gitattributes`** บังคับ `*.py *.md *.txt` เป็น `eol=lf` (เครื่อง Windows เคยทำ CRLF ปน — git เก็บ LF อยู่แล้ว ไฟล์ใหม่จะ checkout เป็น LF; เทียบ hash กับ VPS ไม่ต้อง `tr -d '\r'` อีกสำหรับไฟล์ที่ checkout ใหม่)
 - **tests +23 เคส** (`StageHelperTests` 5 · `ToolsStageKeyTests` 1 · `StageCommandParseTests` 3 · `StageCommandFlowTests` 14) — line_bot 126 เคส รวมทั้งโปรเจกต์ **177 เคส**
 
+**เพิ่มล่าสุด (V4.9.1 · 2026-10-15): tools ส่ง `customer_link` + `shipping_address`** — **branch `fix/linebot-customer-link` push แล้ว ยังไม่ merge main** (deploy VPS แล้วตามกติกา smoke) · `_order_row` (ใช้ร่วม search_orders/daily_summary/overdue_orders และ get_order) เพิ่ม 2 ฟิลด์ · system prompt เพิ่มกติกา: ถามลิงก์/เบอร์/ที่อยู่ลูกค้า → ตอบค่าตรงจากฟิลด์ทั้งค่า URL ส่งทั้งเส้นห้ามย่อ · test +1 (`CustomerLinkToolTests`) รวม 178 · *หมายเหตุ privacy: บอทอยู่ในกลุ่มที่ allow เท่านั้น (V4.7) ข้อมูลนี้จึงเห็นเฉพาะคนในกลุ่มร้าน*
+
 ### 🔜 ค้าง / อนาคต
 - [ ] merge tool ลูกค้าซ้ำ (ตอนนี้กันซ้ำด้วย match ชื่อ+ลิงก์เป๊ะ + autocomplete เท่านั้น)
 - [ ] **Task system V1** — ระบบงาน/มอบหมายงาน (ยังไม่เริ่ม)

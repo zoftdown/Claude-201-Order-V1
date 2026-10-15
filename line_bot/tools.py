@@ -74,6 +74,8 @@ def _order_row(order):
         'deposit': _num(order.deposit),
         'balance': _num(order.remaining),
         'delivery_method': order.delivery_method or '',
+        'customer_link': order.customer_link or '',        # ลิงก์ FB / เบอร์โทร — ตอบตรงจากฟิลด์ ห้ามย่อ URL
+        'shipping_address': order.shipping_address or '',
         'current_stage': order.progress_label,
         'special_note': order.special_note or '',
         'is_urgent': bool(order.is_urgent),
@@ -182,7 +184,6 @@ def get_order(order_number):
         'design_doc_number': order.design_doc_number or '',
         'fabric_spec': order.fabric_spec or '',
         'extra_note': order.extra_note or '',
-        'shipping_address': order.shipping_address or '',
         'created_by': order.created_by.username if order.created_by_id else '',
         # ชื่อ key ต้องไม่ชวนสับสนกับขั้นผลิต "พิมพ์" (print_done_at ใน progress) — 2026-10-15 LLM เคย
         # อ่าน printed_at (เวลาพิมพ์ใบงานกระดาษ A4) เป็น "พิมพ์ 09:18" ทั้งที่ current_stage = ยังไม่เริ่ม
@@ -232,7 +233,8 @@ TOOL_SCHEMAS = [
         'function': {
             'name': 'search_orders',
             'description': ('ค้นหาใบออร์เดอร์ตามเงื่อนไข (ทุกเงื่อนไข optional และ AND กัน) '
-                            'คืนรายการสรุป ใหม่สุดก่อน พร้อม total_count ถ้าผลเกิน limit'),
+                            'คืนรายการสรุป ใหม่สุดก่อน พร้อม total_count ถ้าผลเกิน limit '
+                            '(แต่ละใบมี customer_link = ลิงก์แชท/เบอร์ลูกค้า และ shipping_address)'),
             'parameters': {
                 'type': 'object',
                 'properties': {
