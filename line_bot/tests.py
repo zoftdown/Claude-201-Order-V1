@@ -1724,3 +1724,49 @@ class PromptCommandsTests(BotTestCase):
         self.assertIn('ปิดงาน 6910-167', system['content'])
         self.assertIn('6910-167 พิมพ์แล้ว', system['content'])
         self.assertIn('6910-167 พิมพ์แล้ว', answer)
+
+
+class PickupLabelTests(BotTestCase):
+    """ใบติ๊กครบ 7 ขั้น (ลูกค้ารับ) → บอทต้องบอก "ลูกค้ารับแล้ว" ไม่ใช่ "รอลูกค้ารับ" (ป้ายฝั่ง model/เว็บสรุปรายวัน)
+    2026-10-15 6910-122: progress_label = รอลูกค้ารับ, progress_done = True"""
+
+    def test_fully_ticked_order_reports_customer_received(self):
+        order = make_order('6910-122')
+        order.delivery_method = 'รับเอง'
+        order.save()
+        for stage in ('print', 'roll', 'cut', 'sort', 'sew', 'pack', 'pickup'):
+            views_orders.mark_stage_done(order, stage)
+        order.refresh_from_db()
+        self.assertEqual(order.progress_label, 'รอลูกค้ารับ')  # model ไม่ถูกแตะ
+        self.assertTrue(order.progress_done)
+
+        data = tools.get_order('6910-122')
+        self.assertEqual(data['current_stage'], 'ลูกค้ารับแล้ว')
+        self.assertTrue(data['job_done'])
+        self.assertEqual(data['progress'][-2]['stage'], 'ลูกค้ารับ')
+        self.assertIsNotNone(data['progress'][-2]['done_at'])
+        self.assertNotIn('รอลูกค้ารับ', json.dumps(data, ensure_ascii=False))
+
+        rows = tools.search_orders(stage='awaiting_pickup')['orders']
+        self.assertEqual(rows[0]['current_stage'], 'ลูกค้ารับแล้ว')
+
+        # ผล tool ที่ LLM เห็นต้องมีคำว่า "ลูกค้ารับแล้ว" (คำตอบจึงมีได้)
+        client = _fake_llm(
+            _llm_response(tool_calls=[_tool_call('get_order', {'order_number': '6910-122'})]),
+            _llm_response(content='6910-122 เสื้อทีมงาน ขั้นตอนนี้: ลูกค้ารับแล้ว ค่ะ'),
+        )
+        with override_settings(RUNNINGHUB_API_KEY='k'), \
+                mock.patch('openai.OpenAI', return_value=client, autospec=True):
+            answer = services.answer_question('6910-122 สถานะ')
+        tool_msg = client.chat.completions.create.call_args[1]['messages'][-1]
+        self.assertIn('ลูกค้ารับแล้ว', tool_msg['content'])
+        self.assertNotIn('รอลูกค้ารับ', tool_msg['content'])
+        self.assertIn('ลูกค้ารับแล้ว', answer)
+
+    def test_shipped_and_other_labels_unchanged(self):
+        order = make_order('6910-130')
+        self.assertEqual(tools.get_order('6910-130')['current_stage'], 'ยังไม่เริ่ม')
+        self.assertFalse(tools.get_order('6910-130')['job_done'])
+        for stage in ('pack', 'shipped'):
+            views_orders.mark_stage_done(order, stage)
+        self.assertEqual(tools.get_order('6910-130')['current_stage'], 'ส่งแล้ว')

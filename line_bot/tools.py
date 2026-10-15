@@ -30,9 +30,21 @@ MAX_LIMIT = 30
 
 # ขั้นปัจจุบัน (= ขั้นที่เสร็จล่าสุด แบบเดียวกับ Order.progress_label) เรียงจากไกลสุด → ใกล้สุด
 # key ภาษาอังกฤษให้ LLM เลือก · (field ที่ต้องมีค่า) · label ไทยตรงกับ progress_label
+# ป้ายฝั่งบอทของสถานะ awaiting_pickup_at: model/การ์ดสรุปรายวันใช้ "รอลูกค้ารับ" (มุมแผนกแพ็ค = รอคนมารับ)
+# แต่ timeline หน้า detail + คำสั่งบอท "ลูกค้ารับ" ถือเป็นขั้นสุดท้ายที่ติ๊กแล้ว (progress_done=True)
+# → 2026-10-15 6910-122 ติ๊กครบ 7 ขั้นแต่บอทตอบ "รอลูกค้ารับ" คนอ่านเข้าใจว่ายังไม่เสร็จ
+# แปะทับเฉพาะฝั่งบอท (ไม่แตะ models/เว็บ): current_stage ยังมาจาก Order.progress_label แล้ว map ป้ายนี้
+BOT_STAGE_LABELS = {'รอลูกค้ารับ': 'ลูกค้ารับแล้ว'}
+
+
+def bot_stage_label(order):
+    label = order.progress_label
+    return BOT_STAGE_LABELS.get(label, label)
+
+
 STAGE_KEYS = [
     ('shipped',          'shipped_at',         'ส่งแล้ว'),
-    ('awaiting_pickup',  'awaiting_pickup_at', 'รอลูกค้ารับ'),
+    ('awaiting_pickup',  'awaiting_pickup_at', 'ลูกค้ารับแล้ว'),
     ('packed',           'packed_at',          'รีด+แพ็คแล้ว'),
     ('sewing',           'sent_to_tailors_at', 'ส่งเย็บแล้ว'),
     ('sorted',           'sort_done_at',       'คัดแล้ว'),
@@ -76,7 +88,8 @@ def _order_row(order):
         'delivery_method': order.delivery_method or '',
         'customer_link': order.customer_link or '',        # ลิงก์ FB / เบอร์โทร — ตอบตรงจากฟิลด์ ห้ามย่อ URL
         'shipping_address': order.shipping_address or '',
-        'current_stage': order.progress_label,
+        'current_stage': bot_stage_label(order),
+        'job_done': bool(order.progress_done),  # ออกจากร้านแล้ว (ส่งแล้ว/ลูกค้ารับแล้ว) = จบงาน
         'special_note': order.special_note or '',
         'is_urgent': bool(order.is_urgent),
     }
@@ -170,7 +183,7 @@ def get_order(order_number):
 
     progress = [{'stage': label, 'done_at': _iso_dt(getattr(order, field))}
                 for _slug, label, field in STAGE_TIMELINE]
-    progress.append({'stage': 'รอลูกค้ารับ', 'done_at': _iso_dt(order.awaiting_pickup_at)})
+    progress.append({'stage': 'ลูกค้ารับ', 'done_at': _iso_dt(order.awaiting_pickup_at)})
     progress.append({'stage': 'ส่งแล้ว', 'done_at': _iso_dt(order.shipped_at)})
 
     data = _order_row(order)
@@ -248,7 +261,7 @@ TOOL_SCHEMAS = [
                         'type': 'string', 'enum': STAGE_KEY_SET,
                         'description': ('ขั้นผลิตปัจจุบัน: not_started=ยังไม่เริ่ม, printed=พิมพ์แล้ว, '
                                         'rolled=โรลแล้ว, cut=ตัดแล้ว, sorted=คัดแล้ว, sewing=ส่งเย็บแล้ว, '
-                                        'packed=รีด+แพ็คแล้ว, awaiting_pickup=รอลูกค้ารับ, shipped=ส่งแล้ว'),
+                                        'packed=รีด+แพ็คแล้ว, awaiting_pickup=ลูกค้ารับแล้ว (จบงาน), shipped=ส่งแล้ว'),
                     },
                     'has_balance': {'type': 'boolean', 'description': 'true = ยังค้างชำระ (ยอดรวม > มัดจำ)'},
                     'limit': {'type': 'integer', 'description': 'จำนวนสูงสุด (default 10, max 30)'},
