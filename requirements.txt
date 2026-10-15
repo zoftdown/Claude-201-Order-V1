@@ -6,3 +6,4 @@ psycopg2-binary>=2.9
 qrcode[pil]>=7.4
 line-bot-sdk>=3.0
 openai>=1.0
+anthropic>=1.0

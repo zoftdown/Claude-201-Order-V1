@@ -4,6 +4,12 @@ services — ส่วนที่คุยกับโลกภายนอก:
 ไม่แตะ DB เองโดยตรง (ส่วนค้น/อัปเดตออร์เดอร์อยู่ใน line_bot/orders.py; tools อ่านอย่างเดียวอยู่ใน
 line_bot/tools.py ซึ่ง answer_question เรียกผ่าน run_tool)
 ทุกฟังก์ชันคืน None เมื่อล้มเหลว + log — ให้ views ตัดสินใจเองโดยไม่ต้อง try/except ซ้ำ
+
+LLM = ลำดับชั้น (llm_tiers) ลองทีละชั้นเมื่อชั้นก่อนพัง "แบบชั่วคราว":
+  1. RunningHub โมเดลหลัก   (settings.RUNNINGHUB_MODEL)
+  2. RunningHub โมเดลสำรอง  (settings.RUNNINGHUB_FALLBACK_MODEL — env, ว่าง = ไม่มี)
+  3. Anthropic              (settings.ANTHROPIC_MODEL ผ่าน anthropic SDK, ANTHROPIC_API_KEY ว่าง = ไม่มี)
+ชั้นที่พังถูกจำใน cache TIER_DOWN_TTL วิ ให้คำขอถัดไปข้ามไปชั้นถัดไปเลย (ไม่เสียเวลารอ 502 ซ้ำ)
 """
 import base64
 import json
@@ -35,13 +41,14 @@ LLM_TIMEOUT = 20
 LLM_MAX_TOKENS = 300
 LLM_EXTRA_BODY = {'reasoning_effort': 'none'}
 
-# โมเดลสำรอง (settings.RUNNINGHUB_FALLBACK_MODEL) — 2026-10-15 upstream ของ qwen3.8-flash-next
-# ตอบ 502 "upstream service timed out" ทุกคำขอ (~5 วิ) ทั้งจาก VPS และเครื่อง dev ขณะที่โมเดลอื่น
-# บน key เดียวกันปกติ → บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม เพราะ max_retries=0 และไม่มีสำรอง
-# แนวทาง: โมเดลหลักพังแบบชั่วคราว (5xx/429/timeout/เน็ต) → ลองสำรองทันทีในคำขอเดียวกัน
-# + จำใน cache ว่าหลักล่ม PRIMARY_DOWN_TTL วิ ให้คำขอถัดไปข้ามไปสำรองเลย (ไม่เสีย 5 วิ/รอบรอ 502)
-PRIMARY_DOWN_KEY = 'linebot:llm:primary_down'
-PRIMARY_DOWN_TTL = 300
+# 2026-10-15 upstream ของ qwen3.8-flash-next บน RunningHub ตอบ 502 "upstream service timed out"
+# ทุกคำขอ (~5 วิ) ทั้งจาก VPS และเครื่อง dev ขณะที่โมเดลอื่นบน key เดียวกันปกติ → บอทตอบ
+# "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม เพราะ max_retries=0 และไม่มีสำรอง → ทำลำดับชั้นด้านบน
+TIER_DOWN_KEY = 'linebot:llm:down:%s:%s'
+TIER_DOWN_TTL = 300
+
+BACKEND_RUNNINGHUB = 'runninghub'
+BACKEND_ANTHROPIC = 'anthropic'
 
 
 def _client(timeout=LLM_TIMEOUT):
@@ -62,64 +69,118 @@ def _client(timeout=LLM_TIMEOUT):
     )
 
 
-def _is_transient(exc):
-    """error ที่ควรลองโมเดลสำรอง: timeout / ต่อไม่ได้ / HTTP 5xx / 429 — 4xx อื่น (เช่น 400 param ผิด) ไม่ใช่"""
-    if isinstance(exc, TimeoutError):
-        return True
+# ---------------------------------------------------------------------------
+# ลำดับชั้น LLM
+# ---------------------------------------------------------------------------
+
+def llm_tiers():
+    """[(backend, model), …] ตามลำดับที่จะลอง — เฉพาะชั้นที่ตั้งค่าครบ (key + ชื่อโมเดล)"""
+    tiers = []
+    if settings.RUNNINGHUB_API_KEY and settings.RUNNINGHUB_MODEL:
+        tiers.append((BACKEND_RUNNINGHUB, settings.RUNNINGHUB_MODEL))
+        fallback = getattr(settings, 'RUNNINGHUB_FALLBACK_MODEL', '')
+        if fallback and fallback != settings.RUNNINGHUB_MODEL:
+            tiers.append((BACKEND_RUNNINGHUB, fallback))
+    if getattr(settings, 'ANTHROPIC_API_KEY', '') and getattr(settings, 'ANTHROPIC_MODEL', ''):
+        tiers.append((BACKEND_ANTHROPIC, settings.ANTHROPIC_MODEL))
+    return tiers
+
+
+def tier_label(tier):
+    return '%s:%s' % tier
+
+
+def tier_down(tier):
+    """cache บอกว่าชั้นนี้ล่มอยู่ไหม (ไว้ให้ command smoke/log รายงานด้วย)"""
     try:
-        import openai
-    except ImportError:
-        return False
-    if isinstance(exc, (openai.APITimeoutError, openai.APIConnectionError)):
-        return True
-    if isinstance(exc, openai.APIStatusError):
-        return exc.status_code >= 500 or exc.status_code == 429
-    return False
-
-
-def _fallback_model():
-    fallback = getattr(settings, 'RUNNINGHUB_FALLBACK_MODEL', '')
-    return fallback if fallback and fallback != settings.RUNNINGHUB_MODEL else None
-
-
-def primary_model_down():
-    """cache บอกว่าโมเดลหลักล่มอยู่ไหม (ไว้ให้ command smoke/log รายงานด้วย)"""
-    try:
-        return bool(cache.get(PRIMARY_DOWN_KEY))
+        return bool(cache.get(TIER_DOWN_KEY % tier))
     except Exception:  # noqa: BLE001 — cache พังไม่ควรทำบอทพัง
         return False
 
 
-def _mark_primary_down():
+def mark_tier_down(tier):
     try:
-        cache.set(PRIMARY_DOWN_KEY, True, PRIMARY_DOWN_TTL)
+        cache.set(TIER_DOWN_KEY % tier, True, TIER_DOWN_TTL)
     except Exception:  # noqa: BLE001
-        logger.exception('เซ็ต cache %s ไม่ได้', PRIMARY_DOWN_KEY)
+        logger.exception('เซ็ต cache %s ไม่ได้', TIER_DOWN_KEY % tier)
 
 
-def chat_create(client, model=None, **kwargs):
-    """client.chat.completions.create(model=…, **kwargs) พร้อม fallback:
-    - model=None → โมเดลหลัก (หรือสำรองเลยถ้า cache จำว่าหลักล่ม)
-    - หลักพังแบบชั่วคราว (_is_transient) และมีสำรอง → log WARNING, จำว่าหลักล่ม, ลองสำรองทันที
-    - สำรองพัง / ไม่มีสำรอง / error ไม่ชั่วคราว → โยน exception เดิม (ผู้เรียก except เอง)
-    → (response, model_that_answered)"""
-    primary = settings.RUNNINGHUB_MODEL
-    fallback = _fallback_model()
-    if model is None:
-        model = primary
-        if fallback and primary_model_down():
-            logger.info('LLM หลัก %s ถูกจำว่าล่ม → ใช้สำรอง %s', primary, fallback)
-            model = fallback
-    try:
-        return client.chat.completions.create(model=model, **kwargs), model
-    except Exception as exc:  # noqa: BLE001
-        if model != primary or not fallback or not _is_transient(exc):
-            raise
-        logger.warning('LLM หลัก %s ล้มเหลว (%s: %s) → ลองสำรอง %s',
-                       primary, type(exc).__name__, exc, fallback)
-        _mark_primary_down()
-        return client.chat.completions.create(model=fallback, **kwargs), fallback
+def primary_model_down():
+    tiers = llm_tiers()
+    return bool(tiers) and tier_down(tiers[0])
 
+
+def _is_transient(exc):
+    """error ที่ควรลองชั้นถัดไป: timeout / ต่อไม่ได้ / HTTP 5xx / 429 — 4xx อื่น (400 param ผิด, 401 key ผิด) ไม่ใช่
+    เช็คทั้ง openai และ anthropic SDK (คลาสชื่อเดียวกัน)"""
+    if isinstance(exc, TimeoutError):
+        return True
+    for pkg_name in ('openai', 'anthropic'):
+        try:
+            pkg = __import__(pkg_name)
+        except ImportError:
+            continue
+        if isinstance(exc, (pkg.APITimeoutError, pkg.APIConnectionError)):
+            return True
+        if isinstance(exc, pkg.APIStatusError):
+            return exc.status_code >= 500 or exc.status_code == 429
+    return False
+
+
+def _call_tier(tier, messages, tools=None, max_tokens=LLM_MAX_TOKENS, timeout=LLM_TIMEOUT):
+    """เรียกชั้นเดียว → response หน้าตา OpenAI ChatCompletion (exception หลุดให้ chat_create ตัดสิน)"""
+    backend, model = tier
+    if backend == BACKEND_RUNNINGHUB:
+        client = _client(timeout)
+        if client is None:
+            raise RuntimeError('RunningHub client ไม่พร้อม (key/package)')
+        kwargs = dict(model=model, temperature=0, max_tokens=max_tokens,
+                      extra_body=LLM_EXTRA_BODY, messages=messages)
+        if tools:
+            kwargs.update(tools=tools, tool_choice='auto')
+        return client.chat.completions.create(**kwargs)
+    if backend == BACKEND_ANTHROPIC:
+        from . import anthropic_backend
+        return anthropic_backend.create(model, messages, tools=tools, max_tokens=max_tokens, timeout=timeout)
+    raise RuntimeError('backend ไม่รู้จัก: %s' % backend)
+
+
+def chat_create(messages, tools=None, max_tokens=LLM_MAX_TOKENS, tier=None, only=False):
+    """เรียก LLM ตามลำดับชั้น → (response, tier_ที่ตอบ)
+    - tier=None → เริ่มจากชั้นแรกที่ cache ไม่ได้จำว่าล่ม (ล่มหมด → เริ่มชั้นแรกอยู่ดี)
+    - tier=(backend, model) → เริ่มจากชั้นนั้น (ไม่สนใจ cache) แล้วไล่ชั้นถัดไปเมื่อพังชั่วคราว
+    - only=True → ลองเฉพาะชั้นที่ระบุ ไม่ไล่ต่อ (ไว้ให้ linebot_smoke ทดสอบทีละชั้น)
+    ชั้นพังชั่วคราว (_is_transient) → log WARNING + จำใน cache แล้วลองชั้นถัดไป · ชั้นสุดท้ายพัง /
+    error ไม่ชั่วคราว → โยน exception เดิม (ผู้เรียก except เอง)"""
+    tiers = llm_tiers()
+    if not tiers:
+        raise RuntimeError('ไม่มี LLM ตั้งค่าเลย (RUNNINGHUB_API_KEY / ANTHROPIC_API_KEY ว่าง)')
+    if tier is None:
+        start = next((i for i, t in enumerate(tiers) if not tier_down(t)), 0)
+        if start:
+            logger.info('LLM ชั้น %s ถูกจำว่าล่ม → เริ่มที่ %s',
+                        ', '.join(tier_label(t) for t in tiers[:start]), tier_label(tiers[start]))
+    else:
+        if tier not in tiers:
+            raise RuntimeError('ชั้น %s ไม่ได้ตั้งค่า' % tier_label(tier))
+        start = tiers.index(tier)
+    for i in range(start, len(tiers)):
+        current = tiers[i]
+        try:
+            return _call_tier(current, messages, tools=tools, max_tokens=max_tokens), current
+        except Exception as exc:  # noqa: BLE001
+            is_last = i == len(tiers) - 1
+            if only or is_last or not _is_transient(exc):
+                raise
+            logger.warning('LLM ชั้น %s ล้มเหลว (%s: %s) → ลองชั้นถัดไป %s',
+                           tier_label(current), type(exc).__name__, exc, tier_label(tiers[i + 1]))
+            mark_tier_down(current)
+    raise RuntimeError('unreachable')
+
+
+# ---------------------------------------------------------------------------
+# รูปจาก LINE + อ่านเลขออร์เดอร์
+# ---------------------------------------------------------------------------
 
 def download_line_image(message_id):
     """ดึงไฟล์รูปของ message จาก LINE → bytes (None เมื่อ token ว่าง/ดึงไม่ได้)"""
@@ -163,35 +224,31 @@ def parse_order_number(raw_text):
     return value if ORDER_NUMBER_RE.match(value) else None
 
 
-def read_order_number(image_bytes, mime='image/jpeg'):
-    """ส่งรูปให้ LLM (OpenAI-compatible) หาเลขออร์เดอร์ที่หัวใบ
-    → '6910-116' / None (ไม่เจอ หรือ LLM พัง/timeout → log ERROR แล้ว None)"""
-    client = _client()
-    if client is None:
+def read_order_number(image_bytes, mime='image/jpeg', tier=None, only=False):
+    """ส่งรูปให้ LLM (ตามลำดับชั้น) หาเลขออร์เดอร์ที่หัวใบ
+    → '6910-116' / None (ไม่เจอ หรือ LLM พัง/timeout ทุกชั้น → log ERROR แล้ว None)
+    tier/only ไว้ให้ smoke ทดสอบชั้นที่ระบุ"""
+    if not llm_tiers():
+        logger.warning('ไม่มี LLM ตั้งค่า — อ่านรูปไม่ได้')
         return None
 
     data_url = 'data:%s;base64,%s' % (mime, base64.b64encode(image_bytes).decode('ascii'))
+    messages = [
+        {'role': 'system', 'content': SYSTEM_PROMPT},
+        {'role': 'user', 'content': [
+            {'type': 'text', 'text': 'เลขออร์เดอร์ในรูปนี้คืออะไร'},
+            {'type': 'image_url', 'image_url': {'url': data_url}},
+        ]},
+    ]
     try:
-        resp, model = chat_create(
-            client,
-            temperature=0,
-            max_tokens=LLM_MAX_TOKENS,
-            extra_body=LLM_EXTRA_BODY,
-            messages=[
-                {'role': 'system', 'content': SYSTEM_PROMPT},
-                {'role': 'user', 'content': [
-                    {'type': 'text', 'text': 'เลขออร์เดอร์ในรูปนี้คืออะไร'},
-                    {'type': 'image_url', 'image_url': {'url': data_url}},
-                ]},
-            ],
-        )
+        resp, used = chat_create(messages, max_tokens=LLM_MAX_TOKENS, tier=tier, only=only)
         raw = resp.choices[0].message.content
     except Exception:  # noqa: BLE001
         logger.exception('เรียก LLM อ่านรูปไม่สำเร็จ')
         return None
 
     number = parse_order_number(raw)
-    logger.info('LLM (%s) ตอบ %r → order_number=%s', model, raw, number)
+    logger.info('LLM (%s) ตอบ %r → order_number=%s', tier_label(used), raw, number)
     return number
 
 
@@ -227,8 +284,8 @@ def qa_system_prompt(today=None):
 
 
 # สระบน/ล่าง + วรรณยุกต์ (combining marks) ที่ LLM บางตัวแทรกช่องว่างคั่นจากพยัญชนะ เช่น "เสื้ อ" / "ชื่ อ"
-_THAI_MARKS = '\u0e31\u0e34-\u0e3a\u0e47-\u0e4e'
-_THAI_ANY = '\u0e00-\u0e7f'
+_THAI_MARKS = 'ัิ-ฺ็-๎'
+_THAI_ANY = '฀-๿'
 # ช่องว่าง (space/tab ไม่รวม newline) ระหว่าง อักษรไทย → mark  หรือ  mark → อักษรไทย
 _THAI_SPACE_BEFORE_MARK_RE = re.compile('(?<=[%s])[ \t]+(?=[%s])' % (_THAI_ANY, _THAI_MARKS))
 _THAI_SPACE_AFTER_MARK_RE = re.compile('(?<=[%s])[ \t]+(?=[%s])' % (_THAI_MARKS, _THAI_ANY))
@@ -262,16 +319,17 @@ def _parse_tool_args(raw):
     return data if isinstance(data, dict) else {}
 
 
-def answer_question(question, history=None, today=None):
+def answer_question(question, history=None, today=None, tier=None, only=False):
     """ถาม-ตอบด้วย LLM + tools (line_bot.tools) แบบ OpenAI tool calling
-    วนจนกว่า LLM จะไม่เรียก tool (สูงสุด QA_MAX_ROUNDS) · temperature 0 · timeout 20 วิ/รอบ
+    วนจนกว่า LLM จะไม่เรียก tool (สูงสุด QA_MAX_ROUNDS) · timeout 20 วิ/รอบ
     history = list ของ {'role','content'} ก่อนหน้า (จาก line_bot.history)
+    tier/only = บังคับชั้น LLM (ไว้ให้ linebot_smoke ทดสอบทีละชั้น) · ปกติให้ chat_create เลือกเอง
     → ข้อความคำตอบ (str) หรือ None เมื่อ LLM พัง/timeout/เกินรอบโดยไม่มีคำตอบ (views ตอบขอโทษ)
-    log ทุกรอบ: คำถาม, tool ที่เรียก+args, จำนวน tokens (INFO)"""
+    log ทุกรอบ: คำถาม, ชั้นที่ตอบ, tool ที่เรียก+args, จำนวน tokens (INFO)"""
     from . import tools  # import ที่นี่ กัน import ฝั่ง DB ตอนโหลด module
 
-    client = _client()
-    if client is None:
+    if not llm_tiers():
+        logger.warning('ไม่มี LLM ตั้งค่า — ตอบคำถามไม่ได้')
         return None
 
     logger.info('QA คำถาม: %r (history %d ข้อความ)', question, len(history or []))
@@ -281,22 +339,14 @@ def answer_question(question, history=None, today=None):
 
     started = time.monotonic()
     last_content = None
-    model = None  # รอบแรกให้ chat_create เลือก (หลัก/สำรอง); สลับไปสำรองแล้วใช้ต่อทุกรอบ
+    current = tier  # ชั้นที่ตอบรอบก่อน — สลับชั้นแล้วใช้ต่อทุกรอบ (ไม่ย้อนกลับไปชั้นที่ล่ม)
     for round_no in range(1, QA_MAX_ROUNDS + 1):
         if time.monotonic() - started > QA_TOTAL_DEADLINE:
             logger.warning('QA เกินเวลารวม %ds ที่รอบ %d', QA_TOTAL_DEADLINE, round_no)
             break
         try:
-            resp, model = chat_create(
-                client,
-                model=model,
-                temperature=0,
-                max_tokens=QA_MAX_TOKENS,
-                extra_body=LLM_EXTRA_BODY,
-                tools=tools.TOOL_SCHEMAS,
-                tool_choice='auto',
-                messages=messages,
-            )
+            resp, current = chat_create(messages, tools=tools.TOOL_SCHEMAS, max_tokens=QA_MAX_TOKENS,
+                                        tier=current, only=only)
         except Exception:  # noqa: BLE001
             logger.exception('QA เรียก LLM รอบ %d ไม่สำเร็จ', round_no)
             return None
@@ -306,7 +356,7 @@ def answer_question(question, history=None, today=None):
         content = (getattr(msg, 'content', None) or '').strip()
         prompt_t, completion_t, total_t = _usage_tuple(resp)
         logger.info('QA รอบ %d (%s): tool_calls=%d tokens prompt=%s completion=%s total=%s',
-                    round_no, model, len(tool_calls), prompt_t, completion_t, total_t)
+                    round_no, tier_label(current), len(tool_calls), prompt_t, completion_t, total_t)
 
         if not tool_calls:
             if content:

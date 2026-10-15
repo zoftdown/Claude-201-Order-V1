@@ -882,7 +882,8 @@ class FixThaiSpacingTests(TestCase):
             self.assertEqual(services.answer_question('งานอะไร'), 'ชื่องาน เสื้อทีม')
 
 
-@override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m')
+@override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
+                   ANTHROPIC_API_KEY='')
 class LlmFallbackTests(TestCase):
     """services.chat_create — โมเดลหลักพังชั่วคราว (5xx/timeout) → ลองสำรอง + จำใน cache
     (2026-10-15 upstream qwen3.8-flash-next ตอบ 502 ทั้งวัน บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม)"""
@@ -908,10 +909,10 @@ class LlmFallbackTests(TestCase):
         models = [c[1]['model'] for c in client.chat.completions.create.call_args_list]
         self.assertEqual(models, ['primary/m', 'fallback/m'])
         self.assertTrue(services.primary_model_down())
-        self.assertIn('ลองสำรอง fallback/m', '\n'.join(logs.output))
+        self.assertIn('ลองชั้นถัดไป runninghub:fallback/m', '\n'.join(logs.output))
 
     def test_primary_marked_down_skips_straight_to_fallback(self):
-        cache.set(services.PRIMARY_DOWN_KEY, True, 60)
+        services.mark_tier_down(('runninghub', 'primary/m'))
         client = _fake_llm(_llm_response(content='ok'))
         with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             self.assertEqual(services.answer_question('x'), 'ok')
@@ -977,23 +978,32 @@ class LinebotSmokeCommandTests(TestCase):
         cache.clear()
         self.addCleanup(cache.clear)
 
-    def _run(self, bot_name='หมอนทอง', answer='วันนี้ 2 ใบ', token='tok', key='k'):
+    def _run(self, bot_name='หมอนทอง', answer='วันนี้ 2 ใบ', token='tok', key='k', an_key='', strict=False):
         from io import StringIO
         from django.core.management import call_command
         out, err = StringIO(), StringIO()
         with mock.patch.object(self.cmd, 'MessagingApi', autospec=True) as api, \
-                mock.patch.object(services, 'answer_question', return_value=answer) as qa, \
-                override_settings(LINE_CHANNEL_ACCESS_TOKEN=token, RUNNINGHUB_API_KEY=key):
+                mock.patch.object(services, 'answer_question', side_effect=answer
+                                  if callable(answer) else (lambda *a, **k: answer)) as qa, \
+                override_settings(LINE_CHANNEL_ACCESS_TOKEN=token, RUNNINGHUB_API_KEY=key,
+                                  RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
+                                  ANTHROPIC_API_KEY=an_key, ANTHROPIC_MODEL='claude-haiku-5-5'):
             api.return_value.get_bot_info.return_value = mock.MagicMock(display_name=bot_name)
-            call_command('linebot_smoke', stdout=out, stderr=err)
+            args = ['--strict'] if strict else []
+            call_command('linebot_smoke', *args, stdout=out, stderr=err)
         return out.getvalue(), err.getvalue(), api, qa
 
     def test_all_pass(self):
         out, err, api, qa = self._run()
         api.return_value.get_bot_info.assert_called_once_with()
-        qa.assert_called_once_with(self.cmd.SMOKE_QUESTION)
-        self.assertIn('ผ่านทั้ง 2 ข้อ', out)
-        self.assertEqual(err, '')
+        # 2 ชั้น RunningHub ถูกยิงทีละชั้นแบบ only=True · ชั้น 3 ไม่มี key → รายงานยังไม่ตั้งค่า ไม่เรียก LLM
+        self.assertEqual(qa.call_args_list, [
+            mock.call(self.cmd.SMOKE_QUESTION, tier=('runninghub', 'primary/m'), only=True),
+            mock.call(self.cmd.SMOKE_QUESTION, tier=('runninghub', 'fallback/m'), only=True),
+        ])
+        self.assertIn('LLM ผ่าน 2/3 ชั้น', out)
+        self.assertIn('ผ่าน (LINE + LLM 2/3 ชั้น)', out)
+        self.assertIn('ชั้น 3 Anthropic: ยังไม่ตั้งค่า', err)
 
     def test_wrong_bot_name_fails(self):
         from django.core.management import CommandError
@@ -1002,25 +1012,201 @@ class LinebotSmokeCommandTests(TestCase):
         self.assertIn('LINE get_bot_info', str(cm.exception))
         self.assertIn('ห้าม restart', str(cm.exception))
 
-    def test_empty_answer_fails(self):
+    def test_all_tiers_empty_fails(self):
         from django.core.management import CommandError
         with self.assertRaises(CommandError) as cm:
             self._run(answer=None)
-        self.assertIn('RunningHub answer_question', str(cm.exception))
+        self.assertIn('LLM ทุกชั้น', str(cm.exception))
+
+    def test_one_tier_down_still_passes_unless_strict(self):
+        # ชั้น 1 ล่ม (upstream 502) แต่ชั้น 2 ตอบได้ → deploy ได้ (ไม่บล็อกเพราะผู้ให้บริการล่ม)
+        def qa(question, tier=None, only=False):
+            return None if tier == ('runninghub', 'primary/m') else 'วันนี้ 2 ใบ'
+        out, err, _, _ = self._run(answer=qa)
+        self.assertIn('✗ ชั้น 1 RunningHub หลัก', err)
+        self.assertIn('✓ ชั้น 2 RunningHub สำรอง', out)
+        self.assertIn('LLM ผ่าน 1/3 ชั้น', out)
+        from django.core.management import CommandError
+        with self.assertRaises(CommandError) as cm:
+            self._run(answer=qa, strict=True)
+        self.assertIn('ชั้น 1 RunningHub หลัก', str(cm.exception))
+
+    def test_anthropic_tier_tested_when_key_set(self):
+        out, err, _, qa = self._run(an_key='sk-ant-test')
+        self.assertIn(mock.call(self.cmd.SMOKE_QUESTION, tier=('anthropic', 'claude-haiku-5-5'), only=True),
+                      qa.call_args_list)
+        self.assertIn('LLM ผ่าน 3/3 ชั้น', out)
 
     def test_missing_env_fails_both(self):
         from django.core.management import CommandError
         with self.assertRaises(CommandError) as cm:
             self._run(token='', key='')
         self.assertIn('LINE get_bot_info', str(cm.exception))
-        self.assertIn('RunningHub answer_question', str(cm.exception))
+        self.assertIn('LLM ทุกชั้น', str(cm.exception))
 
     def test_line_api_exception_fails_not_crash(self):
         from io import StringIO
         from django.core.management import CommandError, call_command
         with mock.patch.object(self.cmd, 'MessagingApi', autospec=True) as api, \
                 mock.patch.object(services, 'answer_question', return_value='ok'), \
-                override_settings(LINE_CHANNEL_ACCESS_TOKEN='tok', RUNNINGHUB_API_KEY='k'):
+                override_settings(LINE_CHANNEL_ACCESS_TOKEN='tok', RUNNINGHUB_API_KEY='k', ANTHROPIC_API_KEY=''):
             api.return_value.get_bot_info.side_effect = RuntimeError('401')
             with self.assertRaises(CommandError):
                 call_command('linebot_smoke', stdout=StringIO(), stderr=StringIO())
+
+
+@override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
+                   ANTHROPIC_API_KEY='sk-ant-test', ANTHROPIC_MODEL='claude-haiku-5-5')
+class AnthropicTierTests(TestCase):
+    """ชั้นสำรองที่ 3 (line_bot/anthropic_backend.py) — แปลง OpenAI ↔ Anthropic + เข้าคิวหลัง RunningHub ทั้ง 2"""
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        from . import anthropic_backend
+        self.backend = anthropic_backend
+
+    @staticmethod
+    def _rh_error(code):
+        import openai
+        return openai.APIStatusError('upstream timed out',
+                                     response=mock.MagicMock(status_code=code, headers={}), body=None)
+
+    @staticmethod
+    def _an_message(blocks, stop_reason='end_turn', input_tokens=10, output_tokens=5):
+        content = []
+        for b in blocks:
+            ns = mock.MagicMock()
+            ns.type = b['type']
+            for k, v in b.items():
+                setattr(ns, k, v)
+            content.append(ns)
+        return mock.MagicMock(content=content, stop_reason=stop_reason, model='claude-haiku-5-5',
+                              usage=mock.MagicMock(input_tokens=input_tokens, output_tokens=output_tokens))
+
+    def test_tiers_order(self):
+        self.assertEqual(services.llm_tiers(), [
+            ('runninghub', 'primary/m'), ('runninghub', 'fallback/m'), ('anthropic', 'claude-haiku-5-5')])
+        with override_settings(ANTHROPIC_API_KEY=''):
+            self.assertEqual(len(services.llm_tiers()), 2)
+
+    def test_convert_tools(self):
+        out = self.backend.convert_tools(tools.TOOL_SCHEMAS)
+        self.assertEqual([t['name'] for t in out], tools.TOOL_NAMES)
+        self.assertEqual(out[0]['input_schema'], tools.TOOL_SCHEMAS[0]['function']['parameters'])
+        self.assertNotIn('parameters', out[0])
+
+    def test_convert_messages_tool_loop_and_image(self):
+        data_url = 'data:image/jpeg;base64,' + base64.b64encode(b'img').decode()
+        system, msgs = self.backend.convert_messages([
+            {'role': 'system', 'content': 'sys'},
+            {'role': 'user', 'content': [{'type': 'text', 'text': 'ดูรูป'},
+                                         {'type': 'image_url', 'image_url': {'url': data_url}}]},
+            {'role': 'assistant', 'content': '', 'tool_calls': [
+                {'id': 'c1', 'type': 'function', 'function': {'name': 'get_order', 'arguments': '{"order_number": "6910-1"}'}},
+                {'id': 'c2', 'type': 'function', 'function': {'name': 'overdue_orders', 'arguments': '{}'}}]},
+            {'role': 'tool', 'tool_call_id': 'c1', 'content': '{"a": 1}'},
+            {'role': 'tool', 'tool_call_id': 'c2', 'content': '{"b": 2}'},
+            {'role': 'user', 'content': 'ต่อ'},
+        ])
+        self.assertEqual(system, 'sys')
+        self.assertEqual(msgs[0]['role'], 'user')
+        self.assertEqual(msgs[0]['content'][1], {'type': 'image', 'source': {
+            'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.b64encode(b'img').decode()}})
+        self.assertEqual(msgs[1]['role'], 'assistant')
+        self.assertEqual([b['type'] for b in msgs[1]['content']], ['tool_use', 'tool_use'])
+        self.assertEqual(msgs[1]['content'][0]['input'], {'order_number': '6910-1'})
+        # ผล tool 2 อันรวมใน user message เดียว (Anthropic บังคับ)
+        self.assertEqual(msgs[2]['role'], 'user')
+        self.assertEqual([b['tool_use_id'] for b in msgs[2]['content']], ['c1', 'c2'])
+        self.assertEqual(msgs[2]['content'][0]['type'], 'tool_result')
+        self.assertEqual(msgs[3], {'role': 'user', 'content': 'ต่อ'})
+
+    def test_to_openai_like(self):
+        resp = self.backend.to_openai_like(self._an_message([
+            {'type': 'text', 'text': 'ขอดูก่อน'},
+            {'type': 'tool_use', 'id': 'tu1', 'name': 'daily_summary', 'input': {'date': '2026-10-15'}},
+        ], stop_reason='tool_use'))
+        msg = resp.choices[0].message
+        self.assertEqual(msg.content, 'ขอดูก่อน')
+        self.assertEqual(msg.tool_calls[0].id, 'tu1')
+        self.assertEqual(msg.tool_calls[0].function.name, 'daily_summary')
+        self.assertEqual(json.loads(msg.tool_calls[0].function.arguments), {'date': '2026-10-15'})
+        self.assertEqual(resp.usage.total_tokens, 15)
+        plain = self.backend.to_openai_like(self._an_message([{'type': 'text', 'text': 'ok'}]))
+        self.assertIsNone(plain.choices[0].message.tool_calls)
+
+    def test_create_calls_sdk_with_converted_payload(self):
+        client = mock.MagicMock()
+        client.messages.create.return_value = self._an_message([{'type': 'text', 'text': 'ok'}])
+        with mock.patch('anthropic.Anthropic', return_value=client, autospec=True) as ctor:
+            resp = self.backend.create('claude-haiku-5-5',
+                                       [{'role': 'system', 'content': 'sys'}, {'role': 'user', 'content': 'q'}],
+                                       tools=tools.TOOL_SCHEMAS, max_tokens=123, timeout=7)
+        self.assertEqual(resp.choices[0].message.content, 'ok')
+        ctor.assert_called_once_with(api_key='sk-ant-test', timeout=7, max_retries=0)
+        kwargs = client.messages.create.call_args[1]
+        self.assertEqual(kwargs['model'], 'claude-haiku-5-5')
+        self.assertEqual(kwargs['max_tokens'], 123)
+        self.assertEqual(kwargs['system'], 'sys')
+        self.assertEqual(kwargs['messages'], [{'role': 'user', 'content': 'q'}])
+        self.assertEqual([t['name'] for t in kwargs['tools']], tools.TOOL_NAMES)
+        self.assertNotIn('temperature', kwargs)
+
+    def test_qa_falls_through_to_anthropic_when_runninghub_all_down(self):
+        rh = mock.MagicMock()
+        rh.chat.completions.create.side_effect = [self._rh_error(502), self._rh_error(503)]
+        an = mock.MagicMock()
+        an.messages.create.side_effect = [
+            self._an_message([{'type': 'tool_use', 'id': 'tu1', 'name': 'daily_summary',
+                               'input': {'date': '2026-10-15'}}], stop_reason='tool_use'),
+            self._an_message([{'type': 'text', 'text': 'วันนี้ 3 ใบ'}]),
+        ]
+        with mock.patch('openai.OpenAI', return_value=rh, autospec=True), \
+                mock.patch('anthropic.Anthropic', return_value=an, autospec=True), \
+                mock.patch.object(tools, 'daily_summary', return_value={'orders': 3}) as tool_mock, \
+                self.assertLogs('line_bot.services', level='INFO') as logs:
+            self.assertEqual(services.answer_question('วันนี้มีกี่ใบ'), 'วันนี้ 3 ใบ')
+        tool_mock.assert_called_once_with(date='2026-10-15')
+        self.assertEqual(rh.chat.completions.create.call_count, 2)
+        self.assertEqual(an.messages.create.call_count, 2)
+        # รอบ 2 ยังอยู่ชั้น anthropic (ไม่ย้อนกลับ RunningHub) และส่ง tool_result ไป
+        second = an.messages.create.call_args_list[1][1]['messages']
+        self.assertEqual(second[-1]['content'][0]['type'], 'tool_result')
+        self.assertEqual(second[-1]['content'][0]['tool_use_id'], 'tu1')
+        joined = '\n'.join(logs.output)
+        self.assertIn('QA รอบ 1 (anthropic:claude-haiku-5-5)', joined)
+        self.assertTrue(services.tier_down(('runninghub', 'primary/m')))
+        self.assertTrue(services.tier_down(('runninghub', 'fallback/m')))
+
+    def test_read_order_number_via_anthropic_vision(self):
+        rh = mock.MagicMock()
+        rh.chat.completions.create.side_effect = TimeoutError('slow')
+        an = mock.MagicMock()
+        an.messages.create.return_value = self._an_message([{'type': 'text', 'text': '{"order_number": "6910-116"}'}])
+        with mock.patch('openai.OpenAI', return_value=rh, autospec=True), \
+                mock.patch('anthropic.Anthropic', return_value=an, autospec=True):
+            self.assertEqual(services.read_order_number(b'img'), '6910-116')
+        user_blocks = an.messages.create.call_args[1]['messages'][0]['content']
+        self.assertEqual(user_blocks[1]['type'], 'image')
+        self.assertEqual(user_blocks[1]['source']['media_type'], 'image/jpeg')
+        self.assertEqual(an.messages.create.call_args[1]['max_tokens'], services.LLM_MAX_TOKENS)
+
+    def test_anthropic_5xx_is_transient_but_401_not(self):
+        import anthropic
+        err5 = anthropic.APIStatusError('x', response=mock.MagicMock(status_code=529, headers={}), body=None)
+        err4 = anthropic.APIStatusError('x', response=mock.MagicMock(status_code=401, headers={}), body=None)
+        self.assertTrue(services._is_transient(err5))
+        self.assertFalse(services._is_transient(err4))
+
+    def test_only_tier_does_not_fall_through(self):
+        rh = mock.MagicMock()
+        rh.chat.completions.create.side_effect = self._rh_error(502)
+        an = mock.MagicMock()
+        with mock.patch('openai.OpenAI', return_value=rh, autospec=True), \
+                mock.patch('anthropic.Anthropic', return_value=an, autospec=True), \
+                self.assertLogs('line_bot.services', level='ERROR'):
+            self.assertIsNone(services.answer_question('x', tier=('runninghub', 'primary/m'), only=True))
+        rh.chat.completions.create.assert_called_once()
+        an.messages.create.assert_not_called()
+        self.assertFalse(services.tier_down(('runninghub', 'primary/m')))

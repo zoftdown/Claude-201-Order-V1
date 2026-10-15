@@ -57,6 +57,10 @@ RUNNINGHUB_MODEL = os.environ.get('RUNNINGHUB_MODEL', 'qwen/qwen3.8-flash-next')
 # โมเดลสำรองเมื่อโมเดลหลักล่มชั่วคราว (5xx/429/timeout) — 2026-10-15 upstream ของ qwen3.8-flash-next
 # ตอบ 502 ทั้งวัน บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม · ว่าง = ไม่มีสำรอง (พฤติกรรมเดิม)
 RUNNINGHUB_FALLBACK_MODEL = os.environ.get('RUNNINGHUB_FALLBACK_MODEL', 'deepseek/deepseek-v4.1-flash')
+# ชั้นสำรองที่ 3 คนละผู้ให้บริการ — Anthropic ผ่าน anthropic SDK (line_bot/anthropic_backend.py)
+# ใช้เมื่อ RunningHub ล้มทั้ง 2 โมเดล · ANTHROPIC_API_KEY ว่าง = ไม่มีชั้นนี้ · รองรับ tools + vision
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-haiku-5-5')
 
 # --- Authentication redirects ---
 LOGIN_URL = 'login'
