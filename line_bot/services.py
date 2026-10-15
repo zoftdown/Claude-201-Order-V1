@@ -12,6 +12,7 @@ import re
 import time
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApiBlob
@@ -34,6 +35,14 @@ LLM_TIMEOUT = 20
 LLM_MAX_TOKENS = 300
 LLM_EXTRA_BODY = {'reasoning_effort': 'none'}
 
+# โมเดลสำรอง (settings.RUNNINGHUB_FALLBACK_MODEL) — 2026-10-15 upstream ของ qwen3.8-flash-next
+# ตอบ 502 "upstream service timed out" ทุกคำขอ (~5 วิ) ทั้งจาก VPS และเครื่อง dev ขณะที่โมเดลอื่น
+# บน key เดียวกันปกติ → บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม เพราะ max_retries=0 และไม่มีสำรอง
+# แนวทาง: โมเดลหลักพังแบบชั่วคราว (5xx/429/timeout/เน็ต) → ลองสำรองทันทีในคำขอเดียวกัน
+# + จำใน cache ว่าหลักล่ม PRIMARY_DOWN_TTL วิ ให้คำขอถัดไปข้ามไปสำรองเลย (ไม่เสีย 5 วิ/รอบรอ 502)
+PRIMARY_DOWN_KEY = 'linebot:llm:primary_down'
+PRIMARY_DOWN_TTL = 300
+
 
 def _client(timeout=LLM_TIMEOUT):
     """OpenAI-compatible client ชี้ RunningHub (None เมื่อไม่มี key / ไม่มี package)"""
@@ -51,6 +60,65 @@ def _client(timeout=LLM_TIMEOUT):
         timeout=timeout,
         max_retries=0,
     )
+
+
+def _is_transient(exc):
+    """error ที่ควรลองโมเดลสำรอง: timeout / ต่อไม่ได้ / HTTP 5xx / 429 — 4xx อื่น (เช่น 400 param ผิด) ไม่ใช่"""
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        import openai
+    except ImportError:
+        return False
+    if isinstance(exc, (openai.APITimeoutError, openai.APIConnectionError)):
+        return True
+    if isinstance(exc, openai.APIStatusError):
+        return exc.status_code >= 500 or exc.status_code == 429
+    return False
+
+
+def _fallback_model():
+    fallback = getattr(settings, 'RUNNINGHUB_FALLBACK_MODEL', '')
+    return fallback if fallback and fallback != settings.RUNNINGHUB_MODEL else None
+
+
+def primary_model_down():
+    """cache บอกว่าโมเดลหลักล่มอยู่ไหม (ไว้ให้ command smoke/log รายงานด้วย)"""
+    try:
+        return bool(cache.get(PRIMARY_DOWN_KEY))
+    except Exception:  # noqa: BLE001 — cache พังไม่ควรทำบอทพัง
+        return False
+
+
+def _mark_primary_down():
+    try:
+        cache.set(PRIMARY_DOWN_KEY, True, PRIMARY_DOWN_TTL)
+    except Exception:  # noqa: BLE001
+        logger.exception('เซ็ต cache %s ไม่ได้', PRIMARY_DOWN_KEY)
+
+
+def chat_create(client, model=None, **kwargs):
+    """client.chat.completions.create(model=…, **kwargs) พร้อม fallback:
+    - model=None → โมเดลหลัก (หรือสำรองเลยถ้า cache จำว่าหลักล่ม)
+    - หลักพังแบบชั่วคราว (_is_transient) และมีสำรอง → log WARNING, จำว่าหลักล่ม, ลองสำรองทันที
+    - สำรองพัง / ไม่มีสำรอง / error ไม่ชั่วคราว → โยน exception เดิม (ผู้เรียก except เอง)
+    → (response, model_that_answered)"""
+    primary = settings.RUNNINGHUB_MODEL
+    fallback = _fallback_model()
+    if model is None:
+        model = primary
+        if fallback and primary_model_down():
+            logger.info('LLM หลัก %s ถูกจำว่าล่ม → ใช้สำรอง %s', primary, fallback)
+            model = fallback
+    try:
+        return client.chat.completions.create(model=model, **kwargs), model
+    except Exception as exc:  # noqa: BLE001
+        if model != primary or not fallback or not _is_transient(exc):
+            raise
+        logger.warning('LLM หลัก %s ล้มเหลว (%s: %s) → ลองสำรอง %s',
+                       primary, type(exc).__name__, exc, fallback)
+        _mark_primary_down()
+        return client.chat.completions.create(model=fallback, **kwargs), fallback
 
 
 def download_line_image(message_id):
@@ -104,8 +172,8 @@ def read_order_number(image_bytes, mime='image/jpeg'):
 
     data_url = 'data:%s;base64,%s' % (mime, base64.b64encode(image_bytes).decode('ascii'))
     try:
-        resp = client.chat.completions.create(
-            model=settings.RUNNINGHUB_MODEL,
+        resp, model = chat_create(
+            client,
             temperature=0,
             max_tokens=LLM_MAX_TOKENS,
             extra_body=LLM_EXTRA_BODY,
@@ -123,7 +191,7 @@ def read_order_number(image_bytes, mime='image/jpeg'):
         return None
 
     number = parse_order_number(raw)
-    logger.info('LLM ตอบ %r → order_number=%s', raw, number)
+    logger.info('LLM (%s) ตอบ %r → order_number=%s', model, raw, number)
     return number
 
 
@@ -213,13 +281,15 @@ def answer_question(question, history=None, today=None):
 
     started = time.monotonic()
     last_content = None
+    model = None  # รอบแรกให้ chat_create เลือก (หลัก/สำรอง); สลับไปสำรองแล้วใช้ต่อทุกรอบ
     for round_no in range(1, QA_MAX_ROUNDS + 1):
         if time.monotonic() - started > QA_TOTAL_DEADLINE:
             logger.warning('QA เกินเวลารวม %ds ที่รอบ %d', QA_TOTAL_DEADLINE, round_no)
             break
         try:
-            resp = client.chat.completions.create(
-                model=settings.RUNNINGHUB_MODEL,
+            resp, model = chat_create(
+                client,
+                model=model,
                 temperature=0,
                 max_tokens=QA_MAX_TOKENS,
                 extra_body=LLM_EXTRA_BODY,
@@ -235,8 +305,8 @@ def answer_question(question, history=None, today=None):
         tool_calls = list(getattr(msg, 'tool_calls', None) or [])
         content = (getattr(msg, 'content', None) or '').strip()
         prompt_t, completion_t, total_t = _usage_tuple(resp)
-        logger.info('QA รอบ %d: tool_calls=%d tokens prompt=%s completion=%s total=%s',
-                    round_no, len(tool_calls), prompt_t, completion_t, total_t)
+        logger.info('QA รอบ %d (%s): tool_calls=%d tokens prompt=%s completion=%s total=%s',
+                    round_no, model, len(tool_calls), prompt_t, completion_t, total_t)
 
         if not tool_calls:
             if content:

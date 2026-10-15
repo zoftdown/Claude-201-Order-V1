@@ -142,7 +142,7 @@ class LineWebhookBasicTests(WebhookBase):
         # reply พัง (เช่น token ผิด/เน็ตล่ม) → log แล้วยังตอบ 200 ให้ LINE
         self.reply.stop()
         try:
-            with mock.patch.object(views, 'MessagingApi') as api, \
+            with mock.patch.object(views, 'MessagingApi', autospec=True) as api, \
                     mock.patch.object(views.settings, 'LINE_CHANNEL_ACCESS_TOKEN', 'tok'):
                 api.return_value.reply_message.side_effect = RuntimeError('boom')
                 resp = self._post({'destination': 'x', 'events': [_text_event('บอท ping')]})
@@ -411,7 +411,7 @@ class ReadOrderNumberLLMTests(TestCase):
 
     def test_llm_returns_number(self):
         client = self._fake_client('{"order_number": "6910-116"}')
-        with mock.patch('openai.OpenAI', return_value=client):
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             self.assertEqual(services.read_order_number(b'img'), '6910-116')
         kwargs = client.chat.completions.create.call_args[1]
         self.assertEqual(kwargs['temperature'], 0)
@@ -422,13 +422,13 @@ class ReadOrderNumberLLMTests(TestCase):
 
     def test_llm_error_is_none(self):
         client = self._fake_client(error=TimeoutError('slow'))
-        with mock.patch('openai.OpenAI', return_value=client), \
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
                 self.assertLogs('line_bot.services', level='ERROR'):
             self.assertIsNone(services.read_order_number(b'img'))
 
     def test_llm_garbage_is_none(self):
         client = self._fake_client('not json at all')
-        with mock.patch('openai.OpenAI', return_value=client):
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             self.assertIsNone(services.read_order_number(b'img'))
 
     @override_settings(RUNNINGHUB_API_KEY='')
@@ -603,7 +603,7 @@ class AnswerQuestionLoopTests(TestCase):
             _llm_response(tool_calls=[_tool_call('search_orders', {'customer_name': 'คุณเอ'})]),
             _llm_response(content='เจอ 1 ใบ: 6910-116'),
         )
-        with mock.patch('openai.OpenAI', return_value=client), \
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
                 mock.patch.object(tools, 'search_orders',
                                   return_value={'orders': [], 'total_count': 0}) as tool_mock, \
                 self.assertLogs('line_bot.services', level='INFO') as logs:
@@ -632,7 +632,7 @@ class AnswerQuestionLoopTests(TestCase):
         client = _fake_llm(_llm_response(content='เมื่อวานมี 0 ใบ'))
         hist = [{'role': 'user', 'content': 'วันนี้มีกี่ใบ'},
                 {'role': 'assistant', 'content': 'วันนี้มี 2 ใบ'}]
-        with mock.patch('openai.OpenAI', return_value=client):
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             services.answer_question('เมื่อวานล่ะ', history=hist)
         msgs = client.chat.completions.create.call_args[1]['messages']
         self.assertEqual(msgs[1:3], hist)
@@ -640,7 +640,7 @@ class AnswerQuestionLoopTests(TestCase):
 
     def test_timeout_returns_none(self):
         client = _fake_llm(error=TimeoutError('slow'))
-        with mock.patch('openai.OpenAI', return_value=client), \
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
                 self.assertLogs('line_bot.services', level='ERROR'):
             self.assertIsNone(services.answer_question('บอท วันนี้มีกี่ใบ'))
 
@@ -648,7 +648,7 @@ class AnswerQuestionLoopTests(TestCase):
         looping = [_llm_response(tool_calls=[_tool_call('overdue_orders', {})])
                    for _ in range(services.QA_MAX_ROUNDS + 2)]
         client = _fake_llm(*looping)
-        with mock.patch('openai.OpenAI', return_value=client):
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             self.assertIsNone(services.answer_question('ค้างกี่ใบ'))
         self.assertEqual(client.chat.completions.create.call_count, services.QA_MAX_ROUNDS)
 
@@ -657,7 +657,7 @@ class AnswerQuestionLoopTests(TestCase):
             _llm_response(tool_calls=[_tool_call('get_profit', {})]),
             _llm_response(content='ทำไม่ได้'),
         )
-        with mock.patch('openai.OpenAI', return_value=client):
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             self.assertEqual(services.answer_question('กำไรเท่าไหร่'), 'ทำไม่ได้')
         tool_msg = client.chat.completions.create.call_args[1]['messages'][-1]
         self.assertIn('unknown tool', tool_msg['content'])
@@ -878,5 +878,149 @@ class FixThaiSpacingTests(TestCase):
     @override_settings(RUNNINGHUB_API_KEY='k')
     def test_answer_question_applies_fix(self):
         client = _fake_llm(_llm_response(content='ชื่ องาน เสื้ อทีม'))
-        with mock.patch('openai.OpenAI', return_value=client):
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
             self.assertEqual(services.answer_question('งานอะไร'), 'ชื่องาน เสื้อทีม')
+
+
+@override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m')
+class LlmFallbackTests(TestCase):
+    """services.chat_create — โมเดลหลักพังชั่วคราว (5xx/timeout) → ลองสำรอง + จำใน cache
+    (2026-10-15 upstream qwen3.8-flash-next ตอบ 502 ทั้งวัน บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม)"""
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    @staticmethod
+    def _status_error(code):
+        # ไม่ import httpx ตรงๆ (openai 3.x bundle เป็น httpx2) — stub response ให้ APIStatusError อ่าน status/headers
+        import openai
+        resp = mock.MagicMock(status_code=code, headers={})
+        return openai.APIStatusError('upstream timed out', response=resp, body=None)
+
+    def test_502_on_primary_uses_fallback_and_marks_down(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.side_effect = [
+            self._status_error(502), _llm_response(content='วันนี้ 2 ใบ')]
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='WARNING') as logs:
+            self.assertEqual(services.answer_question('วันนี้มีกี่ใบ'), 'วันนี้ 2 ใบ')
+        models = [c[1]['model'] for c in client.chat.completions.create.call_args_list]
+        self.assertEqual(models, ['primary/m', 'fallback/m'])
+        self.assertTrue(services.primary_model_down())
+        self.assertIn('ลองสำรอง fallback/m', '\n'.join(logs.output))
+
+    def test_primary_marked_down_skips_straight_to_fallback(self):
+        cache.set(services.PRIMARY_DOWN_KEY, True, 60)
+        client = _fake_llm(_llm_response(content='ok'))
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
+            self.assertEqual(services.answer_question('x'), 'ok')
+        client.chat.completions.create.assert_called_once()
+        self.assertEqual(client.chat.completions.create.call_args[1]['model'], 'fallback/m')
+
+    def test_fallback_sticks_for_remaining_rounds(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.side_effect = [
+            self._status_error(503),
+            _llm_response(tool_calls=[_tool_call('overdue_orders', {})]),
+            _llm_response(content='ไม่มีใบค้าง'),
+        ]
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                mock.patch.object(tools, 'overdue_orders', return_value={'orders': []}):
+            self.assertEqual(services.answer_question('ค้างไหม'), 'ไม่มีใบค้าง')
+        models = [c[1]['model'] for c in client.chat.completions.create.call_args_list]
+        self.assertEqual(models, ['primary/m', 'fallback/m', 'fallback/m'])
+
+    def test_non_transient_error_does_not_fallback(self):
+        client = _fake_llm(error=self._status_error(400))
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='ERROR'):
+            self.assertIsNone(services.answer_question('x'))
+        client.chat.completions.create.assert_called_once()
+        self.assertFalse(services.primary_model_down())
+
+    def test_both_models_fail_is_none(self):
+        client = _fake_llm(error=self._status_error(502))
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='ERROR'):
+            self.assertIsNone(services.answer_question('x'))
+        self.assertEqual(client.chat.completions.create.call_count, 2)
+
+    @override_settings(RUNNINGHUB_FALLBACK_MODEL='')
+    def test_no_fallback_configured_keeps_old_behaviour(self):
+        client = _fake_llm(error=self._status_error(502))
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='ERROR'):
+            self.assertIsNone(services.answer_question('x'))
+        client.chat.completions.create.assert_called_once()
+
+    def test_read_order_number_also_falls_back(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.side_effect = [
+            TimeoutError('slow'),
+            mock.MagicMock(choices=[mock.MagicMock(message=mock.MagicMock(
+                content='{"order_number": "6910-116"}'))]),
+        ]
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
+            self.assertEqual(services.read_order_number(b'img'), '6910-116')
+        models = [c[1]['model'] for c in client.chat.completions.create.call_args_list]
+        self.assertEqual(models, ['primary/m', 'fallback/m'])
+
+
+class LinebotSmokeCommandTests(TestCase):
+    """management command linebot_smoke — ต้องรันผ่านบน VPS ก่อน systemctl restart (กติกา deploy)
+    mock LINE + LLM ไม่ยิง network; autospec กัน method ที่ไม่มีจริงใน SDK"""
+
+    def setUp(self):
+        from line_bot.management.commands import linebot_smoke
+        self.cmd = linebot_smoke
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def _run(self, bot_name='หมอนทอง', answer='วันนี้ 2 ใบ', token='tok', key='k'):
+        from io import StringIO
+        from django.core.management import call_command
+        out, err = StringIO(), StringIO()
+        with mock.patch.object(self.cmd, 'MessagingApi', autospec=True) as api, \
+                mock.patch.object(services, 'answer_question', return_value=answer) as qa, \
+                override_settings(LINE_CHANNEL_ACCESS_TOKEN=token, RUNNINGHUB_API_KEY=key):
+            api.return_value.get_bot_info.return_value = mock.MagicMock(display_name=bot_name)
+            call_command('linebot_smoke', stdout=out, stderr=err)
+        return out.getvalue(), err.getvalue(), api, qa
+
+    def test_all_pass(self):
+        out, err, api, qa = self._run()
+        api.return_value.get_bot_info.assert_called_once_with()
+        qa.assert_called_once_with(self.cmd.SMOKE_QUESTION)
+        self.assertIn('ผ่านทั้ง 2 ข้อ', out)
+        self.assertEqual(err, '')
+
+    def test_wrong_bot_name_fails(self):
+        from django.core.management import CommandError
+        with self.assertRaises(CommandError) as cm:
+            self._run(bot_name='บอทอื่น')
+        self.assertIn('LINE get_bot_info', str(cm.exception))
+        self.assertIn('ห้าม restart', str(cm.exception))
+
+    def test_empty_answer_fails(self):
+        from django.core.management import CommandError
+        with self.assertRaises(CommandError) as cm:
+            self._run(answer=None)
+        self.assertIn('RunningHub answer_question', str(cm.exception))
+
+    def test_missing_env_fails_both(self):
+        from django.core.management import CommandError
+        with self.assertRaises(CommandError) as cm:
+            self._run(token='', key='')
+        self.assertIn('LINE get_bot_info', str(cm.exception))
+        self.assertIn('RunningHub answer_question', str(cm.exception))
+
+    def test_line_api_exception_fails_not_crash(self):
+        from io import StringIO
+        from django.core.management import CommandError, call_command
+        with mock.patch.object(self.cmd, 'MessagingApi', autospec=True) as api, \
+                mock.patch.object(services, 'answer_question', return_value='ok'), \
+                override_settings(LINE_CHANNEL_ACCESS_TOKEN='tok', RUNNINGHUB_API_KEY='k'):
+            api.return_value.get_bot_info.side_effect = RuntimeError('401')
+            with self.assertRaises(CommandError):
+                call_command('linebot_smoke', stdout=StringIO(), stderr=StringIO())

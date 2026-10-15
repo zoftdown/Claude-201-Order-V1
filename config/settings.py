@@ -54,6 +54,9 @@ LINE_ALLOWED_GROUP_IDS = [
 RUNNINGHUB_API_KEY = os.environ.get('RUNNINGHUB_API_KEY', '')
 RUNNINGHUB_BASE_URL = os.environ.get('RUNNINGHUB_BASE_URL', 'https://llm.runninghub.ai/v1')
 RUNNINGHUB_MODEL = os.environ.get('RUNNINGHUB_MODEL', 'qwen/qwen3.8-flash-next')
+# โมเดลสำรองเมื่อโมเดลหลักล่มชั่วคราว (5xx/429/timeout) — 2026-10-15 upstream ของ qwen3.8-flash-next
+# ตอบ 502 ทั้งวัน บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม · ว่าง = ไม่มีสำรอง (พฤติกรรมเดิม)
+RUNNINGHUB_FALLBACK_MODEL = os.environ.get('RUNNINGHUB_FALLBACK_MODEL', 'deepseek/deepseek-v4.1-flash')
 
 # --- Authentication redirects ---
 LOGIN_URL = 'login'
