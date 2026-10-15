@@ -1,0 +1,4 @@
+# Windows dev เครื่อง CRLF ปนเข้ามา — บังคับ LF ในไฟล์ที่ VPS/python ใช้ (เทียบ hash VPS ได้ตรงๆ)
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf

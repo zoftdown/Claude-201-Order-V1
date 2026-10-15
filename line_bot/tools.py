@@ -184,7 +184,9 @@ def get_order(order_number):
         'extra_note': order.extra_note or '',
         'shipping_address': order.shipping_address or '',
         'created_by': order.created_by.username if order.created_by_id else '',
-        'printed_at': _iso_dt(order.printed_at),
+        # ชื่อ key ต้องไม่ชวนสับสนกับขั้นผลิต "พิมพ์" (print_done_at ใน progress) — 2026-10-15 LLM เคย
+        # อ่าน printed_at (เวลาพิมพ์ใบงานกระดาษ A4) เป็น "พิมพ์ 09:18" ทั้งที่ current_stage = ยังไม่เริ่ม
+        'sheet_printed_at': _iso_dt(order.printed_at),  # เวลาพิมพ์ใบงานกระดาษ ไม่ใช่ขั้นผลิต
         'needs_repair': bool(order.needs_repair),
         'tailors': [t.name for t in order.tailors.all()],
         'items': [_item_row(i) for i in order.items.all()],
@@ -256,7 +258,8 @@ TOOL_SCHEMAS = [
         'type': 'function',
         'function': {
             'name': 'get_order',
-            'description': 'รายละเอียดใบออร์เดอร์ใบเดียว: รายการเสื้อ (ประเภท/สี/ไซส์) + ความคืบหน้าทุกขั้นพร้อมเวลา',
+            'description': ('รายละเอียดใบออร์เดอร์ใบเดียว: รายการเสื้อ (ประเภท/สี/ไซส์) + ความคืบหน้าทุกขั้นพร้อมเวลา '
+                            '(current_stage/progress = ขั้นผลิตจริง; sheet_printed_at = เวลาพิมพ์ใบงานกระดาษ ไม่ใช่ขั้นผลิต)'),
             'parameters': {
                 'type': 'object',
                 'properties': {

@@ -1503,17 +1503,52 @@ def _completed_for_dept(order, dept_slug):
     return completed
 
 
+# ขั้นผลิตที่ "ติ๊กเสร็จ" ได้ — **กลไกเดียว** ใช้ร่วมกันระหว่างปุ่มเว็บทุกแผนก (_apply_action)
+# และบอท LINE (line_bot.stage_cmd / line_bot.orders): เซ็ต timestamp + StageLog(department, action)
+# key → field ที่เซ็ต · แผนก/action ใน StageLog · ป้ายไทย · เงื่อนไข (requires = ต้องมีค่าก่อน,
+# exclusive = ถ้า field ใดในนี้มีค่าแล้วถือว่าบันทึกไปแล้ว — ส่งของ/รอมารับ เลือกได้ทางเดียว)
+STAGE_DONE_SPECS = {
+    'print':   {'field': 'print_done_at',      'department': 'print', 'action': 'print_done',   'label': 'พิมพ์'},
+    'roll':    {'field': 'roll_done_at',       'department': 'roll',  'action': 'roll_done',    'label': 'โรล'},
+    'cut':     {'field': 'cut_done_at',        'department': 'cut',   'action': 'cut_done',     'label': 'ตัด'},
+    'sort':    {'field': 'sort_done_at',       'department': 'sort',  'action': 'sort_done',    'label': 'คัด'},
+    'sew':     {'field': 'sent_to_tailors_at', 'department': 'sew',   'action': 'sew_send',     'label': 'ส่งเย็บ'},
+    'pack':    {'field': 'packed_at',          'department': 'pack',  'action': 'pack_done',    'label': 'รีด+แพ็ค'},
+    'shipped': {'field': 'shipped_at',         'department': 'pack',  'action': 'pack_shipped', 'label': 'ส่งของ',
+                'requires': 'packed_at', 'exclusive': ('shipped_at', 'awaiting_pickup_at')},
+    'pickup':  {'field': 'awaiting_pickup_at', 'department': 'pack',  'action': 'pack_pickup',  'label': 'ลูกค้ารับ',
+                'requires': 'packed_at', 'exclusive': ('shipped_at', 'awaiting_pickup_at')},
+}
+STAGE_ALREADY = 'already'      # ติ๊กขั้นนี้ไว้แล้ว (หรือ ส่งของ/รอรับ บันทึกไปแล้วทางใดทางหนึ่ง)
+STAGE_NEED_PACK = 'need_pack'  # ส่งของ/ลูกค้ารับ ต้องรีด+แพ็คก่อน
+
+
+def stage_is_done(order, stage):
+    spec = STAGE_DONE_SPECS[stage]
+    return any(getattr(order, f) for f in spec.get('exclusive', (spec['field'],)))
+
+
+def mark_stage_done(order, stage, note='', now=None):
+    """ติ๊กขั้น `stage` (key ใน STAGE_DONE_SPECS) = เซ็ต timestamp ของขั้นนั้น + StageLog —
+    ตัวเดียวที่ปุ่มเว็บทุกแผนกและบอท LINE เรียก (หน้า detail/timeline/progress_label อ่านจาก
+    timestamp เหล่านี้ จึงเห็นผลทันที ไม่แตะ Order.status)
+    คืน None = ติ๊กสำเร็จ · STAGE_ALREADY = ติ๊กไว้แล้ว (ไม่เขียนอะไร) · STAGE_NEED_PACK = ยังไม่รีด+แพ็ค
+    note = ใครเป็นคนบันทึก (บอทใส่ "บอท LINE ..."; ปุ่มเว็บเว้นว่าง / แผนกเย็บใส่ชื่อคนเย็บ)"""
+    spec = STAGE_DONE_SPECS[stage]
+    if stage_is_done(order, stage):
+        return STAGE_ALREADY
+    if spec.get('requires') and not getattr(order, spec['requires']):
+        return STAGE_NEED_PACK
+    setattr(order, spec['field'], now or timezone.now())
+    order.save(update_fields=[spec['field']])
+    StageLog.objects.create(order=order, department=spec['department'], action=spec['action'], note=note)
+    return None
+
+
 def mark_pack_done(order, note='', now=None):
-    """ติ๊กขั้น "รีด+แพ็ค" = เซ็ต packed_at + StageLog('pack','pack_done') — กลไกเดียว
-    ที่ใช้ร่วมกันระหว่างปุ่มแผนกแพ็ค (_apply_action) และบอท LINE (line_bot.orders).
-    คืน False ถ้าติ๊กไว้แล้ว (packed_at มีค่า) โดยไม่เขียนอะไร.
-    note = ใครเป็นคนบันทึก (บอทใส่ "บอท LINE ..."; ปุ่มเว็บเว้นว่างตามเดิม)."""
-    if order.packed_at:
-        return False
-    order.packed_at = now or timezone.now()
-    order.save(update_fields=['packed_at'])
-    StageLog.objects.create(order=order, department='pack', action='pack_done', note=note)
-    return True
+    """ติ๊กขั้น "รีด+แพ็ค" (wrapper ของ mark_stage_done ให้โค้ดเดิม/บอท flow รูปใช้ต่อ)
+    คืน False ถ้าติ๊กไว้แล้ว"""
+    return mark_stage_done(order, 'pack', note=note, now=now) is None
 
 
 def _apply_action(order, dept_slug, action, request):
@@ -1522,11 +1557,8 @@ def _apply_action(order, dept_slug, action, request):
 
     # (department, action) → handler logic
     if dept_slug == 'print' and action == 'print_done':
-        if order.print_done_at:
+        if mark_stage_done(order, 'print', now=now):
             return False, 'รายการนี้ถูกบันทึก "พิมพ์เสร็จ" ไปแล้ว'
-        order.print_done_at = now
-        order.save(update_fields=['print_done_at'])
-        StageLog.objects.create(order=order, department='print', action='print_done')
         return True, '✓ บันทึก "พิมพ์เสร็จ" แล้ว'
 
     if dept_slug == 'print' and action == 'print_repair':
@@ -1539,27 +1571,18 @@ def _apply_action(order, dept_slug, action, request):
         return True, '✓ บันทึก "ซ่อมเสร็จ" แล้ว'
 
     if dept_slug == 'roll' and action == 'roll_done':
-        if order.roll_done_at:
+        if mark_stage_done(order, 'roll', now=now):
             return False, 'รายการนี้ถูกบันทึกไปแล้ว'
-        order.roll_done_at = now
-        order.save(update_fields=['roll_done_at'])
-        StageLog.objects.create(order=order, department='roll', action='roll_done')
         return True, '✓ บันทึก "โรลเสร็จ" แล้ว'
 
     if dept_slug == 'cut' and action == 'cut_done':
-        if order.cut_done_at:
+        if mark_stage_done(order, 'cut', now=now):
             return False, 'รายการนี้ถูกบันทึกไปแล้ว'
-        order.cut_done_at = now
-        order.save(update_fields=['cut_done_at'])
-        StageLog.objects.create(order=order, department='cut', action='cut_done')
         return True, '✓ บันทึก "ตัดเสร็จ" แล้ว'
 
     if dept_slug == 'sort' and action == 'sort_done':
-        if order.sort_done_at:
+        if mark_stage_done(order, 'sort', now=now):
             return False, 'รายการนี้ถูกบันทึกไปแล้ว'
-        order.sort_done_at = now
-        order.save(update_fields=['sort_done_at'])
-        StageLog.objects.create(order=order, department='sort', action='sort_done')
         return True, '✓ บันทึก "ครบ" แล้ว'
 
     if dept_slug == 'sort' and action == 'sort_repair':
@@ -1579,14 +1602,9 @@ def _apply_action(order, dept_slug, action, request):
         tailors = list(Tailor.objects.filter(id__in=tailor_ids, is_active=True))
         if not tailors:
             return False, 'คนเย็บที่เลือกไม่ถูกต้อง'
-        order.sent_to_tailors_at = now
-        order.save(update_fields=['sent_to_tailors_at'])
-        order.tailors.set(tailors)
         names = ', '.join(t.name for t in tailors)
-        StageLog.objects.create(
-            order=order, department='sew', action='sew_send',
-            note=f'ส่งให้: {names}',
-        )
+        mark_stage_done(order, 'sew', note=f'ส่งให้: {names}', now=now)
+        order.tailors.set(tailors)
         return True, f'✓ ส่งให้คนเย็บแล้ว ({names})'
 
     if dept_slug == 'pack' and action == 'pack_done':
@@ -1594,25 +1612,14 @@ def _apply_action(order, dept_slug, action, request):
             return False, 'รายการนี้ถูกบันทึกไปแล้ว'
         return True, '✓ บันทึก "รีดแพ็คแล้ว" แล้ว'
 
-    if dept_slug == 'pack' and action == 'pack_shipped':
-        if not order.packed_at:
+    if dept_slug == 'pack' and action in ('pack_shipped', 'pack_pickup'):
+        stage = 'shipped' if action == 'pack_shipped' else 'pickup'
+        reason = mark_stage_done(order, stage, now=now)
+        if reason == STAGE_NEED_PACK:
             return False, 'ต้องรีดแพ็คก่อน'
-        if order.shipped_at or order.awaiting_pickup_at:
+        if reason:
             return False, 'งานนี้ถูกบันทึกไปแล้ว'
-        order.shipped_at = now
-        order.save(update_fields=['shipped_at'])
-        StageLog.objects.create(order=order, department='pack', action='pack_shipped')
-        return True, '✓ บันทึก "ส่งแล้ว"'
-
-    if dept_slug == 'pack' and action == 'pack_pickup':
-        if not order.packed_at:
-            return False, 'ต้องรีดแพ็คก่อน'
-        if order.shipped_at or order.awaiting_pickup_at:
-            return False, 'งานนี้ถูกบันทึกไปแล้ว'
-        order.awaiting_pickup_at = now
-        order.save(update_fields=['awaiting_pickup_at'])
-        StageLog.objects.create(order=order, department='pack', action='pack_pickup')
-        return True, '✓ บันทึก "รอมารับ"'
+        return True, '✓ บันทึก "ส่งแล้ว"' if stage == 'shipped' else '✓ บันทึก "รอมารับ"'
 
     return False, 'การกระทำนี้ไม่ถูกต้องสำหรับแผนกของคุณ'
 

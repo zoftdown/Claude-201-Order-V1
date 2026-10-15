@@ -11,11 +11,17 @@ views.py ทำแค่ route event:
           "บอท เสร็จ 6910-171 6910-172" → ติ๊กเลขที่ระบุทันที (ไม่ต้องมีรูป)
           มีคำว่า "ครบ"/"เสร็จ" + คนเดิมในกลุ่มเดิมมีรายการรอ → ติ๊กทุกใบ ล้างรายการ
             reply ข้อความเดียวสรุปทุกใบ (orders.py)
+          **คำสั่งติ๊กขั้น (regex ไม่ผ่าน LLM — stage_cmd.py):** "6910-167 พิมพ์แล้ว" / "ตัดแล้ว 6910-167 6910-168"
+            (มี/ไม่มี "บอท"/"หมอนทอง"/mention นำหน้าก็ได้) → ทวน "ติ๊ก พิมพ์ · … ใช่ไหม?" เก็บรอ 2 นาที
+            → คนเดิมตอบ ใช่/ครับ/ค่ะ → ติ๊กผ่าน orders.views.mark_stage_done (helper เดียวกับปุ่มเว็บ)
+            → ตอบ ไม่/ยกเลิก หรือหมดเวลา → ไม่ทำ
+          "ช่วย" / "บอท ช่วย" / "หมอนทอง ช่วย" → รายการคำสั่ง (stage_cmd.HELP_TEXT)
           ขึ้นต้นด้วย "บอท"/"หมอนทอง" หรือ mention บอท (event.message.mention is_self)
             และไม่ตรงคำสั่งด้านบน → ถาม-ตอบด้วย LLM + tools อ่านอย่างเดียว (services.answer_question)
             พร้อมบริบท 6 ข้อความล่าสุดของ (groupId, userId) (history.py) ·
             LLM พัง/timeout → "ขอโทษ ตอบไม่ได้ตอนนี้" ไม่เงียบ · ข้อความอื่นเงียบ
-          ลำดับความสำคัญ: คำสั่งเดิม > ยืนยันรายการรอ (เฉพาะคนที่มีรายการรออยู่) > ถาม-ตอบ
+          ลำดับความสำคัญ: คำสั่งเดิม > ช่วย > คำสั่งติ๊กขั้น > ตอบทวน ใช่/ไม่ (เฉพาะคนที่มีรายการทวน)
+            > ยืนยันรายการรอรูป (เฉพาะคนที่มีรายการรออยู่) > ถาม-ตอบ
 - join  → ทักทาย
 - ทุก event log groupId/userId ของผู้ส่ง (INFO) ไว้เก็บ id ใส่ LINE_ADMIN_USER_IDS / LINE_ALLOWED_GROUP_IDS
 
@@ -55,7 +61,7 @@ from linebot.v3.webhooks import (
 )
 
 from . import orders as bot_orders
-from . import history, pending, services
+from . import history, pending, services, stage_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -173,15 +179,22 @@ def _self_mention_spans(message):
     return spans
 
 
+def _strip_self_mentions(message, text):
+    """ตัดช่วง mention ที่ชี้มาที่บอทออกจากข้อความ (ไม่มี mention → คืน text เดิม)"""
+    spans = _self_mention_spans(message)
+    if not spans:
+        return text
+    raw = message.text or ''
+    for index, length in sorted(spans, reverse=True):
+        raw = raw[:index] + ' ' + raw[index + length:]
+    return raw.strip()
+
+
 def _qa_question(message, text):
     """ข้อความนี้เป็นคำถามถึงบอทไหม → คืนคำถามที่ตัด prefix/mention แล้ว หรือ None
     trigger: ขึ้นต้นด้วย "บอท"/"หมอนทอง" หรือ mention บอท"""
-    spans = _self_mention_spans(message)
-    if spans:
-        raw = message.text or ''
-        for index, length in sorted(spans, reverse=True):
-            raw = raw[:index] + ' ' + raw[index + length:]
-        return raw.strip()
+    if _self_mention_spans(message):
+        return _strip_self_mentions(message, text)
     for prefix in QA_PREFIXES:
         if text.startswith(prefix):
             return text[len(prefix):].strip()
@@ -217,7 +230,15 @@ def on_text_message(event):
 
     if text == CANCEL_TEXT:
         pending.clear_pending(group_id, user_id)
+        stage_cmd.clear_pending(group_id, user_id)
         _reply_text(event.reply_token, 'ยกเลิกแล้ว')
+        return
+
+    # ข้อความสำหรับคำสั่ง = ตัด mention บอทออก (ถ้ามี) ให้ regex จับได้ทั้ง "หมอนทอง …" และ "@หมอนทอง …"
+    cmd_text = _strip_self_mentions(event.message, text)
+
+    if stage_cmd.is_help(cmd_text):
+        _reply_text(event.reply_token, stage_cmd.HELP_TEXT)
         return
 
     # คำสั่งตรง "บอท เสร็จ 6910-171 6910-172" → ติ๊กทันทีไม่ต้องมีรูป
@@ -232,6 +253,25 @@ def on_text_message(event):
             pending.clear_pending(group_id, user_id)
             _reply_done(event, numbers, note='บอท LINE ยืนยันจากข้อความ %r (%s)' % (text, src))
         return
+
+    # คำสั่งติ๊กขั้น "6910-167 พิมพ์แล้ว" → ทวนก่อน (ต้องจับก่อนส่งเข้า LLM)
+    parsed = stage_cmd.parse_stage_command(cmd_text)
+    if parsed:
+        stage, numbers = parsed
+        logger.info('คำสั่งติ๊กขั้น %s %s จาก %s', stage, numbers, src)
+        _reply_text(event.reply_token, stage_cmd.start_confirm(group_id, user_id, stage, numbers))
+        return
+
+    # ตอบทวน ใช่/ไม่ — เฉพาะคนเดิมในกลุ่มเดิมที่มีรายการทวนค้างอยู่ (หมดอายุ 2 นาที)
+    if stage_cmd.get_pending(group_id, user_id):
+        if stage_cmd.is_yes(cmd_text):
+            result = stage_cmd.confirm(group_id, user_id, note='บอท LINE โดย %s' % (user_id or '-'))
+            _reply_text(event.reply_token, result)
+            return
+        if stage_cmd.is_no(cmd_text):
+            stage_cmd.clear_pending(group_id, user_id)
+            _reply_text(event.reply_token, 'ยกเลิกแล้ว')
+            return
 
     # ข้อความยืนยัน "ครบ"/"เสร็จ" จากคนเดิมในกลุ่มเดิมที่มีรายการรอ (กลไกเดิม มาก่อนถาม-ตอบ)
     if any(w in text for w in CONFIRM_WORDS):

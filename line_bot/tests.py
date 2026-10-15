@@ -15,10 +15,30 @@ from orders import views as views_orders
 from orders.models import Order, OrderItem, ShirtVariant, StageLog
 
 from . import orders as bot_orders
-from . import pending, services, views
+from . import pending, services, stage_cmd, views
 from .apps import check_allowed_groups_configured
 
 SECRET = b'test-secret'
+
+# ทุก env ที่ line_bot อ่านจาก settings — override ให้เป็นค่าคงที่ของ test เสมอ (รัน tests บน VPS ที่
+# source .env แล้วก็ต้องได้ผลเท่ากัน) · class ย่อยที่ต้องการค่าอื่น override ซ้อนเองได้
+TEST_ENV = {
+    'LINE_CHANNEL_SECRET': 'test-secret',
+    'LINE_CHANNEL_ACCESS_TOKEN': '',
+    'LINE_ADMIN_USER_IDS': [],
+    'LINE_ALLOWED_GROUP_IDS': [],
+    'RUNNINGHUB_API_KEY': '',
+    'RUNNINGHUB_BASE_URL': 'https://llm.test/v1',
+    'RUNNINGHUB_MODEL': 'qwen/test-model',
+    'RUNNINGHUB_FALLBACK_MODEL': '',
+    'ANTHROPIC_API_KEY': '',
+    'ANTHROPIC_MODEL': 'claude-test',
+}
+
+
+@override_settings(**TEST_ENV)
+class BotTestCase(TestCase):
+    """ฐานของทุก test ใน line_bot — settings ถูก override ตาม TEST_ENV (สืบทอดถึง subclass)"""
 
 
 def _sign(body):
@@ -66,7 +86,7 @@ def make_order(number='6910-116', status='รอดำเนินการ', qt
 
 
 @override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
-class WebhookBase(TestCase):
+class WebhookBase(BotTestCase):
     """กลุ่ม G1 = กลุ่มที่อนุญาต (guard fail-closed — ไม่ตั้งจะเงียบทุก event; ดู GroupGuardTests)"""
 
     def setUp(self):
@@ -74,7 +94,7 @@ class WebhookBase(TestCase):
         p = mock.patch.object(views.handler.parser.signature_validator, 'channel_secret', SECRET)
         p.start()
         self.addCleanup(p.stop)
-        self.reply = mock.patch.object(views, '_reply')
+        self.reply = mock.patch.object(views, '_reply', autospec=True)
         self.reply_mock = self.reply.start()
         self.addCleanup(self.reply.stop)
 
@@ -158,10 +178,10 @@ class ImageOrderFlowTests(WebhookBase):
         super().setUp()
         cache.clear()
         self.addCleanup(cache.clear)
-        dl = mock.patch.object(services, 'download_line_image', return_value=b'img')
-        dl.start()
+        dl = mock.patch.object(services, 'download_line_image', return_value=b'img', autospec=True)
+        self.dl_mock = dl.start()
         self.addCleanup(dl.stop)
-        self.llm = mock.patch.object(services, 'read_order_number', return_value='6910-116')
+        self.llm = mock.patch.object(services, 'read_order_number', return_value='6910-116', autospec=True)
         self.llm_mock = self.llm.start()
         self.addCleanup(self.llm.stop)
 
@@ -188,8 +208,8 @@ class ImageOrderFlowTests(WebhookBase):
         self.assertEqual(pending.get_pending('G1', 'U123'), [])
 
     def test_download_failed_silent(self):
-        with mock.patch.object(services, 'download_line_image', return_value=None):
-            self._post_image()
+        self.dl_mock.return_value = None  # patch เดิมจาก setUp (autospec) — ไม่ patch ซ้อน
+        self._post_image()
         self.reply_mock.assert_not_called()
         self.llm_mock.assert_not_called()
 
@@ -372,7 +392,7 @@ class ImageOrderFlowTests(WebhookBase):
         self.assertEqual(d['substitution']['admin1']['mentionee']['userId'], 'Ubbb')
 
 
-class ParseOrderNumberTests(TestCase):
+class ParseOrderNumberTests(BotTestCase):
     def test_plain_json(self):
         self.assertEqual(services.parse_order_number('{"order_number": "6910-116"}'), '6910-116')
 
@@ -399,7 +419,7 @@ class ParseOrderNumberTests(TestCase):
 
 
 @override_settings(RUNNINGHUB_API_KEY='k')
-class ReadOrderNumberLLMTests(TestCase):
+class ReadOrderNumberLLMTests(BotTestCase):
     def _fake_client(self, content=None, error=None):
         client = mock.MagicMock()
         if error:
@@ -436,7 +456,7 @@ class ReadOrderNumberLLMTests(TestCase):
         self.assertIsNone(services.read_order_number(b'img'))
 
 
-class BotOrdersTests(TestCase):
+class BotOrdersTests(BotTestCase):
     def test_process_unknown(self):
         self.assertEqual(bot_orders.process_order_number('6901-1'),
                          'อ่านได้เลข 6901-1 แต่ไม่พบในระบบ')
@@ -511,7 +531,7 @@ class QaTriggerTests(WebhookBase):
         super().setUp()
         cache.clear()
         self.addCleanup(cache.clear)
-        p = mock.patch.object(services, 'answer_question', return_value='วันนี้มี 2 ใบ')
+        p = mock.patch.object(services, 'answer_question', return_value='วันนี้มี 2 ใบ', autospec=True)
         self.qa_mock = p.start()
         self.addCleanup(p.stop)
 
@@ -595,7 +615,7 @@ class QaTriggerTests(WebhookBase):
 
 
 @override_settings(RUNNINGHUB_API_KEY='k')
-class AnswerQuestionLoopTests(TestCase):
+class AnswerQuestionLoopTests(BotTestCase):
     """services.answer_question: mock LLM คืน tool_call → tool ถูกเรียกด้วย args ถูก → คำตอบสุดท้าย"""
 
     def test_tool_call_then_answer(self):
@@ -604,7 +624,7 @@ class AnswerQuestionLoopTests(TestCase):
             _llm_response(content='เจอ 1 ใบ: 6910-116'),
         )
         with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
-                mock.patch.object(tools, 'search_orders',
+                mock.patch.object(tools, 'search_orders', autospec=True,
                                   return_value={'orders': [], 'total_count': 0}) as tool_mock, \
                 self.assertLogs('line_bot.services', level='INFO') as logs:
             answer = services.answer_question('งานคุณเอถึงไหน')
@@ -667,7 +687,7 @@ class AnswerQuestionLoopTests(TestCase):
         self.assertIsNone(services.answer_question('x'))
 
 
-class QaToolsTests(TestCase):
+class QaToolsTests(BotTestCase):
     """tools อ่านอย่างเดียว: search ตามชื่อลูกค้าเจอ/ไม่เจอ · daily_summary/overdue ตรงกับหน้ารายงาน"""
 
     def test_search_by_customer_found(self):
@@ -780,7 +800,7 @@ class GroupGuardTests(WebhookBase):
         super().setUp()
         cache.clear()
         self.addCleanup(cache.clear)
-        self.leave_patcher = mock.patch.object(views, '_leave_group')
+        self.leave_patcher = mock.patch.object(views, '_leave_group', autospec=True)
         self.leave_mock = self.leave_patcher.start()
         self.addCleanup(self.leave_patcher.stop)
 
@@ -799,7 +819,7 @@ class GroupGuardTests(WebhookBase):
         self.assertIn('groupId=G9', log)
 
     def test_unlisted_group_image_not_processed(self):
-        with mock.patch.object(services, 'download_line_image') as dl:
+        with mock.patch.object(services, 'download_line_image', autospec=True) as dl:
             ev = _image_event()
             ev['source']['groupId'] = 'G9'
             resp = self._post({'destination': 'x', 'events': [ev]})
@@ -858,7 +878,7 @@ class GroupGuardTests(WebhookBase):
                 views._leave_group('G9')
 
 
-class FixThaiSpacingTests(TestCase):
+class FixThaiSpacingTests(BotTestCase):
     """services.fix_thai_spacing — ลบช่องว่างที่ LLM แทรกระหว่างอักษรไทยกับสระ/วรรณยุกต์"""
 
     def test_space_before_mark_removed(self):
@@ -884,7 +904,7 @@ class FixThaiSpacingTests(TestCase):
 
 @override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
                    ANTHROPIC_API_KEY='')
-class LlmFallbackTests(TestCase):
+class LlmFallbackTests(BotTestCase):
     """services.chat_create — โมเดลหลักพังชั่วคราว (5xx/timeout) → ลองสำรอง + จำใน cache
     (2026-10-15 upstream qwen3.8-flash-next ตอบ 502 ทั้งวัน บอทตอบ "ขอโทษ ตอบไม่ได้ตอนนี้" ทุกคำถาม)"""
 
@@ -927,7 +947,7 @@ class LlmFallbackTests(TestCase):
             _llm_response(content='ไม่มีใบค้าง'),
         ]
         with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
-                mock.patch.object(tools, 'overdue_orders', return_value={'orders': []}):
+                mock.patch.object(tools, 'overdue_orders', return_value={'orders': []}, autospec=True):
             self.assertEqual(services.answer_question('ค้างไหม'), 'ไม่มีใบค้าง')
         models = [c[1]['model'] for c in client.chat.completions.create.call_args_list]
         self.assertEqual(models, ['primary/m', 'fallback/m', 'fallback/m'])
@@ -968,7 +988,7 @@ class LlmFallbackTests(TestCase):
         self.assertEqual(models, ['primary/m', 'fallback/m'])
 
 
-class LinebotSmokeCommandTests(TestCase):
+class LinebotSmokeCommandTests(BotTestCase):
     """management command linebot_smoke — ต้องรันผ่านบน VPS ก่อน systemctl restart (กติกา deploy)
     mock LINE + LLM ไม่ยิง network; autospec กัน method ที่ไม่มีจริงใน SDK"""
 
@@ -983,7 +1003,7 @@ class LinebotSmokeCommandTests(TestCase):
         from django.core.management import call_command
         out, err = StringIO(), StringIO()
         with mock.patch.object(self.cmd, 'MessagingApi', autospec=True) as api, \
-                mock.patch.object(services, 'answer_question', side_effect=answer
+                mock.patch.object(services, 'answer_question', autospec=True, side_effect=answer
                                   if callable(answer) else (lambda *a, **k: answer)) as qa, \
                 override_settings(LINE_CHANNEL_ACCESS_TOKEN=token, RUNNINGHUB_API_KEY=key,
                                   RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
@@ -1048,7 +1068,7 @@ class LinebotSmokeCommandTests(TestCase):
         from io import StringIO
         from django.core.management import CommandError, call_command
         with mock.patch.object(self.cmd, 'MessagingApi', autospec=True) as api, \
-                mock.patch.object(services, 'answer_question', return_value='ok'), \
+                mock.patch.object(services, 'answer_question', return_value='ok', autospec=True), \
                 override_settings(LINE_CHANNEL_ACCESS_TOKEN='tok', RUNNINGHUB_API_KEY='k', ANTHROPIC_API_KEY=''):
             api.return_value.get_bot_info.side_effect = RuntimeError('401')
             with self.assertRaises(CommandError):
@@ -1057,7 +1077,7 @@ class LinebotSmokeCommandTests(TestCase):
 
 @override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
                    ANTHROPIC_API_KEY='sk-ant-test', ANTHROPIC_MODEL='claude-haiku-5-5')
-class AnthropicTierTests(TestCase):
+class AnthropicTierTests(BotTestCase):
     """ชั้นสำรองที่ 3 (line_bot/anthropic_backend.py) — แปลง OpenAI ↔ Anthropic + เข้าคิวหลัง RunningHub ทั้ง 2"""
 
     def setUp(self):
@@ -1164,7 +1184,7 @@ class AnthropicTierTests(TestCase):
         ]
         with mock.patch('openai.OpenAI', return_value=rh, autospec=True), \
                 mock.patch('anthropic.Anthropic', return_value=an, autospec=True), \
-                mock.patch.object(tools, 'daily_summary', return_value={'orders': 3}) as tool_mock, \
+                mock.patch.object(tools, 'daily_summary', return_value={'orders': 3}, autospec=True) as tool_mock, \
                 self.assertLogs('line_bot.services', level='INFO') as logs:
             self.assertEqual(services.answer_question('วันนี้มีกี่ใบ'), 'วันนี้ 3 ใบ')
         tool_mock.assert_called_once_with(date='2026-10-15')
@@ -1210,3 +1230,280 @@ class AnthropicTierTests(TestCase):
         rh.chat.completions.create.assert_called_once()
         an.messages.create.assert_not_called()
         self.assertFalse(services.tier_down(('runninghub', 'primary/m')))
+
+
+class StageHelperTests(BotTestCase):
+    """orders.views.mark_stage_done — helper เดียวที่ปุ่มเว็บทุกแผนกและบอทใช้ (timestamp + StageLog)"""
+
+    def test_each_stage_sets_field_and_stagelog(self):
+        order = make_order()
+        order.packed_at = None
+        for stage, spec in views_orders.STAGE_DONE_SPECS.items():
+            if stage in ('shipped', 'pickup'):
+                continue
+            self.assertIsNone(views_orders.mark_stage_done(order, stage, note='n-%s' % stage))
+            order.refresh_from_db()
+            self.assertIsNotNone(getattr(order, spec['field']))
+            log = StageLog.objects.get(order=order, action=spec['action'])
+            self.assertEqual(log.department, spec['department'])
+            self.assertEqual(log.note, 'n-%s' % stage)
+            # ติ๊กซ้ำ → already ไม่เขียนเพิ่ม
+            self.assertEqual(views_orders.mark_stage_done(order, stage), views_orders.STAGE_ALREADY)
+            self.assertEqual(StageLog.objects.filter(order=order, action=spec['action']).count(), 1)
+        self.assertEqual(order.progress_label, 'รีด+แพ็คแล้ว')
+
+    def test_pickup_requires_pack_and_exclusive_with_shipped(self):
+        order = make_order()
+        self.assertEqual(views_orders.mark_stage_done(order, 'pickup'), views_orders.STAGE_NEED_PACK)
+        self.assertIsNone(views_orders.mark_stage_done(order, 'pack'))
+        self.assertIsNone(views_orders.mark_stage_done(order, 'pickup'))
+        self.assertEqual(views_orders.mark_stage_done(order, 'shipped'), views_orders.STAGE_ALREADY)
+        order.refresh_from_db()
+        self.assertEqual(order.progress_label, 'รอลูกค้ารับ')
+
+    def test_mark_pack_done_wrapper_unchanged(self):
+        order = make_order()
+        self.assertTrue(views_orders.mark_pack_done(order, note='x'))
+        self.assertFalse(views_orders.mark_pack_done(order))
+        self.assertEqual(StageLog.objects.filter(order=order, department='pack', action='pack_done').count(), 1)
+
+    def test_web_apply_action_goes_through_helper(self):
+        """ปุ่มเว็บทุกแผนก (_apply_action) → mark_stage_done ตัวเดียวกับบอท (patch แล้วต้องถูกเรียก)"""
+        order = make_order()
+        request = mock.MagicMock()
+        calls = []
+        real = views_orders.mark_stage_done
+
+        def spy(o, stage, note='', now=None):
+            calls.append(stage)
+            return real(o, stage, note=note, now=now)
+
+        with mock.patch.object(views_orders, 'mark_stage_done', side_effect=spy, autospec=True):
+            for dept, action in [('print', 'print_done'), ('roll', 'roll_done'), ('cut', 'cut_done'),
+                                 ('sort', 'sort_done'), ('pack', 'pack_done'), ('pack', 'pack_pickup')]:
+                ok, _msg = views_orders._apply_action(order, dept, action, request)
+                self.assertTrue(ok, action)
+            ok, msg = views_orders._apply_action(order, 'print', 'print_done', request)
+            self.assertFalse(ok)
+            self.assertIn('ไปแล้ว', msg)
+            ok, msg = views_orders._apply_action(order, 'pack', 'pack_shipped', request)
+            self.assertFalse(ok)
+            self.assertEqual(msg, 'งานนี้ถูกบันทึกไปแล้ว')
+        self.assertEqual(calls, ['print', 'roll', 'cut', 'sort', 'pack', 'pickup', 'print', 'shipped'])
+
+    def test_web_pickup_needs_pack_message(self):
+        order = make_order()
+        ok, msg = views_orders._apply_action(order, 'pack', 'pack_pickup', mock.MagicMock())
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'ต้องรีดแพ็คก่อน')
+
+
+class ToolsStageKeyTests(BotTestCase):
+    """บั๊ก 2026-10-15: LLM อ่าน printed_at (เวลาพิมพ์ใบงานกระดาษ) เป็นขั้น "พิมพ์" → เปลี่ยนชื่อ key
+    current_stage ต้องมาจาก Order.progress_label ตัวเดียวกับหน้าเว็บ"""
+
+    def test_sheet_printed_at_not_mistaken_for_stage(self):
+        order = make_order()
+        order.printed_at = timezone.now()
+        order.save(update_fields=['printed_at'])
+        data = tools.get_order(order.order_number)
+        self.assertNotIn('printed_at', data)
+        self.assertIsNotNone(data['sheet_printed_at'])
+        self.assertEqual(data['current_stage'], 'ยังไม่เริ่ม')
+        self.assertEqual(data['current_stage'], order.progress_label)
+        self.assertIsNone(data['progress'][0]['done_at'])  # ขั้นพิมพ์ยังว่าง
+        views_orders.mark_stage_done(order, 'print')
+        data = tools.get_order(order.order_number)
+        self.assertEqual(data['current_stage'], 'พิมพ์แล้ว')
+        self.assertIsNotNone(data['progress'][0]['done_at'])
+
+
+class StageCommandParseTests(BotTestCase):
+    def test_parse_variants(self):
+        P = stage_cmd.parse_stage_command
+        self.assertEqual(P('6910-167 พิมพ์แล้ว'), ('print', ['6910-167']))
+        self.assertEqual(P('6910-167 พิมพ์เเล้ว'), ('print', ['6910-167']))  # สระเอ 2 ตัว
+        self.assertEqual(P('ตัดแล้ว 6910-167 6910-168 6910-167'), ('cut', ['6910-167', '6910-168']))
+        self.assertEqual(P('หมอนทอง 6910-167 พิมพ์แล้ว'), ('print', ['6910-167']))
+        self.assertEqual(P('บอท เลเซอร์แล้ว 6910-1'), ('cut', ['6910-1']))
+        self.assertEqual(P('คัด 6910-1'), ('sort', ['6910-1']))
+        self.assertEqual(P('เย็บแล้ว 6910-1'), ('sew', ['6910-1']))
+        self.assertEqual(P('ส่งเย็บ 6910-1'), ('sew', ['6910-1']))
+        for w in ('รีดแล้ว', 'แพ็คแล้ว', 'รีดแพ็คแล้ว', 'รีด+แพ็ค'):
+            self.assertEqual(P('%s 6910-1' % w), ('pack', ['6910-1']), w)
+        self.assertEqual(P('6910-1 ลูกค้ารับแล้ว'), ('pickup', ['6910-1']))
+        self.assertEqual(P('รับแล้ว 6910-1'), ('pickup', ['6910-1']))
+
+    def test_not_a_command(self):
+        P = stage_cmd.parse_stage_command
+        self.assertIsNone(P('พิมพ์แล้ว'))                      # ไม่มีเลข
+        self.assertIsNone(P('บอท 6910-167 ถึงไหนแล้ว'))        # คำถาม → QA
+        self.assertIsNone(P('6910-167 พิมพ์แล้วครึ่งนึง'))       # คำเกิน
+        self.assertIsNone(P('บอท เสร็จ 6910-167'))             # คำสั่งเดิม
+        self.assertIsNone(P('วันนี้ 6910-167'))
+
+    def test_yes_no_help(self):
+        for w in ('ใช่', 'ใช่ครับ', ' ใช่ค่ะ ', 'ค่ะ', 'ครับ'):
+            self.assertTrue(stage_cmd.is_yes(w), w)
+        self.assertFalse(stage_cmd.is_yes('ใช่เลย'))
+        for w in ('ไม่', 'ยกเลิก', 'ไม่ใช่'):
+            self.assertTrue(stage_cmd.is_no(w), w)
+        for w in ('ช่วย', 'บอท ช่วย', 'หมอนทอง ช่วย'):
+            self.assertTrue(stage_cmd.is_help(w), w)
+        self.assertFalse(stage_cmd.is_help('ช่วยหน่อย'))
+
+
+@override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
+class StageCommandFlowTests(WebhookBase):
+    """คำสั่งติ๊กขั้นผ่าน LINE: ทวน → ใช่/ไม่/หมดเวลา → ติ๊กผ่าน mark_stage_done · ไม่เข้า LLM"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        p = mock.patch.object(services, 'answer_question', return_value='llm', autospec=True)
+        self.qa_mock = p.start()
+        self.addCleanup(p.stop)
+        self.order = make_order('6910-167')
+        self.order.shirt_name = 'คิชฌกูฏลายพราง'
+        self.order.save()
+
+    def _post_text(self, text, user_id='U123', mention=None):
+        ev = _text_event(text)
+        ev['source']['userId'] = user_id
+        if mention is not None:
+            ev['message']['mention'] = mention
+        self.reply_mock.reset_mock()
+        resp = self._post({'destination': 'x', 'events': [ev]})
+        self.assertEqual(resp.status_code, 200)
+
+    def _reply_text(self):
+        self.reply_mock.assert_called_once()
+        return self.reply_mock.call_args[0][1][0].text
+
+    def test_confirm_then_yes_marks_stage(self):
+        self._post_text('6910-167 พิมพ์แล้ว')
+        self.assertEqual(self._reply_text(),
+                         'ติ๊ก พิมพ์ · 6910-167 คิชฌกูฏลายพราง 10 ตัว\nใช่ไหม? ตอบ ใช่ / ไม่')
+        self.qa_mock.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertIsNone(self.order.print_done_at)  # ยังไม่ติ๊กจนกว่าจะตอบ ใช่
+
+        self._post_text('ใช่ครับ')
+        self.assertEqual(self._reply_text(), '✓ 6910-167 คิชฌกูฏลายพราง 10 ตัว → พิมพ์แล้ว')
+        self.order.refresh_from_db()
+        self.assertIsNotNone(self.order.print_done_at)
+        self.assertEqual(self.order.progress_label, 'พิมพ์แล้ว')
+        log = StageLog.objects.get(order=self.order, action='print_done')
+        self.assertEqual(log.department, 'print')
+        self.assertEqual(log.note, 'บอท LINE โดย U123')
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+        # "ใช่" ซ้ำโดยไม่มีรายการ → เงียบ
+        self._post_text('ใช่')
+        self.reply_mock.assert_not_called()
+
+    def test_prefix_and_mention_forms(self):
+        self._post_text('หมอนทอง 6910-167 พิมพ์เเล้ว')
+        self.assertIn('ติ๊ก พิมพ์ · 6910-167', self._reply_text())
+        self.qa_mock.assert_not_called()
+        mention = {'mentionees': [{'type': 'user', 'index': 0, 'length': len('@น้องหมอนทอง'),
+                                   'userId': 'Ubot', 'isSelf': True}]}
+        self._post_text('@น้องหมอนทอง ตัดแล้ว 6910-167', mention=mention)
+        self.assertIn('ติ๊ก ตัด · 6910-167', self._reply_text())
+        self.qa_mock.assert_not_called()
+
+    def test_no_cancels(self):
+        self._post_text('ตัดแล้ว 6910-167')
+        self._post_text('ไม่')
+        self.assertEqual(self._reply_text(), 'ยกเลิกแล้ว')
+        self.order.refresh_from_db()
+        self.assertIsNone(self.order.cut_done_at)
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+
+    def test_bot_cancel_clears_stage_pending(self):
+        self._post_text('ตัดแล้ว 6910-167')
+        self._post_text('บอท ยกเลิก')
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+
+    def test_expired_pending_ignored(self):
+        with mock.patch.object(stage_cmd, 'PENDING_TTL', 0):
+            self._post_text('ตัดแล้ว 6910-167')
+        self._post_text('ใช่')
+        self.reply_mock.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertIsNone(self.order.cut_done_at)
+
+    def test_other_user_cannot_confirm(self):
+        self._post_text('ตัดแล้ว 6910-167', user_id='U123')
+        self._post_text('ใช่', user_id='U999')
+        self.reply_mock.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertIsNone(self.order.cut_done_at)
+
+    def test_multiple_orders_with_not_found_and_already(self):
+        other = make_order('6910-168')
+        other.shirt_name = 'งานสอง'
+        other.save()
+        views_orders.mark_stage_done(other, 'print')
+        self._post_text('พิมพ์แล้ว 6910-167 6910-168 6910-999')
+        text = self._reply_text()
+        self.assertEqual(text, '\n'.join([
+            'ติ๊ก พิมพ์ · 6910-167 คิชฌกูฏลายพราง 10 ตัว',
+            '6910-168 ติ๊กแล้วอยู่แล้ว (พิมพ์)',
+            'ไม่พบ 6910-999',
+            'ใช่ไหม? ตอบ ใช่ / ไม่',
+        ]))
+        self.assertEqual(stage_cmd.get_pending('G1', 'U123')['numbers'], ['6910-167'])
+        self._post_text('ค่ะ')
+        self.assertEqual(self._reply_text(), '✓ 6910-167 คิชฌกูฏลายพราง 10 ตัว → พิมพ์แล้ว')
+        self.assertEqual(StageLog.objects.filter(order=other, action='print_done').count(), 1)
+
+    def test_two_valid_orders_listed(self):
+        other = make_order('6910-168')
+        other.shirt_name = 'งานสอง'
+        other.save()
+        self._post_text('ตัดแล้ว 6910-167 6910-168')
+        self.assertEqual(self._reply_text(), '\n'.join([
+            'ติ๊ก ตัด', '· 6910-167 คิชฌกูฏลายพราง 10 ตัว', '· 6910-168 งานสอง 10 ตัว', 'ใช่ไหม? ตอบ ใช่ / ไม่']))
+        self._post_text('ใช่')
+        self.assertEqual(self._reply_text(), '\n'.join([
+            '✓ 6910-167 คิชฌกูฏลายพราง 10 ตัว → ตัดแล้ว', '✓ 6910-168 งานสอง 10 ตัว → ตัดแล้ว']))
+
+    def test_all_problem_orders_no_question(self):
+        views_orders.mark_stage_done(self.order, 'print')
+        self._post_text('พิมพ์แล้ว 6910-167 6910-999')
+        self.assertEqual(self._reply_text(), '6910-167 ติ๊กแล้วอยู่แล้ว (พิมพ์)\nไม่พบ 6910-999')
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+
+    def test_pickup_needs_pack_reported_on_apply(self):
+        self._post_text('รับแล้ว 6910-167')
+        self._post_text('ใช่')
+        self.assertEqual(self._reply_text(), '6910-167 ต้องรีด+แพ็คก่อน')
+
+    def test_pack_via_command_uses_same_helper_as_image_flow(self):
+        self._post_text('รีดแพ็คแล้ว 6910-167')
+        self._post_text('ครับ')
+        self.order.refresh_from_db()
+        self.assertIsNotNone(self.order.packed_at)
+        self.assertEqual(StageLog.objects.get(order=self.order, action='pack_done').department, 'pack')
+        self.assertFalse(bot_orders.mark_done(self.order))  # flow รูป เห็นว่าติ๊กแล้ว
+
+    def test_help_command(self):
+        for t in ('ช่วย', 'บอท ช่วย', 'หมอนทอง ช่วย'):
+            self._post_text(t)
+            self.assertEqual(self._reply_text(), stage_cmd.HELP_TEXT)
+        self.qa_mock.assert_not_called()
+        self.assertIn('พิมพ์แล้ว', stage_cmd.HELP_TEXT)
+        self.assertIn('ping', stage_cmd.HELP_TEXT)
+
+    def test_question_still_goes_to_llm(self):
+        self._post_text('หมอนทอง 6910-167 ถึงไหนแล้ว')
+        self.qa_mock.assert_called_once()
+        self.assertEqual(self._reply_text(), 'llm')
+
+    def test_image_confirm_flow_untouched(self):
+        pending.add_pending('G1', 'U123', '6910-167')
+        self._post_text('ครบแล้ว')
+        self.order.refresh_from_db()
+        self.assertIsNotNone(self.order.packed_at)
+        self.reply_mock.assert_called_once()
