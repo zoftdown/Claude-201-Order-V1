@@ -847,13 +847,15 @@ class GroupGuardTests(WebhookBase):
     def test_leave_group_calls_api_best_effort(self):
         self.leave_patcher.stop()
         self.addCleanup(self.leave_patcher.start)
-        with mock.patch.object(views, 'MessagingApi') as api, \
+        # autospec: ชื่อ method ต้องมีจริงใน SDK (prod เคยพังเพราะเรียก leave_from_group ที่ไม่มี)
+        with mock.patch.object(views, 'MessagingApi', autospec=True) as api, \
                 mock.patch.object(views.settings, 'LINE_CHANNEL_ACCESS_TOKEN', 'tok'):
             views._leave_group('G9')
-            api.return_value.leave_from_group.assert_called_once_with('G9')
+            api.return_value.leave_group.assert_called_once_with('G9')
             # API พัง → log ไม่ raise
-            api.return_value.leave_from_group.side_effect = RuntimeError('boom')
-            views._leave_group('G9')
+            api.return_value.leave_group.side_effect = RuntimeError('boom')
+            with self.assertLogs('line_bot.views', level='ERROR'):
+                views._leave_group('G9')
 
 
 class FixThaiSpacingTests(TestCase):

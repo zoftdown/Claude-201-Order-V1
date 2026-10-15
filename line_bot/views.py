@@ -21,7 +21,7 @@ views.py ทำแค่ route event:
 
 - **guard กลุ่ม (fail-closed):** ทุก handler เรียก `_allowed(event)` ก่อน — ทำงานเฉพาะ source.type=group
   ที่ groupId อยู่ใน settings.LINE_ALLOWED_GROUP_IDS · กลุ่มอื่น/1:1 chat (user)/room → ไม่ตอบ
-  ไม่ประมวลผล log WARNING · JoinEvent จากกลุ่มนอกลิสต์ → leave_from_group ออกทันที ·
+  ไม่ประมวลผล log WARNING · JoinEvent จากกลุ่มนอกลิสต์ → MessagingApi.leave_group ออกทันที ·
   ลิสต์ว่าง = บล็อกทุกกลุ่ม (apps.py log ERROR ตอน start)
 
 - ตรวจลายเซ็น X-Line-Signature ด้วย WebhookHandler ของ line-bot-sdk v3
@@ -153,7 +153,7 @@ def _leave_group(group_id):
     try:
         config = Configuration(access_token=settings.LINE_CHANNEL_ACCESS_TOKEN)
         with ApiClient(config) as api_client:
-            MessagingApi(api_client).leave_from_group(group_id)
+            MessagingApi(api_client).leave_group(group_id)  # SDK v3: leave_group (ไม่ใช่ leave_from_group)
     except Exception:  # noqa: BLE001
         logger.exception('ออกจากกลุ่ม %s ไม่สำเร็จ', group_id)
 
