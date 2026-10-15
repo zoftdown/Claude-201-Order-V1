@@ -1421,9 +1421,10 @@ class StageCommandFlowTests(WebhookBase):
         self.assertEqual(log.department, 'print')
         self.assertEqual(log.note, 'บอท LINE โดย U123')
         self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
-        # "ใช่" ซ้ำโดยไม่มีรายการ → เงียบ
+        # "ใช่" ซ้ำโดยไม่มีรายการ → บอกว่าไม่มีรายการรอยืนยัน (ไม่เงียบ) และไม่ติ๊กซ้ำ
         self._post_text('ใช่')
-        self.reply_mock.assert_not_called()
+        self.assertEqual(self._reply_text(), stage_cmd.EXPIRED_TEXT)
+        self.assertEqual(StageLog.objects.filter(order=self.order, action='print_done').count(), 1)
 
     def test_prefix_and_mention_forms(self):
         self._post_text('หมอนทอง 6910-167 พิมพ์เเล้ว')
@@ -1448,18 +1449,32 @@ class StageCommandFlowTests(WebhookBase):
         self._post_text('บอท ยกเลิก')
         self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
 
-    def test_expired_pending_ignored(self):
+    def test_expired_pending_yes_gets_expired_reply(self):
+        """รายการทวนหมดอายุแล้วตอบ "ใช่ครับ" → บอกหมดเวลา ไม่ติ๊ก (เดิมเงียบ)"""
         with mock.patch.object(stage_cmd, 'PENDING_TTL', 0):
             self._post_text('ตัดแล้ว 6910-167')
-        self._post_text('ใช่')
-        self.reply_mock.assert_not_called()
+        self._post_text('ใช่ครับ')
+        self.assertEqual(self._reply_text(),
+                         'ไม่มีรายการรอยืนยันค่ะ (หมดเวลาแล้ว) พิมพ์คำสั่งใหม่อีกครั้งนะคะ')
         self.order.refresh_from_db()
         self.assertIsNone(self.order.cut_done_at)
+
+    def test_stray_no_replies_but_bare_polite_word_silent(self):
+        """"ไม่" ไม่มีรายการทวน → บอกหมดเวลา · "ค่ะ"/"ครับ" เดี่ยว (คุยกันปกติ) → เงียบ · TTL = 10 นาที"""
+        self.assertEqual(stage_cmd.PENDING_TTL, 600)
+        self._post_text('ไม่')
+        self.assertEqual(self._reply_text(), stage_cmd.EXPIRED_TEXT)
+        for word in ('ค่ะ', 'ครับ'):
+            self._post_text(word)
+            self.reply_mock.assert_not_called()
+        self.qa_mock.assert_not_called()
 
     def test_other_user_cannot_confirm(self):
         self._post_text('ตัดแล้ว 6910-167', user_id='U123')
         self._post_text('ใช่', user_id='U999')
-        self.reply_mock.assert_not_called()
+        # คนอื่นไม่มีรายการทวนของตัวเอง → ได้ข้อความ "ไม่มีรายการรอยืนยัน" แต่ต้องไม่ติ๊กรายการของ U123
+        self.assertEqual(self._reply_text(), stage_cmd.EXPIRED_TEXT)
+        self.assertIsNotNone(stage_cmd.get_pending('G1', 'U123'))
         self.order.refresh_from_db()
         self.assertIsNone(self.order.cut_done_at)
 

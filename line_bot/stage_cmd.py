@@ -6,7 +6,7 @@ stage_cmd — คำสั่งติ๊กขั้นผลิตผ่าน
 คำขั้นและคำพ้อง (STAGE_WORDS): พิมพ์ · โรล · ตัด/เลเซอร์ · คัด · ส่งเย็บ/เย็บ · รีด/แพ็ค/รีดแพ็ค · ลูกค้ารับ/รับแล้ว
 
 flow: parse → ทวน "ติ๊ก พิมพ์ · 6910-167 ชื่องาน 72 ตัว\\nใช่ไหม? ตอบ ใช่ / ไม่" เก็บรอใน cache ต่อ
-(groupId, userId) PENDING_TTL=2 นาที → คนเดิมตอบ ใช่/ครับ/ค่ะ → ติ๊กทุกใบผ่าน **orders.views.mark_stage_done**
+(groupId, userId) PENDING_TTL=10 นาที → คนเดิมตอบ ใช่/ครับ/ค่ะ → ติ๊กทุกใบผ่าน **orders.views.mark_stage_done**
 (helper เดียวกับปุ่มเว็บทุกแผนก) note "บอท LINE โดย <userId>" → ตอบผลสรุป · ตอบ ไม่/ยกเลิก หรือหมดเวลา → ไม่ทำ
 ใบที่ติ๊กขั้นนั้นแล้ว → "ติ๊กแล้วอยู่แล้ว" ไม่ติ๊กซ้ำ · ไม่เจอเลข → "ไม่พบ 6910-xxx"
 **ปิดงาน** ("ปิดงาน/จบงาน/ปิด <เลข…>", pseudo-stage CLOSE): ทวน "ปิดงาน · … — จะติ๊กขั้นที่ยังว่าง: คัด, ส่งเย็บ, ลูกค้ารับ"
@@ -28,7 +28,7 @@ from .orders import SEPARATOR, find_order, format_done_summary
 
 logger = logging.getLogger(__name__)
 
-PENDING_TTL = 120  # วินาที — รอคำตอบ ใช่/ไม่
+PENDING_TTL = 600  # วินาที — รอคำตอบ ใช่/ไม่ (เดิม 2 นาที สั้นไป พนักงานตอบไม่ทัน)
 
 ORDER_NUMBER_RE = re.compile(r'(?<!\d)\d{4}-\d{1,3}(?!\d)')
 PREFIX_RE = re.compile(r'^(?:หมอนทอง|บอท)\s*')
@@ -86,6 +86,16 @@ def is_yes(text):
 
 def is_no(text):
     return normalize(text) in NO_WORDS
+
+
+EXPIRED_TEXT = 'ไม่มีรายการรอยืนยันค่ะ (หมดเวลาแล้ว) พิมพ์คำสั่งใหม่อีกครั้งนะคะ'
+
+
+def is_explicit_yes_no(text):
+    """ใช่…/ไม่…/ยกเลิก แบบชัดเจน — ใช้ตอบ EXPIRED_TEXT เมื่อไม่มีรายการทวน
+    ไม่รวม "ค่ะ"/"ครับ"/"คับ"/"ค่า" เดี่ยวๆ (นับเป็น yes เฉพาะตอนมีรายการทวน) เพราะเป็นคำลงท้ายที่คุยกันทั่วไปในกลุ่ม"""
+    t = normalize(text)
+    return t in NO_WORDS or (t in YES_WORDS and t.startswith('ใช่'))
 
 
 def stage_label(stage):

@@ -317,6 +317,10 @@ def on_text_message(event):
             stage_cmd.clear_pending(group_id, user_id)
             _reply_text(event.reply_token, 'ยกเลิกแล้ว')
             return
+    elif stage_cmd.is_explicit_yes_no(cmd_text) and not pending.get_pending(group_id, user_id):
+        # ตอบ ใช่/ไม่ แต่ไม่มีรายการทวน (หมดอายุ/ไม่เคยสั่ง) → บอก ห้ามเงียบ · "ค่ะ"/"ครับ" เดี่ยวยังเงียบ
+        _reply_text(event.reply_token, stage_cmd.EXPIRED_TEXT)
+        return
 
     # ข้อความยืนยัน "ครบ"/"เสร็จ" จากคนเดิมในกลุ่มเดิมที่มีรายการรอ (กลไกเดิม มาก่อนถาม-ตอบ)
     if any(w in text for w in CONFIRM_WORDS):
