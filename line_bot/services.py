@@ -23,6 +23,8 @@ from django.utils import timezone
 
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApiBlob
 
+from . import commands
+
 logger = logging.getLogger(__name__)
 
 ORDER_NUMBER_RE = re.compile(r'^\d{4}-\d{1,3}$')
@@ -269,8 +271,19 @@ def qa_system_prompt(today=None):
     return (
         'คุณคือผู้ช่วยของร้านพิมพ์เสื้อ ชื่อ "น้องหมอนทอง" ตอบคำถามพนักงานเรื่องใบออร์เดอร์ในกลุ่ม LINE\n'
         'วันนี้คือวัน%s ที่ %s (เวลาไทย Asia/Bangkok) — ใช้คำนวณ "เมื่อวาน/สัปดาห์นี้/เดือนนี้"\n'
+        'บุคลิก (ล็อกตายตัว ทุกคำตอบ): เรียกตัวเองว่า "หมอนทอง" (ไม่ใช่ ฉัน/เรา/ผม/ดิฉัน/AI) '
+        'ลงท้ายประโยคด้วย "ค่ะ" หรือ "นะคะ" ทุกครั้ง ไม่ใช้ ครับ/จ้า/จ้ะ · สุภาพ เป็นกันเอง ไม่ยืดยาว\n'
+        'คำสั่งที่หมอนทองทำได้จริงในแชท (มีแค่นี้ ห้ามแต่งคำสั่งอื่น):\n'
+        '%s\n'
+        '- ถ้าผู้ใช้ขอให้ "ทำ" อะไรที่เป็นการเขียน/แก้ข้อมูล (ติ๊กขั้น ปิดงาน แก้สถานะ แก้ใบงาน) '
+        'หมอนทองทำเองผ่านการถาม-ตอบไม่ได้ ให้แนะนำให้พิมพ์คำสั่งจากรายการข้างบน**เท่านั้น** '
+        'โดยยกตัวอย่างรูปแบบจริงพร้อมเลขออร์เดอร์ของเขา (เช่น "6910-167 พิมพ์แล้ว" หรือ "ปิดงาน 6910-167") '
+        'ห้ามบอกให้ไปกดในเว็บถ้ามีคำสั่งในแชทอยู่แล้ว · สิ่งที่ไม่มีคำสั่ง (แก้ราคา/ชื่อ/ที่อยู่ ลบใบ) ให้บอกว่าต้องแก้ในเว็บ\n'
         'กติกา:\n'
         '- ตอบภาษาไทย สั้น กระชับ เป็นข้อความธรรมดา ห้ามใช้ markdown (ไม่มี ** # ` หรือตาราง) เพราะ LINE ไม่แสดงผล\n'
+        '- ถามสถานะใบเดียว ตอบไม่เกิน 6 บรรทัด: เลข+ชื่องาน, จำนวนตัว, ขั้นปัจจุบัน, '
+        'ยอด/ค้าง (ถ้าถาม), วิธีรับ — ไม่ต้องไล่ทุกขั้นถ้าไม่ได้ถาม\n'
+        '- ห้ามมีอักษรจีน/ญี่ปุ่น/เกาหลี ปนในคำตอบเด็ดขาด\n'
         '- ตอบเฉพาะจากผลของ tool เท่านั้น ห้ามเดาหรือแต่งข้อมูล ถ้ายังไม่ได้เรียก tool ให้เรียกก่อน\n'
         '- ถ้าผลค้นหาเกิน 10 ใบ ให้บอกจำนวนทั้งหมดแล้วขอเงื่อนไขเพิ่ม (ชื่อลูกค้า/ช่วงวัน/เพจ) แทนการไล่ทั้งหมด\n'
         '- ถ้าไม่เจอ ให้บอกว่าไม่เจอตรงๆ\n'
@@ -282,7 +295,23 @@ def qa_system_prompt(today=None):
         'ห้ามแก้สะกด ห้ามย่อ ห้ามแปล ห้ามเติมหรือตัดช่องว่าง\n'
         '- ถ้าถูกถามลิงก์/เบอร์/ที่อยู่ลูกค้า ให้ตอบค่าตรงจากฟิลด์ customer_link / shipping_address '
         'ของผล tool ทั้งค่า ถ้าเป็น URL ให้ส่งทั้งเส้นเต็มๆ ห้ามย่อ ห้ามตัด ห้ามเติม … · ฟิลด์ว่าง = บอกว่าไม่มีข้อมูล'
-    ) % (THAI_WEEKDAYS[today.weekday()], today.strftime('%Y-%m-%d'))
+    ) % (THAI_WEEKDAYS[today.weekday()], today.strftime('%Y-%m-%d'), commands.commands_for_prompt())
+
+
+# อักษรจีน/ญี่ปุ่น/เกาหลี — โมเดลจีน (qwen/deepseek/glm) บางครั้งหลุดคำจีนปนในคำตอบไทย
+_CJK_RE = re.compile('[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\u3000-\u303f\uff00-\uffef]')
+
+
+def has_cjk(text):
+    return bool(text) and _CJK_RE.search(text) is not None
+
+
+def strip_cjk(text):
+    """ลบอักษร CJK ออก แล้วเก็บช่องว่างซ้ำให้เหลือตัวเดียว"""
+    if not text:
+        return text
+    out = _CJK_RE.sub('', text)
+    return re.sub(r'[ \t]{2,}', ' ', out).strip()
 
 
 # สระบน/ล่าง + วรรณยุกต์ (combining marks) ที่ LLM บางตัวแทรกช่องว่างคั่นจากพยัญชนะ เช่น "เสื้ อ" / "ชื่ อ"
@@ -327,12 +356,34 @@ def answer_question(question, history=None, today=None, tier=None, only=False):
     history = list ของ {'role','content'} ก่อนหน้า (จาก line_bot.history)
     tier/only = บังคับชั้น LLM (ไว้ให้ linebot_smoke ทดสอบทีละชั้น) · ปกติให้ chat_create เลือกเอง
     → ข้อความคำตอบ (str) หรือ None เมื่อ LLM พัง/timeout/เกินรอบโดยไม่มีคำตอบ (views ตอบขอโทษ)
-    log ทุกรอบ: คำถาม, ชั้นที่ตอบ, tool ที่เรียก+args, จำนวน tokens (INFO)"""
+    log ทุกรอบ: คำถาม, ชั้นที่ตอบ, tool ที่เรียก+args, จำนวน tokens (INFO)
+    post-process: คำตอบมีอักษร CJK → ลองใหม่ด้วยชั้นถัดไป 1 ครั้ง (ถ้ามีและไม่ใช่ only) ยังมี → ลบออก + log WARNING"""
+    answer, used = _answer_question_once(question, history, today, tier, only)
+    if answer is None or not has_cjk(answer):
+        return answer
+    tiers = llm_tiers()
+    idx = tiers.index(used) if used in tiers else -1
+    if not only and 0 <= idx < len(tiers) - 1:
+        retry_tier = tiers[idx + 1]
+        logger.warning('QA คำตอบจาก %s มีอักษร CJK → ลองใหม่ด้วย %s: %r',
+                       tier_label(used), tier_label(retry_tier), answer[:120])
+        retry, _ = _answer_question_once(question, history, today, retry_tier, True)
+        if retry and not has_cjk(retry):
+            return retry
+        if retry:
+            answer = retry
+    cleaned = strip_cjk(answer)
+    logger.warning('QA คำตอบยังมีอักษร CJK หลังลองใหม่ → ลบออก: %r → %r', answer[:120], cleaned[:120])
+    return cleaned or None
+
+
+def _answer_question_once(question, history=None, today=None, tier=None, only=False):
+    """loop ถาม-ตอบ 1 ครั้ง → (คำตอบหรือ None, tier ที่ตอบรอบสุดท้าย)"""
     from . import tools  # import ที่นี่ กัน import ฝั่ง DB ตอนโหลด module
 
     if not llm_tiers():
         logger.warning('ไม่มี LLM ตั้งค่า — ตอบคำถามไม่ได้')
-        return None
+        return None, None
 
     logger.info('QA คำถาม: %r (history %d ข้อความ)', question, len(history or []))
     messages = [{'role': 'system', 'content': qa_system_prompt(today)}]
@@ -351,7 +402,7 @@ def answer_question(question, history=None, today=None, tier=None, only=False):
                                         tier=current, only=only)
         except Exception:  # noqa: BLE001
             logger.exception('QA เรียก LLM รอบ %d ไม่สำเร็จ', round_no)
-            return None
+            return None, current
 
         msg = resp.choices[0].message
         tool_calls = list(getattr(msg, 'tool_calls', None) or [])
@@ -363,9 +414,9 @@ def answer_question(question, history=None, today=None, tier=None, only=False):
         if not tool_calls:
             if content:
                 logger.info('QA คำตอบ: %r', content)
-                return fix_thai_spacing(content)
+                return fix_thai_spacing(content), current
             logger.warning('QA รอบ %d ไม่มีทั้ง tool_call และ content', round_no)
-            return None
+            return None, current
 
         last_content = content or last_content
         messages.append({
@@ -387,4 +438,4 @@ def answer_question(question, history=None, today=None, tier=None, only=False):
             messages.append({'role': 'tool', 'tool_call_id': tc.id, 'content': payload})
 
     logger.warning('QA ครบ %d รอบแล้วยังไม่ได้คำตอบสุดท้าย', QA_MAX_ROUNDS)
-    return fix_thai_spacing(last_content) if last_content else None
+    return (fix_thai_spacing(last_content) if last_content else None), current

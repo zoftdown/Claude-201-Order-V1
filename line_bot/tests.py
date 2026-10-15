@@ -1575,3 +1575,152 @@ class StageCommandRealMessageTests(WebhookBase):
     def test_order_and_stage_swapped_without_laew(self):
         for text in ('พิม 6910-156', '6910-156 พิมพ์', 'บอท โรว 6910-156', 'แพค 6910-156'):
             self.assertIsNotNone(stage_cmd.parse_stage_command(text), text)
+
+
+@override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
+class CloseJobCommandTests(WebhookBase):
+    """ "ปิดงาน <เลข>" → ทวน (ลิสต์ขั้นที่ยังว่าง) → ใช่ → ติ๊กทุกขั้นที่ว่างผ่าน mark_stage_done
+    note "ปิดงานรวบ บอท LINE" · ขั้นที่ติ๊กแล้วไม่แตะ · ครบแล้ว → ติ๊กครบแล้วอยู่แล้ว"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.addCleanup(cache.clear)
+        p = mock.patch.object(services, 'answer_question', return_value='llm', autospec=True)
+        self.qa_mock = p.start()
+        self.addCleanup(p.stop)
+
+    def _post_text(self, text):
+        self.reply_mock.reset_mock()
+        resp = self._post({'destination': 'x', 'events': [_text_event(text)]})
+        self.assertEqual(resp.status_code, 200)
+        return self.reply_mock.call_args[0][1][0].text if self.reply_mock.called else None
+
+    def test_close_job_three_missing_stages(self):
+        order = make_order('6910-122')
+        order.shirt_name = 'เสื้อกินเจ'
+        order.delivery_method = 'รับเอง'
+        order.save()
+        for stage in ('print', 'roll', 'cut'):  # เหลือ คัด ส่งเย็บ รีด+แพ็ค ลูกค้ารับ
+            views_orders.mark_stage_done(order, stage)
+        views_orders.mark_stage_done(order, 'pack')  # ติ๊กข้ามขั้นไว้ก่อน → เหลือว่าง 3 ขั้น
+
+        text = self._post_text('ปิดงาน 6910-122')
+        self.assertEqual(text, 'ปิดงาน · 6910-122 เสื้อกินเจ 10 ตัว — จะติ๊กขั้นที่ยังว่าง: คัด, ส่งเย็บ, ลูกค้ารับ\n'
+                               'ใช่ไหม? ตอบ ใช่ / ไม่')
+        self.qa_mock.assert_not_called()
+        order.refresh_from_db()
+        self.assertIsNone(order.sort_done_at)
+
+        text = self._post_text('ใช่ค่ะ')
+        self.assertEqual(text, '✓ 6910-122 เสื้อกินเจ 10 ตัว → ปิดงานแล้ว (ติ๊ก: คัด, ส่งเย็บ, ลูกค้ารับ)')
+        order.refresh_from_db()
+        self.assertIsNotNone(order.sort_done_at)
+        self.assertIsNotNone(order.sent_to_tailors_at)
+        self.assertIsNotNone(order.awaiting_pickup_at)
+        self.assertIsNone(order.shipped_at)
+        self.assertEqual(order.progress_label, 'รอลูกค้ารับ')
+        notes = list(StageLog.objects.filter(order=order, note='ปิดงานรวบ บอท LINE')
+                     .values_list('action', flat=True))
+        self.assertEqual(sorted(notes), ['pack_pickup', 'sew_send', 'sort_done'])
+        # ขั้นที่ติ๊กไว้ก่อนไม่ถูกเขียนซ้ำ
+        self.assertEqual(StageLog.objects.filter(order=order, action='print_done').count(), 1)
+        self.assertEqual(StageLog.objects.filter(order=order, action='pack_done').count(), 1)
+
+    def test_close_job_already_complete(self):
+        order = make_order('6910-123')
+        for stage in ('print', 'roll', 'cut', 'sort', 'sew', 'pack', 'shipped'):
+            views_orders.mark_stage_done(order, stage)
+        before = StageLog.objects.filter(order=order).count()
+        text = self._post_text('จบงาน 6910-123')
+        self.assertEqual(text, '6910-123 ติ๊กครบแล้วอยู่แล้ว')
+        self.assertIsNone(stage_cmd.get_pending('G1', 'U123'))
+        self.assertEqual(StageLog.objects.filter(order=order).count(), before)
+
+    def test_delivery_send_closes_with_shipped(self):
+        order = make_order('6910-124')  # delivery_method='ส่ง'
+        self.assertEqual(stage_cmd.missing_stages(order)[-1], 'shipped')
+        self.assertEqual(stage_cmd.parse_stage_command('หมอนทอง ปิด 6910-124 6910-125'),
+                         ('close', ['6910-124', '6910-125']))
+        self.assertIsNone(stage_cmd.parse_stage_command('ปิดงานหรือยัง 6910-124'))
+
+
+@override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
+                   ANTHROPIC_API_KEY='')
+class CjkPostProcessTests(BotTestCase):
+    """คำตอบมีอักษรจีน/ญี่ปุ่น/เกาหลี → ลองชั้นถัดไป 1 ครั้ง ยังมี → ลบออก + WARNING"""
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def test_detect_and_strip(self):
+        self.assertTrue(services.has_cjk('วันนี้ 2 ใบ 订单'))
+        self.assertTrue(services.has_cjk('สวัสดี こんにちは'))
+        self.assertTrue(services.has_cjk('안녕 ค่ะ'))
+        self.assertFalse(services.has_cjk('วันนี้ 2 ใบ ค่ะ 6910-116 https://x.y/z?a=1'))
+        self.assertEqual(services.strip_cjk('วันนี้ 订单 2 ใบ 、ค่ะ'), 'วันนี้ 2 ใบ ค่ะ')
+
+    def test_retry_next_tier_then_clean(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.side_effect = [
+            _llm_response(content='วันนี้ 2 ใบ 订单 ค่ะ'),   # primary มี CJK
+            _llm_response(content='วันนี้ 2 ใบ ค่ะ'),        # fallback สะอาด
+        ]
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='WARNING') as logs:
+            self.assertEqual(services.answer_question('วันนี้มีกี่ใบ'), 'วันนี้ 2 ใบ ค่ะ')
+        models = [c[1]['model'] for c in client.chat.completions.create.call_args_list]
+        self.assertEqual(models, ['primary/m', 'fallback/m'])
+        self.assertIn('CJK', '\n'.join(logs.output))
+        self.assertFalse(services.tier_down(('runninghub', 'primary/m')))  # ไม่ใช่ error ไม่จำว่าล่ม
+
+    def test_still_cjk_after_retry_is_stripped(self):
+        client = mock.MagicMock()
+        client.chat.completions.create.side_effect = [
+            _llm_response(content='2 ใบ 订单'),
+            _llm_response(content='2 ใบ 注文 ค่ะ'),
+        ]
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='WARNING') as logs:
+            self.assertEqual(services.answer_question('กี่ใบ'), '2 ใบ ค่ะ')
+        self.assertEqual(client.chat.completions.create.call_count, 2)
+        self.assertIn('ลบออก', '\n'.join(logs.output))
+
+    @override_settings(RUNNINGHUB_FALLBACK_MODEL='')
+    def test_no_next_tier_strips_directly(self):
+        client = _fake_llm(_llm_response(content='2 ใบ 订单'))
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True), \
+                self.assertLogs('line_bot.services', level='WARNING'):
+            self.assertEqual(services.answer_question('กี่ใบ'), '2 ใบ')
+        client.chat.completions.create.assert_called_once()
+
+
+@override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='',
+                   ANTHROPIC_API_KEY='')
+class PromptCommandsTests(BotTestCase):
+    """system prompt: บุคลิกหมอนทอง + รายการคำสั่งจริงจากตาราง COMMANDS (ตัวเดียวกับ "ช่วย")
+    LLM ต้องแนะนำได้เฉพาะคำสั่งในรายการ ห้ามแต่งเอง"""
+
+    def test_prompt_contains_persona_and_every_command(self):
+        from . import commands
+        prompt = services.qa_system_prompt()
+        self.assertIn('"หมอนทอง"', prompt)
+        self.assertIn('ค่ะ', prompt)
+        self.assertIn('นะคะ', prompt)
+        self.assertIn('ห้ามแต่งคำสั่งอื่น', prompt)
+        self.assertIn('ไม่เกิน 6 บรรทัด', prompt)
+        for example, _desc in commands.COMMANDS:
+            self.assertIn(example, prompt)
+            self.assertIn(example, stage_cmd.HELP_TEXT)  # ตารางเดียวกัน
+        self.assertEqual(stage_cmd.HELP_TEXT, commands.help_text())
+
+    def test_llm_receives_commands_in_system_message(self):
+        client = _fake_llm(_llm_response(content='พิมพ์ "6910-167 พิมพ์แล้ว" ได้เลยนะคะ'))
+        with mock.patch('openai.OpenAI', return_value=client, autospec=True):
+            answer = services.answer_question('ติ๊กพิมพ์ให้ 6910-167 หน่อย')
+        system = client.chat.completions.create.call_args[1]['messages'][0]
+        self.assertEqual(system['role'], 'system')
+        self.assertIn('ปิดงาน 6910-167', system['content'])
+        self.assertIn('6910-167 พิมพ์แล้ว', system['content'])
+        self.assertIn('6910-167 พิมพ์แล้ว', answer)

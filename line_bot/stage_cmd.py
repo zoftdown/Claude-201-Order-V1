@@ -9,6 +9,10 @@ flow: parse → ทวน "ติ๊ก พิมพ์ · 6910-167 ชื่อ
 (groupId, userId) PENDING_TTL=2 นาที → คนเดิมตอบ ใช่/ครับ/ค่ะ → ติ๊กทุกใบผ่าน **orders.views.mark_stage_done**
 (helper เดียวกับปุ่มเว็บทุกแผนก) note "บอท LINE โดย <userId>" → ตอบผลสรุป · ตอบ ไม่/ยกเลิก หรือหมดเวลา → ไม่ทำ
 ใบที่ติ๊กขั้นนั้นแล้ว → "ติ๊กแล้วอยู่แล้ว" ไม่ติ๊กซ้ำ · ไม่เจอเลข → "ไม่พบ 6910-xxx"
+**ปิดงาน** ("ปิดงาน/จบงาน/ปิด <เลข…>", pseudo-stage CLOSE): ทวน "ปิดงาน · … — จะติ๊กขั้นที่ยังว่าง: คัด, ส่งเย็บ, ลูกค้ารับ"
+→ ใช่ → ติ๊กทุกขั้นที่ยังว่างตามลำดับ CLOSE_STAGES ผ่าน mark_stage_done note "ปิดงานรวบ บอท LINE"
+(ขั้นสุดท้าย = ส่งของ ถ้า delivery_method "ส่ง" ไม่งั้น ลูกค้ารับ — แบบเดียวกับ mark_legacy_orders_done)
+ขั้นที่ติ๊กแล้วไม่แตะ · ครบทุกขั้นแล้ว → "ติ๊กครบแล้วอยู่แล้ว"
 flow เดิม รูป+ครบ (line_bot.orders) ยังติ๊กรีด+แพ็คทันทีไม่ทวน — ไม่แตะ
 """
 import logging
@@ -19,6 +23,7 @@ from django.db import transaction
 
 from orders.views import STAGE_DONE_SPECS, STAGE_NEED_PACK, mark_stage_done, stage_is_done
 
+from . import commands
 from .orders import find_order
 
 logger = logging.getLogger(__name__)
@@ -42,6 +47,12 @@ STAGE_WORDS = {
     'รีด+แพ็ค': 'pack', 'pack': 'pack',
     'ลูกค้ารับ': 'pickup', 'รับ': 'pickup',  # "รับแล้ว" → ตัด "แล้ว" เหลือ "รับ"
 }
+# ปิดงาน = pseudo-stage (ไม่อยู่ใน STAGE_DONE_SPECS) — ติ๊กทุกขั้นที่ยังว่างตามลำดับนี้ + ขั้นสุดท้ายตามวิธีรับ
+CLOSE = 'close'
+CLOSE_WORDS = {'ปิดงาน': CLOSE, 'จบงาน': CLOSE, 'ปิด': CLOSE}
+CLOSE_STAGES = ['print', 'roll', 'cut', 'sort', 'sew', 'pack']
+CLOSE_NOTE = 'ปิดงานรวบ บอท LINE'
+
 YES_WORDS = {'ใช่', 'ใช่ครับ', 'ใช่ค่ะ', 'ใช่คับ', 'ใช่ค่า', 'ค่ะ', 'ครับ', 'คับ', 'ค่า'}
 NO_WORDS = {'ไม่', 'ไม่ใช่', 'ยกเลิก', 'ไม่ครับ', 'ไม่ค่ะ'}
 
@@ -63,7 +74,7 @@ def parse_stage_command(text):
         return None
     rest = ORDER_NUMBER_RE.sub(' ', t)
     rest = rest.replace('แล้ว', '').replace(' ', '').replace('\t', '').strip()
-    stage = STAGE_WORDS.get(rest.lower())
+    stage = STAGE_WORDS.get(rest.lower()) or CLOSE_WORDS.get(rest)
     if stage is None:
         return None
     return stage, numbers
@@ -78,7 +89,20 @@ def is_no(text):
 
 
 def stage_label(stage):
-    return STAGE_DONE_SPECS[stage]['label']
+    return 'ปิดงาน' if stage == CLOSE else STAGE_DONE_SPECS[stage]['label']
+
+
+def _final_stage(order):
+    """ขั้นออกจากร้านของใบนี้: ส่งของ เมื่อวิธีรับ = "ส่ง" ไม่งั้น ลูกค้ารับ (เหมือน mark_legacy_orders_done)"""
+    return 'shipped' if (order.delivery_method or '') == 'ส่ง' else 'pickup'
+
+
+def missing_stages(order):
+    """ขั้นที่ยังว่างตามลำดับผลิต + ขั้นออกจากร้าน (ว่าง = ยังไม่ได้ทั้ง ส่งของ/ลูกค้ารับ)"""
+    out = [s for s in CLOSE_STAGES if not stage_is_done(order, s)]
+    if not stage_is_done(order, 'shipped'):  # exclusive คู่กัน เช็คตัวไหนก็ได้
+        out.append(_final_stage(order))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +145,14 @@ def start_confirm(group_id, user_id, stage, numbers):
         order = find_order(n)
         if order is None:
             problems.append('ไม่พบ %s' % n)
+        elif stage == CLOSE:
+            missing = missing_stages(order)
+            if not missing:
+                problems.append('%s ติ๊กครบแล้วอยู่แล้ว' % n)
+            else:
+                valid.append(n)
+                lines.append('%s — จะติ๊กขั้นที่ยังว่าง: %s' % (
+                    _order_line(order), ', '.join(STAGE_DONE_SPECS[s]['label'] for s in missing)))
         elif stage_is_done(order, stage):
             problems.append('%s ติ๊กแล้วอยู่แล้ว (%s)' % (n, label))
         else:
@@ -130,10 +162,11 @@ def start_confirm(group_id, user_id, stage, numbers):
         clear_pending(group_id, user_id)
         return '\n'.join(problems)
     set_pending(group_id, user_id, stage, valid)
+    verb = label if stage == CLOSE else 'ติ๊ก %s' % label  # "ปิดงาน · …" / "ติ๊ก พิมพ์ · …"
     if len(lines) == 1:
-        head = 'ติ๊ก %s · %s' % (label, lines[0])
+        head = '%s · %s' % (verb, lines[0])
     else:
-        head = 'ติ๊ก %s\n' % label + '\n'.join('· %s' % ln for ln in lines)
+        head = '%s\n' % verb + '\n'.join('· %s' % ln for ln in lines)
     parts = [head] + problems + ['ใช่ไหม? ตอบ ใช่ / ไม่']
     return '\n'.join(parts)
 
@@ -147,6 +180,9 @@ def apply_stage(stage, numbers, note=''):
         if order is None:
             lines.append('ไม่พบ %s' % n)
             continue
+        if stage == CLOSE:
+            lines.append(_close_order(order))
+            continue
         with transaction.atomic():
             reason = mark_stage_done(order, stage, note=note)
         if reason is None:
@@ -159,6 +195,19 @@ def apply_stage(stage, numbers, note=''):
     return '\n'.join(lines)
 
 
+def _close_order(order):
+    """ติ๊กทุกขั้นที่ยังว่างของใบเดียวตามลำดับ (ขั้นที่ติ๊กแล้วไม่แตะ) → บรรทัดสรุป"""
+    missing = missing_stages(order)
+    if not missing:
+        return '%s ติ๊กครบแล้วอยู่แล้ว' % order.order_number
+    with transaction.atomic():
+        for s in missing:
+            mark_stage_done(order, s, note=CLOSE_NOTE)
+    labels = ', '.join(STAGE_DONE_SPECS[s]['label'] for s in missing)
+    logger.info('ออร์เดอร์ %s → ปิดงาน ติ๊ก %s (%s)', order.order_number, labels, CLOSE_NOTE)
+    return '✓ %s → ปิดงานแล้ว (ติ๊ก: %s)' % (_order_line(order), labels)
+
+
 def confirm(group_id, user_id, note=''):
     """คนเดิมตอบ "ใช่" → ติ๊กรายการที่รอ ล้างรายการ → ข้อความสรุป (None เมื่อไม่มีรายการรอ)"""
     pend = get_pending(group_id, user_id)
@@ -168,15 +217,7 @@ def confirm(group_id, user_id, note=''):
     return apply_stage(pend['stage'], pend['numbers'], note=note)
 
 
-HELP_TEXT = '\n'.join([
-    'คำสั่งน้องหมอนทอง:',
-    '• ติ๊กขั้น: "6910-167 พิมพ์แล้ว" / "ตัดแล้ว 6910-167 6910-168" (จะทวนก่อน ตอบ ใช่/ไม่)',
-    '  คำขั้น: พิมพ์ · โรล · ตัด/เลเซอร์ · คัด · ส่งเย็บ · รีด/แพ็ค · ลูกค้ารับ',
-    '• ส่งรูปใบงาน แล้วพิมพ์ "ครบ"/"เสร็จ" → ติ๊กรีด+แพ็ค (ไม่ทวน)',
-    '• "บอท เสร็จ 6910-167" → ติ๊กรีด+แพ็คทันที · "บอท ยกเลิก" → ล้างรายการรอ',
-    '• ถาม: "บอท วันนี้มีกี่ใบ" / "หมอนทอง 6910-167 ถึงไหนแล้ว" / "บอท ใบไหนค้างเกิน 7 วัน"',
-    '• "บอท ping" → pong · "ช่วย" → ข้อความนี้',
-])
+HELP_TEXT = commands.help_text()  # ตาราง COMMANDS เดียวกับ system prompt (line_bot/commands.py)
 
 
 def is_help(text):
