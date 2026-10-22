@@ -6,9 +6,9 @@ line_bot/tools.py ซึ่ง answer_question เรียกผ่าน run_t
 ทุกฟังก์ชันคืน None เมื่อล้มเหลว + log — ให้ views ตัดสินใจเองโดยไม่ต้อง try/except ซ้ำ
 
 LLM = ลำดับชั้น (llm_tiers) ลองทีละชั้นเมื่อชั้นก่อนพัง "แบบชั่วคราว":
-  1. RunningHub โมเดลหลัก   (settings.RUNNINGHUB_MODEL)
-  2. RunningHub โมเดลสำรอง  (settings.RUNNINGHUB_FALLBACK_MODEL — env, ว่าง = ไม่มี)
-  3. Anthropic              (settings.ANTHROPIC_MODEL ผ่าน anthropic SDK, ANTHROPIC_API_KEY ว่าง = ไม่มี)
+  1. Anthropic              (settings.ANTHROPIC_MODEL ผ่าน anthropic SDK, ANTHROPIC_API_KEY ว่าง = ไม่มี)
+  2. RunningHub โมเดลหลัก   (settings.RUNNINGHUB_MODEL)
+  3. RunningHub โมเดลสำรอง  (settings.RUNNINGHUB_FALLBACK_MODEL — env, ว่าง = ไม่มี)
 ชั้นที่พังถูกจำใน cache TIER_DOWN_TTL วิ ให้คำขอถัดไปข้ามไปชั้นถัดไปเลย (ไม่เสียเวลารอ 502 ซ้ำ)
 """
 import base64
@@ -78,13 +78,13 @@ def _client(timeout=LLM_TIMEOUT):
 def llm_tiers():
     """[(backend, model), …] ตามลำดับที่จะลอง — เฉพาะชั้นที่ตั้งค่าครบ (key + ชื่อโมเดล)"""
     tiers = []
+    if getattr(settings, 'ANTHROPIC_API_KEY', '') and getattr(settings, 'ANTHROPIC_MODEL', ''):
+        tiers.append((BACKEND_ANTHROPIC, settings.ANTHROPIC_MODEL))
     if settings.RUNNINGHUB_API_KEY and settings.RUNNINGHUB_MODEL:
         tiers.append((BACKEND_RUNNINGHUB, settings.RUNNINGHUB_MODEL))
         fallback = getattr(settings, 'RUNNINGHUB_FALLBACK_MODEL', '')
         if fallback and fallback != settings.RUNNINGHUB_MODEL:
             tiers.append((BACKEND_RUNNINGHUB, fallback))
-    if getattr(settings, 'ANTHROPIC_API_KEY', '') and getattr(settings, 'ANTHROPIC_MODEL', ''):
-        tiers.append((BACKEND_ANTHROPIC, settings.ANTHROPIC_MODEL))
     return tiers
 
 

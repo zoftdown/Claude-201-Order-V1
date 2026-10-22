@@ -45,19 +45,19 @@ def expected_tiers():
     an_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
     an_model = getattr(settings, 'ANTHROPIC_MODEL', '')
     out = []
-    if rh_key and primary:
-        out.append(('ชั้น 1 RunningHub หลัก %s' % primary, (services.BACKEND_RUNNINGHUB, primary), None))
-    else:
-        out.append(('ชั้น 1 RunningHub หลัก', None, 'RUNNINGHUB_API_KEY/RUNNINGHUB_MODEL ว่าง'))
-    if rh_key and fallback and fallback != primary:
-        out.append(('ชั้น 2 RunningHub สำรอง %s' % fallback, (services.BACKEND_RUNNINGHUB, fallback), None))
-    else:
-        out.append(('ชั้น 2 RunningHub สำรอง', None,
-                    'RUNNINGHUB_FALLBACK_MODEL ว่าง/ซ้ำกับหลัก' if rh_key else 'RUNNINGHUB_API_KEY ว่าง'))
     if an_key and an_model:
-        out.append(('ชั้น 3 Anthropic %s' % an_model, (services.BACKEND_ANTHROPIC, an_model), None))
+        out.append(('ชั้น 1 Anthropic %s' % an_model, (services.BACKEND_ANTHROPIC, an_model), None))
     else:
-        out.append(('ชั้น 3 Anthropic', None, 'ANTHROPIC_API_KEY ว่าง (ตั้งใน .env)'))
+        out.append(('ชั้น 1 Anthropic', None, 'ANTHROPIC_API_KEY ว่าง (ตั้งใน .env)'))
+    if rh_key and primary:
+        out.append(('ชั้น 2 RunningHub หลัก %s' % primary, (services.BACKEND_RUNNINGHUB, primary), None))
+    else:
+        out.append(('ชั้น 2 RunningHub หลัก', None, 'RUNNINGHUB_API_KEY/RUNNINGHUB_MODEL ว่าง'))
+    if rh_key and fallback and fallback != primary:
+        out.append(('ชั้น 3 RunningHub สำรอง %s' % fallback, (services.BACKEND_RUNNINGHUB, fallback), None))
+    else:
+        out.append(('ชั้น 3 RunningHub สำรอง', None,
+                    'RUNNINGHUB_FALLBACK_MODEL ว่าง/ซ้ำกับหลัก' if rh_key else 'RUNNINGHUB_API_KEY ว่าง'))
     return out
 
 
@@ -73,8 +73,8 @@ def check_llm_tier(tier):
 
 
 class Command(BaseCommand):
-    help = ('smoke test บอท LINE ก่อน restart: LINE get_bot_info + LLM ทุกชั้น (RunningHub หลัก/สำรอง, '
-            'Anthropic) ด้วย answer_question + fix_thai_spacing — ไม่ส่งเข้า LINE ไม่เขียน DB · '
+    help = ('smoke test บอท LINE ก่อน restart: LINE get_bot_info + LLM ทุกชั้น (Anthropic, RunningHub '
+            'หลัก/สำรอง) ด้วย answer_question + fix_thai_spacing — ไม่ส่งเข้า LINE ไม่เขียน DB · '
             'exit 1 เมื่อ LINE ไม่ผ่าน หรือไม่มีชั้น LLM ไหนผ่าน (--strict = ชั้นใดไม่ผ่านก็ exit 1)')
 
     def add_arguments(self, parser):

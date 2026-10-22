@@ -1,5 +1,5 @@
 """
-anthropic_backend — ชั้นสำรองที่ 3 (คนละผู้ให้บริการกับ RunningHub): Anthropic ผ่าน anthropic SDK
+anthropic_backend — ชั้น 1 (ชั้นหลัก, คนละผู้ให้บริการกับ RunningHub): Anthropic ผ่าน anthropic SDK
 
 หน้าที่: รับ messages/tools **รูปแบบ OpenAI** (แบบเดียวกับที่ services.py ประกอบให้ RunningHub)
 → แปลงเป็นรูปแบบ Anthropic Messages API → เรียก client.messages.create → แปลงคำตอบกลับเป็น
@@ -140,7 +140,7 @@ def create(model, messages, tools=None, max_tokens=1000, timeout=20):
         'model': model,
         'max_tokens': max_tokens,
         'messages': msgs,
-        # งานสั้น ตอบไว — ไม่ส่ง temperature (Claude Haiku 5.5 รับเฉพาะค่า default)
+        # งานสั้น ตอบไว — ไม่ส่ง temperature (Claude รุ่น 5.x รับเฉพาะค่า default)
         'output_config': {'effort': 'low'},
     }
     if system:

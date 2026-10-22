@@ -1030,7 +1030,7 @@ class LinebotSmokeCommandTests(BotTestCase):
                                   if callable(answer) else (lambda *a, **k: answer)) as qa, \
                 override_settings(LINE_CHANNEL_ACCESS_TOKEN=token, RUNNINGHUB_API_KEY=key,
                                   RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
-                                  ANTHROPIC_API_KEY=an_key, ANTHROPIC_MODEL='claude-haiku-5-5'):
+                                  ANTHROPIC_API_KEY=an_key, ANTHROPIC_MODEL='claude-opus-5-5'):
             api.return_value.get_bot_info.return_value = mock.MagicMock(display_name=bot_name)
             args = ['--strict'] if strict else []
             call_command('linebot_smoke', *args, stdout=out, stderr=err)
@@ -1039,14 +1039,14 @@ class LinebotSmokeCommandTests(BotTestCase):
     def test_all_pass(self):
         out, err, api, qa = self._run()
         api.return_value.get_bot_info.assert_called_once_with()
-        # 2 ชั้น RunningHub ถูกยิงทีละชั้นแบบ only=True · ชั้น 3 ไม่มี key → รายงานยังไม่ตั้งค่า ไม่เรียก LLM
+        # ชั้น 1 Anthropic ไม่มี key → รายงานยังไม่ตั้งค่า ไม่เรียก LLM · 2 ชั้น RunningHub ถูกยิงทีละชั้นแบบ only=True
         self.assertEqual(qa.call_args_list, [
             mock.call(self.cmd.SMOKE_QUESTION, tier=('runninghub', 'primary/m'), only=True),
             mock.call(self.cmd.SMOKE_QUESTION, tier=('runninghub', 'fallback/m'), only=True),
         ])
         self.assertIn('LLM ผ่าน 2/3 ชั้น', out)
         self.assertIn('ผ่าน (LINE + LLM 2/3 ชั้น)', out)
-        self.assertIn('ชั้น 3 Anthropic: ยังไม่ตั้งค่า', err)
+        self.assertIn('ชั้น 1 Anthropic: ยังไม่ตั้งค่า', err)
 
     def test_wrong_bot_name_fails(self):
         from django.core.management import CommandError
@@ -1062,22 +1062,23 @@ class LinebotSmokeCommandTests(BotTestCase):
         self.assertIn('LLM ทุกชั้น', str(cm.exception))
 
     def test_one_tier_down_still_passes_unless_strict(self):
-        # ชั้น 1 ล่ม (upstream 502) แต่ชั้น 2 ตอบได้ → deploy ได้ (ไม่บล็อกเพราะผู้ให้บริการล่ม)
+        # ชั้น RunningHub หลักล่ม (upstream 502) แต่สำรองตอบได้ → deploy ได้ (ไม่บล็อกเพราะผู้ให้บริการล่ม)
         def qa(question, tier=None, only=False):
             return None if tier == ('runninghub', 'primary/m') else 'วันนี้ 2 ใบ'
         out, err, _, _ = self._run(answer=qa)
-        self.assertIn('✗ ชั้น 1 RunningHub หลัก', err)
-        self.assertIn('✓ ชั้น 2 RunningHub สำรอง', out)
+        self.assertIn('✗ ชั้น 2 RunningHub หลัก', err)
+        self.assertIn('✓ ชั้น 3 RunningHub สำรอง', out)
         self.assertIn('LLM ผ่าน 1/3 ชั้น', out)
         from django.core.management import CommandError
         with self.assertRaises(CommandError) as cm:
             self._run(answer=qa, strict=True)
-        self.assertIn('ชั้น 1 RunningHub หลัก', str(cm.exception))
+        self.assertIn('ชั้น 2 RunningHub หลัก', str(cm.exception))
 
-    def test_anthropic_tier_tested_when_key_set(self):
+    def test_anthropic_tier_tested_first_when_key_set(self):
         out, err, _, qa = self._run(an_key='sk-ant-test')
-        self.assertIn(mock.call(self.cmd.SMOKE_QUESTION, tier=('anthropic', 'claude-haiku-5-5'), only=True),
-                      qa.call_args_list)
+        self.assertEqual(qa.call_args_list[0],
+                         mock.call(self.cmd.SMOKE_QUESTION, tier=('anthropic', 'claude-opus-5-5'), only=True))
+        self.assertIn('✓ ชั้น 1 Anthropic claude-opus-5-5', out)
         self.assertIn('LLM ผ่าน 3/3 ชั้น', out)
 
     def test_missing_env_fails_both(self):
@@ -1099,9 +1100,9 @@ class LinebotSmokeCommandTests(BotTestCase):
 
 
 @override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
-                   ANTHROPIC_API_KEY='sk-ant-test', ANTHROPIC_MODEL='claude-haiku-5-5')
+                   ANTHROPIC_API_KEY='sk-ant-test', ANTHROPIC_MODEL='claude-opus-5-5')
 class AnthropicTierTests(BotTestCase):
-    """ชั้นสำรองที่ 3 (line_bot/anthropic_backend.py) — แปลง OpenAI ↔ Anthropic + เข้าคิวหลัง RunningHub ทั้ง 2"""
+    """ชั้น 1 (line_bot/anthropic_backend.py) — แปลง OpenAI ↔ Anthropic + พังชั่วคราวแล้วไล่ RunningHub หลัก → สำรอง"""
 
     def setUp(self):
         cache.clear()
@@ -1129,7 +1130,7 @@ class AnthropicTierTests(BotTestCase):
 
     def test_tiers_order(self):
         self.assertEqual(services.llm_tiers(), [
-            ('runninghub', 'primary/m'), ('runninghub', 'fallback/m'), ('anthropic', 'claude-haiku-5-5')])
+            ('anthropic', 'claude-opus-5-5'), ('runninghub', 'primary/m'), ('runninghub', 'fallback/m')])
         with override_settings(ANTHROPIC_API_KEY=''):
             self.assertEqual(len(services.llm_tiers()), 2)
 
@@ -1196,9 +1197,8 @@ class AnthropicTierTests(BotTestCase):
         self.assertEqual([t['name'] for t in kwargs['tools']], tools.TOOL_NAMES)
         self.assertNotIn('temperature', kwargs)
 
-    def test_qa_falls_through_to_anthropic_when_runninghub_all_down(self):
+    def test_qa_uses_anthropic_first(self):
         rh = mock.MagicMock()
-        rh.chat.completions.create.side_effect = [self._rh_error(502), self._rh_error(503)]
         an = mock.MagicMock()
         an.messages.create.side_effect = [
             self._an_message([{'type': 'tool_use', 'id': 'tu1', 'name': 'daily_summary',
@@ -1211,16 +1211,35 @@ class AnthropicTierTests(BotTestCase):
                 self.assertLogs('line_bot.services', level='INFO') as logs:
             self.assertEqual(services.answer_question('วันนี้มีกี่ใบ'), 'วันนี้ 3 ใบ')
         tool_mock.assert_called_once_with(date='2026-10-15')
-        self.assertEqual(rh.chat.completions.create.call_count, 2)
+        rh.chat.completions.create.assert_not_called()
         self.assertEqual(an.messages.create.call_count, 2)
-        # รอบ 2 ยังอยู่ชั้น anthropic (ไม่ย้อนกลับ RunningHub) และส่ง tool_result ไป
+        self.assertEqual(an.messages.create.call_args_list[0][1]['model'], 'claude-opus-5-5')
         second = an.messages.create.call_args_list[1][1]['messages']
         self.assertEqual(second[-1]['content'][0]['type'], 'tool_result')
         self.assertEqual(second[-1]['content'][0]['tool_use_id'], 'tu1')
-        joined = '\n'.join(logs.output)
-        self.assertIn('QA รอบ 1 (anthropic:claude-haiku-5-5)', joined)
+        self.assertIn('QA รอบ 1 (anthropic:claude-opus-5-5)', '\n'.join(logs.output))
+
+    def test_qa_falls_through_to_runninghub_when_anthropic_down(self):
+        import anthropic
+        an = mock.MagicMock()
+        an.messages.create.side_effect = anthropic.APIStatusError(
+            'overloaded', response=mock.MagicMock(status_code=529, headers={}), body=None)
+        rh = mock.MagicMock()
+        rh.chat.completions.create.side_effect = [
+            self._rh_error(502),
+            mock.MagicMock(choices=[mock.MagicMock(message=mock.MagicMock(content='วันนี้ 3 ใบ', tool_calls=None))],
+                           usage=None),
+        ]
+        with mock.patch('openai.OpenAI', return_value=rh, autospec=True), \
+                mock.patch('anthropic.Anthropic', return_value=an, autospec=True), \
+                self.assertLogs('line_bot.services', level='INFO') as logs:
+            self.assertEqual(services.answer_question('วันนี้มีกี่ใบ'), 'วันนี้ 3 ใบ')
+        self.assertEqual(an.messages.create.call_count, 1)
+        models = [c[1]['model'] for c in rh.chat.completions.create.call_args_list]
+        self.assertEqual(models, ['primary/m', 'fallback/m'])
+        self.assertIn('QA รอบ 1 (runninghub:fallback/m)', '\n'.join(logs.output))
+        self.assertTrue(services.tier_down(('anthropic', 'claude-opus-5-5')))
         self.assertTrue(services.tier_down(('runninghub', 'primary/m')))
-        self.assertTrue(services.tier_down(('runninghub', 'fallback/m')))
 
     def test_read_order_number_via_anthropic_vision(self):
         rh = mock.MagicMock()
