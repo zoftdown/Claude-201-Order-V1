@@ -1834,7 +1834,8 @@ class PickupLabelTests(BotTestCase):
 @override_settings(LINE_ALLOWED_GROUP_IDS=['G1'])
 class ConfirmRaceTests(WebhookBase):
     """race "ครบ" แซงรูปสุดท้าย (2026-10-15 09:18/09:33): counter กำลังอ่าน + รอก่อนติ๊ก
-    + นับรูปอ่านเลขไม่ได้ท้ายสรุป · ไม่มีอะไรรอ = เงียบเหมือนเดิม"""
+    · รูปอ่านไม่ได้ปนใบที่อ่านได้ = ไม่พูดถึง (เลิกบรรทัดนับ V5.4.1) · อ่านไม่ได้ทั้งชุด = NOT_FOUND_TEXT
+    · ไม่มีอะไรรอ = เงียบเหมือนเดิม"""
 
     def setUp(self):
         super().setUp()
@@ -1903,7 +1904,8 @@ class ConfirmRaceTests(WebhookBase):
         self._post_text('ครบ')
         self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-117'))
 
-    def test_unreadable_images_counted_in_summary(self):
+    def test_unreadable_images_not_mentioned_when_some_sheet_read(self):
+        """รูปเสื้อ (อ่านเลขไม่ได้) ส่งมาคู่ใบงานเสมอ → สรุปไม่มีบรรทัดนับรูปอ่านไม่ได้ ไม่มีข้อความหาไม่เจอ"""
         make_order()
         self._post_image(None)
         self._post_image(None)
@@ -1913,12 +1915,60 @@ class ConfirmRaceTests(WebhookBase):
         self._post_text('ครบ')
         text = self._replied_message().text
         self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
-        self.assertTrue(text.endswith('\n' + views.UNREADABLE_TEXT % 2))
-        # นับถูกล้างแล้ว — ชุดถัดไปไม่โผล่
-        make_order('6910-117')
-        self._post_image('6910-117')
+        self.assertNotIn('อ่านเลขไม่ได้', text)
+        self.assertNotIn(views.NOT_FOUND_TEXT, text)
+        self.assertTrue(text.endswith('/'), text)  # จบที่ลิงก์ใบงาน ไม่มีบรรทัดต่อท้าย
+        # นับถูกล้างแล้ว — ชุดถัดไป "ครบ" โดยไม่มีรูปใหม่ = เงียบ ไม่ขึ้นหาไม่เจอ
         self._post_text('ครบ')
-        self.assertNotIn('อ่านเลขไม่ได้', self._replied_message().text)
+        self.reply_mock.assert_not_called()
+
+    def test_no_sheet_readable_at_all_replies_not_found(self):
+        """ส่งแต่รูปที่อ่านเลขไม่ได้ แล้ว ครบ → บอกหาเลขใบงานไม่เจอ (ข้อความธรรมดา ไม่ mention แอดมิน) ไม่ติ๊กอะไร"""
+        order = make_order()
+        self._post_image(None)
+        self._post_image(None)
+        self._post_text('ครบค่ะ')
+        msg = self._replied_message()
+        self.assertEqual(msg.text, views.NOT_FOUND_TEXT)
+        self.assertNotIn('แอดมิน', msg.text)
+        order.refresh_from_db()
+        self.assertIsNone(order.packed_at)
+        # ตอบแล้วล้างนับ — ครบ ซ้ำโดยไม่มีรูปใหม่ = เงียบ
+        self._post_text('ครบ')
+        self.reply_mock.assert_not_called()
+        # ส่งใบงานใหม่ที่อ่านได้ → ติ๊กปกติ
+        self._post_image('6910-116')
+        self._post_text('ครบ')
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
+
+    def test_not_found_waits_for_inflight_image_first(self):
+        """รูปอ่านไม่ได้ 1 + รูปสุดท้ายยังอ่านอยู่ → รอ; ถ้ารูปสุดท้ายอ่านได้ก็ติ๊กปกติ ไม่ขึ้นหาไม่เจอ"""
+        order = make_order()
+        self._post_image(None)
+        pending.inflight_start('G1', 'U123')
+
+        def image_finishes(_seconds):
+            pending.add_pending('G1', 'U123', '6910-116')
+            pending.inflight_done('G1', 'U123')
+
+        with mock.patch.object(pending.time, 'sleep', side_effect=image_finishes, autospec=True):
+            self._post_text('ครบ')
+        text = self._replied_message().text
+        self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
+        self.assertNotIn(views.NOT_FOUND_TEXT, text)
+        order.refresh_from_db()
+        self.assertIsNotNone(order.packed_at)
+
+    def test_timeout_with_only_unreadable_says_still_reading_not_not_found(self):
+        """อ่านไม่ได้ 1 + รูปค้างอ่านเกินเวลา (ไม่มีใบในรายการ) → บอกยังอ่านไม่เสร็จ (รูปนั้นอาจอ่านได้) ไม่ใช่หาไม่เจอ"""
+        self._post_image(None)
+        pending.inflight_start('G1', 'U123')
+        with mock.patch.object(pending, 'WAIT_TIMEOUT', 0.05), \
+                mock.patch.object(pending, 'WAIT_INTERVAL', 0.01):
+            self._post_text('ครบ')
+        text = self._replied_message().text
+        self.assertEqual(text, '@แอดมิน ' + views.STILL_READING_TEXT % 1)
+        pending.inflight_done('G1', 'U123')
 
     def test_inflight_counter_balanced_on_every_outcome(self):
         make_order()
@@ -1940,17 +1990,16 @@ class ConfirmRaceTests(WebhookBase):
         self._post_text('ครบ')
         text = self._replied_message().text
         self.assertTrue(text.startswith('@แอดมิน ✅ 6910-116'))
-        self.assertTrue(text.endswith('\n' + views.UNREADABLE_TEXT % 1))
+        self.assertNotIn('อ่านเลขไม่ได้', text)
 
     def test_nothing_pending_nothing_inflight_stays_silent(self):
-        """คน tag เพื่อน "ครบค่ะ" โดยไม่มีรูป → เงียบเหมือนเดิม และล้างนับอ่านไม่ได้ของชุดเก่า"""
-        self._post_image(None)
+        """คน tag เพื่อน "ครบค่ะ" โดยไม่มีรูปในชุด → เงียบเหมือนเดิม"""
         self._post_text('@Pnr.♡ @taii_1489 ครบค่ะ')
         self.reply_mock.assert_not_called()
         make_order()
         self._post_image('6910-116')
         self._post_text('ครบ')
-        self.assertNotIn('อ่านเลขไม่ได้', self._replied_message().text)
+        self.assertTrue(self._replied_message().text.startswith('@แอดมิน ✅ 6910-116'))
 
     def test_bot_done_without_numbers_also_waits(self):
         make_order()

@@ -6,6 +6,7 @@ views.py ทำแค่ route event:
 - image → ดาวน์โหลด + LLM อ่านเลขออร์เดอร์ (services.py) → **ไม่ตอบ** เก็บเข้า "รายการรอ"
           ของ (groupId, userId) ใน cache (pending.py) หมดอายุ 10 นาที
           ระหว่างอ่าน counter "กำลังอ่าน" +1/-1 (pending.inflight_*) · อ่านไม่ได้นับ "อ่านเลขไม่ได้" ของชุด
+          (ใช้แค่ตัดสินว่า "ครบ" แล้วไม่มีใบไหนอ่านได้เลย → NOT_FOUND_TEXT; ไม่รายงานจำนวนท้ายสรุป)
           "ครบ" ที่มาก่อนรูปสุดท้ายอ่านเสร็จ → รอ (สูงสุด 15 วิ) ค่อยติ๊ก (_confirm_pending)
           อ่านไม่เจอ หรือ LLM/ดาวน์โหลดพัง → เงียบ แค่ log (รูปเสื้อธรรมดาในกลุ่ม)
 - text  → "บอท ping" → "pong"
@@ -177,7 +178,7 @@ def _reply_done(event, numbers, note):
     _reply(event.reply_token, [_admin_mention_message(text)])
 
 
-UNREADABLE_TEXT = 'อ่านเลขไม่ได้ %d รูป (ถ้าเป็นใบงาน ถ่ายให้เห็นหัวใบชัด ๆ แล้วส่งใหม่)'
+NOT_FOUND_TEXT = 'หมอนทองหาเลขใบงานในรูปไม่เจอค่ะ ส่งรูปใบงานอีกครั้งนะคะ'
 STILL_READING_TEXT = 'มี %d รูปยังอ่านไม่เสร็จ ส่ง ครบ อีกครั้งนะคะ'
 
 
@@ -185,11 +186,15 @@ def _confirm_pending(event, group_id, user_id, note):
     """ข้อความยืนยัน "ครบ/เสร็จ" ของคนเดิมในกลุ่มเดิม:
     - ไม่มีทั้งรายการรอและไม่มีรูปกำลังอ่าน → False (เงียบ — คนใช้ tag เพื่อนกันปกติ)
     - มีรูปกำลังอ่าน (counter > 0) → รอจนอ่านครบ (สูงสุด WAIT_TIMEOUT) ค่อยติ๊ก กัน "ครบ" แซงรูปสุดท้าย
-    - ติ๊กทุกใบในรายการรอ + บรรทัดท้าย: รูปอ่านเลขไม่ได้ N รูป / ยังอ่านไม่เสร็จ N รูป (เกินเวลา) → True"""
+    - ติ๊กทุกใบในรายการรอ (+ บรรทัดท้าย ยังอ่านไม่เสร็จ N รูป ถ้าเกินเวลา) → True
+    - ไม่มีใบไหนอ่านได้เลย แต่มีรูปที่อ่านเลขไม่ได้ในชุดนี้ → NOT_FOUND_TEXT (ไม่ mention แอดมิน) → True
+    - รูปอ่านไม่ได้ปนกับใบที่อ่านได้ → ไม่พูดถึง (พนักงานส่งรูปเสื้อมาคู่ใบงานเสมอ บรรทัดนับฟังเหมือนตำหนิ)"""
     numbers = pending.get_pending(group_id, user_id)
     inflight = pending.inflight_count(group_id, user_id)
     if not numbers and not inflight:
-        pending.pop_unreadable(group_id, user_id)  # ล้างนับรูปอ่านไม่ได้ของชุดเก่า ไม่ให้ไปโผล่ชุดหน้า
+        if pending.pop_unreadable(group_id, user_id):
+            _reply_text(event.reply_token, NOT_FOUND_TEXT)
+            return True
         return False
     timed_out = False
     if inflight:
@@ -200,11 +205,12 @@ def _confirm_pending(event, group_id, user_id, note):
     unreadable = pending.pop_unreadable(group_id, user_id)
     pending.clear_pending(group_id, user_id)
 
+    if not numbers and not timed_out and unreadable:
+        _reply_text(event.reply_token, NOT_FOUND_TEXT)
+        return True
     parts = []
     if numbers:
         parts.append(bot_orders.process_order_numbers(numbers, note=note))
-    if unreadable:
-        parts.append(UNREADABLE_TEXT % unreadable)
     if timed_out:
         logger.warning('รอรูปอ่านเสร็จเกิน %ds (ยังค้าง %d รูป) → ติ๊กที่มี', pending.WAIT_TIMEOUT, still)
         parts.append(STILL_READING_TEXT % max(still, 1))
