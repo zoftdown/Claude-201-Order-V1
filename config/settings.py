@@ -62,7 +62,7 @@ RUNNINGHUB_FALLBACK_MODEL = os.environ.get('RUNNINGHUB_FALLBACK_MODEL', 'deepsee
 # ชั้น 1 (หลัก) — Anthropic ผ่าน anthropic SDK (line_bot/anthropic_backend.py); พังชั่วคราว → RunningHub
 # หลัก → สำรอง · ANTHROPIC_API_KEY ว่าง = ไม่มีชั้นนี้ (เริ่มที่ RunningHub) · รองรับ tools + vision
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
-ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-opus-5-5')
+ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-haiku-5-5')
 
 # --- Authentication redirects ---
 LOGIN_URL = 'login'

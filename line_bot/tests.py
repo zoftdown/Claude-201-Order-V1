@@ -1030,7 +1030,7 @@ class LinebotSmokeCommandTests(BotTestCase):
                                   if callable(answer) else (lambda *a, **k: answer)) as qa, \
                 override_settings(LINE_CHANNEL_ACCESS_TOKEN=token, RUNNINGHUB_API_KEY=key,
                                   RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
-                                  ANTHROPIC_API_KEY=an_key, ANTHROPIC_MODEL='claude-opus-5-5'):
+                                  ANTHROPIC_API_KEY=an_key, ANTHROPIC_MODEL='claude-haiku-5-5'):
             api.return_value.get_bot_info.return_value = mock.MagicMock(display_name=bot_name)
             args = ['--strict'] if strict else []
             call_command('linebot_smoke', *args, stdout=out, stderr=err)
@@ -1077,8 +1077,8 @@ class LinebotSmokeCommandTests(BotTestCase):
     def test_anthropic_tier_tested_first_when_key_set(self):
         out, err, _, qa = self._run(an_key='sk-ant-test')
         self.assertEqual(qa.call_args_list[0],
-                         mock.call(self.cmd.SMOKE_QUESTION, tier=('anthropic', 'claude-opus-5-5'), only=True))
-        self.assertIn('✓ ชั้น 1 Anthropic claude-opus-5-5', out)
+                         mock.call(self.cmd.SMOKE_QUESTION, tier=('anthropic', 'claude-haiku-5-5'), only=True))
+        self.assertIn('✓ ชั้น 1 Anthropic claude-haiku-5-5', out)
         self.assertIn('LLM ผ่าน 3/3 ชั้น', out)
 
     def test_missing_env_fails_both(self):
@@ -1100,7 +1100,7 @@ class LinebotSmokeCommandTests(BotTestCase):
 
 
 @override_settings(RUNNINGHUB_API_KEY='k', RUNNINGHUB_MODEL='primary/m', RUNNINGHUB_FALLBACK_MODEL='fallback/m',
-                   ANTHROPIC_API_KEY='sk-ant-test', ANTHROPIC_MODEL='claude-opus-5-5')
+                   ANTHROPIC_API_KEY='sk-ant-test', ANTHROPIC_MODEL='claude-haiku-5-5')
 class AnthropicTierTests(BotTestCase):
     """ชั้น 1 (line_bot/anthropic_backend.py) — แปลง OpenAI ↔ Anthropic + พังชั่วคราวแล้วไล่ RunningHub หลัก → สำรอง"""
 
@@ -1130,7 +1130,7 @@ class AnthropicTierTests(BotTestCase):
 
     def test_tiers_order(self):
         self.assertEqual(services.llm_tiers(), [
-            ('anthropic', 'claude-opus-5-5'), ('runninghub', 'primary/m'), ('runninghub', 'fallback/m')])
+            ('anthropic', 'claude-haiku-5-5'), ('runninghub', 'primary/m'), ('runninghub', 'fallback/m')])
         with override_settings(ANTHROPIC_API_KEY=''):
             self.assertEqual(len(services.llm_tiers()), 2)
 
@@ -1213,11 +1213,11 @@ class AnthropicTierTests(BotTestCase):
         tool_mock.assert_called_once_with(date='2026-10-15')
         rh.chat.completions.create.assert_not_called()
         self.assertEqual(an.messages.create.call_count, 2)
-        self.assertEqual(an.messages.create.call_args_list[0][1]['model'], 'claude-opus-5-5')
+        self.assertEqual(an.messages.create.call_args_list[0][1]['model'], 'claude-haiku-5-5')
         second = an.messages.create.call_args_list[1][1]['messages']
         self.assertEqual(second[-1]['content'][0]['type'], 'tool_result')
         self.assertEqual(second[-1]['content'][0]['tool_use_id'], 'tu1')
-        self.assertIn('QA รอบ 1 (anthropic:claude-opus-5-5)', '\n'.join(logs.output))
+        self.assertIn('QA รอบ 1 (anthropic:claude-haiku-5-5)', '\n'.join(logs.output))
 
     def test_qa_falls_through_to_runninghub_when_anthropic_down(self):
         import anthropic
@@ -1238,7 +1238,7 @@ class AnthropicTierTests(BotTestCase):
         models = [c[1]['model'] for c in rh.chat.completions.create.call_args_list]
         self.assertEqual(models, ['primary/m', 'fallback/m'])
         self.assertIn('QA รอบ 1 (runninghub:fallback/m)', '\n'.join(logs.output))
-        self.assertTrue(services.tier_down(('anthropic', 'claude-opus-5-5')))
+        self.assertTrue(services.tier_down(('anthropic', 'claude-haiku-5-5')))
         self.assertTrue(services.tier_down(('runninghub', 'primary/m')))
 
     def test_read_order_number_via_anthropic_vision(self):
