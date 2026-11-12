@@ -861,3 +861,44 @@ class PrintFooterTests(TestCase):
         resp = self.client.get(reverse('order_print', args=[self.order.pk]))
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'class="print-footer">พิมพ์โดย แผนกพิมพ์ ')
+
+
+class ExtraCsvButtonTests(TestCase):
+    """ปุ่ม CSV รันชื่ออยู่ติดตารางรันชื่อ-เบอร์ (detail + print) — ไม่อยู่บนแถบปุ่มบนแล้ว"""
+
+    def setUp(self):
+        from .models import ExtraNameRow
+        self.user = User.objects.create_user('csv-a', password='x')
+        self.order = Order.objects.create(
+            order_number='6911-900', created_date=timezone.localdate(),
+            customer_name='ลูกค้า', shirt_name='งานรันเบอร์')
+        self.empty = Order.objects.create(
+            order_number='6911-901', created_date=timezone.localdate(),
+            customer_name='ลูกค้า', shirt_name='ไม่มีตาราง', extra_note='โน้ต')
+        ExtraNameRow.objects.create(order=self.order, size='XL', number='09', name='ทดสอบ')
+        self.client.force_login(self.user)
+        self.csv_url = reverse('order_extra_csv', args=[self.order.pk])
+
+    def test_detail_shows_button_only_with_rows(self):
+        resp = self.client.get(reverse('order_detail', args=[self.order.pk]))
+        self.assertContains(resp, self.csv_url)
+        resp = self.client.get(reverse('order_detail', args=[self.empty.pk]))
+        self.assertNotContains(resp, 'extra-csv')
+
+    def test_print_button_sits_at_table_not_in_top_bar(self):
+        resp = self.client.get(reverse('order_print', args=[self.order.pk]))
+        html = resp.content.decode()
+        self.assertEqual(html.count(self.csv_url), 1)
+        self.assertGreater(html.index(self.csv_url), html.index('extra-block'))
+        self.assertIn('data-html2canvas-ignore', html)
+
+    def test_print_hides_button_while_waiting_confirm(self):
+        self.order.waiting_confirm = True
+        self.order.save(update_fields=['waiting_confirm'])
+        resp = self.client.get(reverse('order_print', args=[self.order.pk]))
+        self.assertNotContains(resp, self.csv_url)
+
+    def test_csv_format_unchanged(self):
+        resp = self.client.get(self.csv_url)
+        self.assertEqual(resp.content.decode('utf-8'),
+                         '﻿ไซส์,เบอร์,ชื่อ\r\nXL,09,ทดสอบ\r\n')

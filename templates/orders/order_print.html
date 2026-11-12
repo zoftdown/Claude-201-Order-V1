@@ -663,7 +663,6 @@
     <button class="btn-print" onclick="window.print()">พิมพ์ใบงาน</button>
     <button class="btn-save" onclick="saveWorkOrderImage(this)">📷 บันทึกภาพ</button>
     <button class="btn-pick" onclick="window.location.href='{% url 'order_master' order.pk %}'">📋 พิมพ์ใบมาสเตอร์</button>
-    {% if order.extra_name_rows.all %}<button class="btn-csv" onclick="window.location.href='{% url 'order_extra_csv' order.pk %}'">⬇ CSV รันชื่อ</button>{% endif %}
     {% if order.not_printed %}
         {% if not request.is_viewer %}
         <form method="post" action="{% url 'order_mark_printed' order.pk %}" style="display:inline; margin:0;">
@@ -816,6 +815,10 @@
                     {% endfor %}
                     </tbody>
                 </table>
+                {# ปุ่ม CSV อยู่ติดตาราง (ย้ายจากแถบบน) — button จึงถูกซ่อนตอนพิมพ์โดย @media print; data-html2canvas-ignore กันติดใน PNG #}
+                {% if not order.waiting_confirm %}
+                <button type="button" class="btn-csv" data-html2canvas-ignore="true" style="margin-top:8px; padding:8px 16px; border:none; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer;" onclick="window.location.href='{% url 'order_extra_csv' order.pk %}'">⬇ CSV รันชื่อ (เข้าโปรแกรมรันเบอร์)</button>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
