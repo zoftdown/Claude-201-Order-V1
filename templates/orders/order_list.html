@@ -57,6 +57,23 @@
     .urgent-table tbody tr > td { background-color: #fff0f0; }
     .urgent-table.table-hover tbody tr:hover > td { background-color: #ffd6d6 !important; }
 
+    /* ===== Dropped zone "ตกหล่น" (bordered, orange, under urgent zone) ===== */
+    .dropped-zone {
+        border: 3px solid #ef6c00;
+        border-radius: 8px;
+        background: #fff8f0;
+        overflow: hidden;
+    }
+    .dropped-zone-header {
+        background: #ef6c00;
+        color: #fff;
+        font-weight: 800;
+        font-size: 1.1rem;
+        padding: 8px 14px;
+    }
+    .dropped-table tbody tr > td { background-color: #fff3e0; }
+    .dropped-table.table-hover tbody tr:hover > td { background-color: #ffe0b2 !important; }
+
     /* Truncate long shirt names to "…"; full name on hover via title attr. */
     .order-list-table td.shirt-name-cell {
         max-width: 240px;
@@ -86,6 +103,25 @@
             <tbody>
                 {% for order in urgent_orders %}
                 <tr class="urgent-row">{% include "orders/_order_row_cells.html" %}</tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ===== Dropped zone: orders created ≥2 days ago with zero stage progress. #}
+{#       Same orders also appear in the normal date list below (same        #}
+{#       intentional-duplicate pattern as the urgent zone). ===== #}
+{% if dropped_orders %}
+<div class="dropped-zone mb-4">
+    <div class="dropped-zone-header">⏰ ตกหล่น ({{ dropped_orders|length }}) — เกิน 2 วันยังไม่มีความคืบหน้า</div>
+    <div class="table-responsive">
+        <table class="table table-hover table-sm order-list-table dropped-table align-middle mb-0">
+            <thead class="table-dark">{% include "orders/_order_list_head.html" %}</thead>
+            <tbody>
+                {% for order in dropped_orders %}
+                <tr>{% include "orders/_order_row_cells.html" %}</tr>
                 {% endfor %}
             </tbody>
         </table>

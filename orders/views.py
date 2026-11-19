@@ -33,6 +33,7 @@ from .forms import (
 from .models import (
     Customer, CustomerPrice, CustomerTag, DailyAdSpend, DepartmentPIN,
     ExtraImage, ExtraNameRow, MasterImage, Order, StageLog, Tailor, UserPin,
+    DROPPED_AFTER_DAYS, DROPPED_EXCLUDE_STATUSES,
 )
 from .production_export import build_production_export, WORKER_SOURCE
 from .profit import get_day_rows, get_month_data, invalidate_days
@@ -82,6 +83,19 @@ def order_list(request):
     # every urgent order no matter which page of the main list is open.
     urgent_orders = list(orders.filter(is_urgent=True))
 
+    # Dropped zone ("ตกหล่น"): created ≥2 days ago with zero production progress
+    # (every stage timestamp null), status still รอดำเนินการ, not waiting for
+    # customer confirmation. Mirrors Order.is_dropped — same criteria, filtered
+    # in the DB. Oldest first so the longest-stalled orders surface on top.
+    dropped_cutoff = timezone.localdate() - timedelta(days=DROPPED_AFTER_DAYS)
+    dropped_qs = (
+        orders.filter(created_date__lte=dropped_cutoff, waiting_confirm=False)
+        .exclude(status__in=DROPPED_EXCLUDE_STATUSES)
+    )
+    for field in STAGE_TIMESTAMP_FIELDS:
+        dropped_qs = dropped_qs.filter(**{f'{field}__isnull': True})
+    dropped_orders = list(dropped_qs.order_by('created_date', 'id'))
+
     # Paginate the main list — rendering the full history (1,500+ orders, each
     # with prefetched items/variants) made the page slower every month. 100
     # rows ≈ the last 1-2 weeks, which is what the shop actually scans.
@@ -91,6 +105,7 @@ def order_list(request):
         'orders': page_obj.object_list,
         'page_obj': page_obj,
         'urgent_orders': urgent_orders,
+        'dropped_orders': dropped_orders,
         'current_status': status,
         'mockup_filter': mockup or '',
         'search_query': q or '',
@@ -485,7 +500,8 @@ def _report_roi_context(request):
 
 # Statuses ที่ถือว่า "ขยับแล้ว" → ตัดออกจากรายงานค้าง แม้ stage timestamp จะ null
 # (ใบที่ตั้ง status เองโดยไม่ได้กดผ่านระบบ stage QR). เหลือเฉพาะ "รอดำเนินการ".
-STUCK_EXCLUDE_STATUSES = ('กำลังผลิต', 'เสร็จแล้ว', 'ส่งแล้ว')
+# ชุดเดียวกับโซน "ตกหล่น" หน้า list — ค่าจริงอยู่ใน models.py ที่เดียว
+STUCK_EXCLUDE_STATUSES = DROPPED_EXCLUDE_STATUSES
 
 
 def _report_stuck_rows(sort='date_desc'):

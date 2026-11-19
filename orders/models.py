@@ -6,6 +6,14 @@ from django.db import models
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
+# ===== โซน "ตกหล่น" หน้า list (ใช้ร่วม Order.is_dropped + query ใน views.order_list) =====
+# สร้างมาครบกี่วัน (นับจาก created_date) โดยไม่มีความคืบหน้า ถึงนับเป็นตกหล่น
+DROPPED_AFTER_DAYS = 2
+# Statuses ที่ถือว่า "ขยับแล้ว" แม้ stage timestamp จะ null ทั้งหมด (ใบที่ตั้ง
+# status เองโดยไม่ได้กดผ่านระบบ stage) — ชุดเดียวกับ STUCK_EXCLUDE_STATUSES
+# ของรายงานค้างเกิน 7 วันใน views.py
+DROPPED_EXCLUDE_STATUSES = ('กำลังผลิต', 'เสร็จแล้ว', 'ส่งแล้ว')
+
 
 def design_upload_path(instance, filename):
     """Generate a short, deterministic-ish upload path so users can upload
@@ -370,6 +378,22 @@ class Order(models.Model):
     def progress_done(self):
         """งานออกจากร้านแล้ว (ส่ง/รอลูกค้ารับ) → ใช้ทำ badge สีเขียว."""
         return bool(self.shipped_at or self.awaiting_pickup_at)
+
+    @property
+    def is_dropped(self):
+        """ตกหล่น: สร้างมาครบ DROPPED_AFTER_DAYS วันแล้วยังไม่มีความคืบหน้าการผลิต
+        สักขั้น (ทุก stage timestamp ว่าง) + status ยังไม่ขยับ + ไม่ใช่ใบรอคอนเฟิร์ม
+        (รอลูกค้ายืนยัน = ตั้งใจยังไม่ผลิต). เกณฑ์เดียวกับโซน "ตกหล่น" หน้า list
+        (view กรองใน DB ด้วยเงื่อนไขเดียวกัน — แก้ที่หนึ่งต้องแก้อีกที่)."""
+        if self.waiting_confirm:
+            return False
+        if self.status in DROPPED_EXCLUDE_STATUSES:
+            return False
+        if (timezone.localdate() - self.created_date).days < DROPPED_AFTER_DAYS:
+            return False
+        return not (self.print_done_at or self.roll_done_at or self.cut_done_at
+                    or self.sort_done_at or self.sent_to_tailors_at or self.packed_at
+                    or self.shipped_at or self.awaiting_pickup_at)
 
     def save(self, *args, **kwargs):
         if not self.order_number:

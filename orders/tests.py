@@ -902,3 +902,61 @@ class ExtraCsvButtonTests(TestCase):
         resp = self.client.get(self.csv_url)
         self.assertEqual(resp.content.decode('utf-8'),
                          '﻿ไซส์,เบอร์,ชื่อ\r\nXL,09,ทดสอบ\r\n')
+
+
+class DroppedZoneTests(TestCase):
+    """โซน "ตกหล่น" หน้า list — ใบสร้างเกิน 2 วันที่ไม่มีความคืบหน้าสักขั้น"""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('staff-drop', password='pw1234')
+        Group.objects.get_or_create(name='staff')
+        self.client.force_login(self.staff)
+        self.old_day = timezone.localdate() - timedelta(days=3)
+
+    def test_is_dropped_true_when_old_and_no_progress(self):
+        order = make_order(self.old_day)
+        self.assertTrue(order.is_dropped)
+
+    def test_not_dropped_when_recent(self):
+        order = make_order(timezone.localdate() - timedelta(days=1))
+        self.assertFalse(order.is_dropped)
+
+    def test_not_dropped_when_any_stage_done(self):
+        order = make_order(self.old_day)
+        order.print_done_at = timezone.now()
+        order.save(update_fields=['print_done_at'])
+        self.assertFalse(order.is_dropped)
+
+    def test_not_dropped_when_waiting_confirm_or_status_moved(self):
+        waiting = make_order(self.old_day)
+        waiting.waiting_confirm = True
+        waiting.save(update_fields=['waiting_confirm'])
+        self.assertFalse(waiting.is_dropped)
+        moved = make_order(self.old_day)
+        moved.status = 'กำลังผลิต'
+        moved.save(update_fields=['status'])
+        self.assertFalse(moved.is_dropped)
+
+    def test_list_page_shows_dropped_zone_and_badge(self):
+        dropped = make_order(self.old_day)
+        fresh = make_order(timezone.localdate())
+        resp = self.client.get(reverse('order_list'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([o.pk for o in resp.context['dropped_orders']],
+                         [dropped.pk])
+        self.assertContains(resp, 'ตกหล่น (1)')
+        self.assertContains(resp, '>ตกหล่น</span>')
+
+    def test_list_page_no_zone_when_none_dropped(self):
+        make_order(timezone.localdate())
+        resp = self.client.get(reverse('order_list'))
+        self.assertEqual(resp.context['dropped_orders'], [])
+        # ชื่อ class อยู่ใน <style> เสมอ — เช็คข้อความหัวโซนแทน
+        self.assertNotContains(resp, 'ตกหล่น (')
+
+    def test_dropped_zone_oldest_first(self):
+        newer = make_order(timezone.localdate() - timedelta(days=2))
+        older = make_order(timezone.localdate() - timedelta(days=5))
+        resp = self.client.get(reverse('order_list'))
+        self.assertEqual([o.pk for o in resp.context['dropped_orders']],
+                         [older.pk, newer.pk])
